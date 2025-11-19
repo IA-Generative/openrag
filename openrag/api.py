@@ -32,6 +32,7 @@ from routers.queue import router as queue_router
 from routers.search import router as search_router
 from routers.tools import router as tools_router
 from routers.users import router as users_router
+from routers.tools import router as tools_router
 from starlette.middleware.base import BaseHTTPMiddleware
 from utils.dependencies import get_vectordb
 from utils.exceptions import OpenRAGError
