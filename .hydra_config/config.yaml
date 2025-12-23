@@ -137,6 +137,7 @@ loader:
     silence_thresh_db: ${oc.decode:${oc.env:TRANSCRIBER_SILENCE_THRESH_DB, -40}}
     min_silence_len_ms: ${oc.decode:${oc.env:TRANSCRIBER_MIN_SILENCE_LEN_MS, 500}}
     max_concurrent_chunks: ${oc.decode:${oc.env:TRANSCRIBER_MAX_CONCURRENT_CHUNKS, 20}}
+    timeout: ${oc.decode:${oc.env:TRANSCRIBER_TIMEOUT, 60}} # Timeout per chunk transcription in seconds
   openai:
     base_url: ${oc.env:OPENAI_LOADER_BASE_URL, http://openai:8000/v1}
     api_key: ${oc.env:OPENAI_LOADER_API_KEY, EMPTY}
