@@ -262,13 +262,14 @@ class MarkerLoader(BaseLoader):
         try:
             results = await tqdm.gather(*tasks, desc="Captioning images")
             assert len(keys) == len(results), "Mismatch between keys and results count"
+            result_dict = dict(zip(keys, results))
+            return result_dict
+
         except asyncio.CancelledError:
             logger.warning("Image captioning tasks cancelled")
             for task in tasks:
                 task.cancel()
             raise
-        except Exception:
-            logger.exception("Error during image captioning")
-            raise
-        result_dict = dict(zip(keys, results))
-        return result_dict
+        except Exception as e:
+            logger.exception("Error during image captioning", error=str(e))
+            return {}
