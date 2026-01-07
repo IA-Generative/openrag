@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import ray
-from components.files import sanitize_filename, save_file_to_disk
+from components.indexer.utils.files import sanitize_filename, save_file_to_disk
 from config import load_config
 from fastapi import (
     APIRouter,
