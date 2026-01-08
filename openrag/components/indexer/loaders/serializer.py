@@ -1,4 +1,3 @@
-import asyncio
 import gc
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -21,7 +20,7 @@ else:  # On CPU
 DICT_MIMETYPES = dict(config.loader["mimetypes"])
 
 
-@ray.remote
+@ray.remote(max_restarts=5)
 class DocSerializer:
     def __init__(self, data_dir=None, **kwargs) -> None:
         from config import load_config
@@ -85,6 +84,6 @@ class DocSerializer:
                 torch.cuda.ipc_collect()
             log.info("Document serialized successfully")
             return doc
-        except Exception:
-            log.exception("Failed to serialize document")
+        except Exception as e:
+            log.exception("Failed to serialize document", error=str(e))
             raise
