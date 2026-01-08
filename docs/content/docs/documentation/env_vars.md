@@ -331,6 +331,7 @@ Controls the maximum number of concurrent operations for different indexer tasks
 |----------|------|---------|-------------|
 | `INDEXER_DEFAULT_CONCURRENCY` | int | 1000 | Default concurrency limit for general operations |
 | `INDEXER_UPDATE_CONCURRENCY` | int | 100 | Maximum concurrent document update operations |
+| `INDEXER_SERIALIZE_CONCURRENCY` | int | 50 | Maximum concurrent serialization operations |
 | `INDEXER_SEARCH_CONCURRENCY` | int | 100 | Maximum concurrent search/retrieval operations |
 | `INDEXER_DELETE_CONCURRENCY` | int | 100 | Maximum concurrent document deletion operations |
 | `INDEXER_CHUNK_CONCURRENCY` | int | 1000 | Maximum concurrent document chunking operations |

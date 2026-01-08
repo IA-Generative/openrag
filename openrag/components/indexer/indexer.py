@@ -30,6 +30,7 @@ MAX_TASKS_PER_WORKER = config.ray.get("max_tasks_per_worker")
         "delete": config.ray.indexer.concurrency_groups["delete"],
         "insert": config.ray.indexer.concurrency_groups["insert"],
         "chunk": config.ray.indexer.concurrency_groups["chunk"],
+        "serialize": config.ray.indexer.concurrency_groups["serialize"],
     },
 )
 class Indexer:
@@ -54,6 +55,17 @@ class Indexer:
     ) -> List[Document]:
         chunks = await self.chunker.split_document(doc, task_id)
         return chunks
+
+    @ray.method(concurrency_group="serialize")
+    async def serialize_file(
+        self,
+        path: Union[str, List[str]],
+        metadata: Optional[Dict] = {},
+        task_id: str = None,
+    ):
+        # Serialize
+        doc = await serialize_file(task_id, path, metadata=metadata)
+        return doc
 
     async def add_file(
         self,
@@ -86,11 +98,19 @@ class Indexer:
             metadata = {**metadata, "partition": partition}
 
             # Serialize
-            doc = await serialize_file(task_id, path, metadata=metadata)
+            doc = await self.serialize_file(
+                path=path, metadata=metadata, task_id=task_id
+            )
 
             # Chunk
-            await task_state_manager.set_state.remote(task_id, "CHUNKING")
-            chunks = await self.handle.chunk.remote(doc, str(path), task_id)
+            if doc:
+                await task_state_manager.set_state.remote(task_id, "CHUNKING")
+                chunks = await self.handle.chunk.remote(doc, str(path), task_id)
+            else:
+                log.warning(
+                    "No document returned from serialization; skipping indexing."
+                )
+                chunks = []
 
             if self.enable_insertion:
                 if chunks:
