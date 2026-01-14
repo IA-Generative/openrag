@@ -10,6 +10,8 @@ from omegaconf import OmegaConf
 from tqdm.asyncio import tqdm
 from utils.logger import get_logger
 
+from openrag.consts import IMAGE_PLACEHOLDER
+
 from ..embeddings import BaseEmbedding
 from .utils import MDElement, chunk_table, get_chunk_page_number, split_md_elements
 
@@ -67,10 +69,12 @@ class ChunkContextualizer:
                 return ""
 
     async def contextualize_chunks(
-        self, chunks: list[Document], lang: Literal["fr", "en"] = "en"
+        self,
+        chunks: list[Document],
+        lang: Literal["fr", "en"] = "en",
+        filename: str = "",
     ) -> list[Document]:
         """Contextualize a list of document chunks."""
-        filename = chunks[0].metadata.get("filename")
         try:
             first_chunks = chunks[:2]
             tasks = [
@@ -134,10 +138,12 @@ class BaseChunker:
         )
 
     async def _apply_contextualization(
-        self, chunks: list[Document], lang: Literal["en", "fr"] = "en"
+        self,
+        chunks: list[Document],
+        lang: Literal["en", "fr"] = "en",
+        filename: str = "",
     ) -> list[Document]:
         """Apply contextualization if enabled."""
-        filename = chunks[0].metadata.get("filename")
         if not self.contextual_retrieval or len(chunks) < 2:
             return [
                 Document(
@@ -149,7 +155,9 @@ class BaseChunker:
                 for c in chunks
             ]
 
-        return await self.contextualizer.contextualize_chunks(chunks, lang=lang)
+        return await self.contextualizer.contextualize_chunks(
+            chunks, lang=lang, filename=filename
+        )
 
     def _prepare_md_elements(
         self, content: str
@@ -158,10 +166,11 @@ class BaseChunker:
         md_elements: list[MDElement] = split_md_elements(content)
 
         tables_and_images, texts = [], []
+
         for e in md_elements:
             if e.type in ("table", "image"):
                 if (
-                    e.type == "image" and "[Image Placeholder]" in e.content
+                    e.type == "image" and IMAGE_PLACEHOLDER.lower() in e.content.lower()
                 ):  # skip placeholder images
                     continue
 
@@ -262,14 +271,21 @@ class BaseChunker:
                 )
             )
 
-        chunks.sort(key=lambda d: d.metadata.get("page"))
-        return chunks
+        if chunks:
+            chunks.sort(key=lambda d: d.metadata.get("page"))
+            return chunks
+        else:
+            log.warning(
+                "No chunks created. Content is empty or image is not informative."
+            )
+            return []
 
     async def split_document(
         self, doc: Document, task_id: Optional[str] = None
     ) -> list[Document]:
         """Split document into chunks with optional contextualization."""
         metadata = doc.metadata
+        filename = metadata.get("filename", "")
         log = logger.bind(
             file_id=metadata.get("file_id"),
             partition=metadata.get("partition"),
@@ -282,14 +298,19 @@ class BaseChunker:
         # Process document through pipeline
         chunks = self._get_chunks(doc.page_content.strip(), metadata, log=log)
 
-        # Apply contextualization if enabled
-        log.info(
-            "Contextualizing chunks", apply_contextualization=self.contextual_retrieval
-        )
-        chunks = await self._apply_contextualization(chunks, lang=detected_lang)
-
-        log.info("Document chunking completed")
-        return chunks
+        if chunks:
+            # Apply contextualization if enabled
+            log.info(
+                "Contextualizing chunks",
+                apply_contextualization=self.contextual_retrieval,
+            )
+            chunks = await self._apply_contextualization(
+                chunks, lang=detected_lang, filename=filename
+            )
+            log.info("Document chunking completed")
+            return chunks
+        else:
+            return []
 
 
 class RecursiveSplitter(BaseChunker):
