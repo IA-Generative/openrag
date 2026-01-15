@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from typing import List
 
 import ray
 from components.indexer.utils.files import save_file_to_disk, serialize_file
@@ -28,7 +27,7 @@ class ToolInfo(BaseModel):
     description: str
 
 
-AVAILABLE_TOOLS: List[ToolInfo] = [
+AVAILABLE_TOOLS: list[ToolInfo] = [
     ToolInfo(
         name="extractText",
         description="Extract raw text from a file (PDF, Office, audio, etc.)",
@@ -63,7 +62,7 @@ def validate_tool(tool: str = Form(...)):
 
 @router.get(
     "/tools",
-    response_model=List[ToolInfo],
+    response_model=list[ToolInfo],
     summary="List available tools",
     description="""List available tools
 **Response Format:**
@@ -103,9 +102,7 @@ async def execute_tool(
 
             task_id = ray.get_runtime_context().get_task_id()
 
-            logger.debug(
-                f"Execute tool extractText for task {task_id} with file {file.filename}"
-            )
+            logger.debug(f"Execute tool extractText for task {task_id} with file {file.filename}")
             doc = await serialize_file(task_id, path=file_path, metadata=metadata)
             logger.debug(f"extractText done for task {task_id}")
 

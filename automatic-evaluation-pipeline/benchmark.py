@@ -1,24 +1,23 @@
-import os
 import asyncio
 import json
 import math
-from typing import Literal, TypedDict
-from loguru import logger
+import os
+from typing import TypedDict
+
 import numpy as np
-from openai import AsyncOpenAI
-from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
-from dotenv import load_dotenv
-from tqdm.asyncio import tqdm
 import pandas as pd
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from loguru import logger
+from openai import AsyncOpenAI
+from pydantic import BaseModel, Field
+from tqdm.asyncio import tqdm
 
 load_dotenv()
 
 
 # Retrieving responses and document sources fom OpenRAG
-async def retrieve_response_and_docs_openrag(
-    query: str, partition: str, _base_url: str, semaphore: asyncio.Semaphore
-):
+async def retrieve_response_and_docs_openrag(query: str, partition: str, _base_url: str, semaphore: asyncio.Semaphore):
     async with semaphore:
         base_url = f"{_base_url}/v1"
         auth_key = "sk-1234"
@@ -40,14 +39,13 @@ async def retrieve_response_and_docs_openrag(
         try:
             res = await client.chat.completions.create(**settings)
             response_llm = res.choices[0].message.content
-            list_source_chunk_ids = [
-                item["_id"] for item in json.loads(res.extra)["sources"]
-            ]
+            list_source_chunk_ids = [item["_id"] for item in json.loads(res.extra)["sources"]]
 
             return response_llm, list_source_chunk_ids
         except Exception as e:
             logger.debug(f"Error fetching chunks and response: {e}")
             return None, []
+
 
 def compute_hits(true_chunk_id, all_retrieved_chunks):
     return true_chunk_id in all_retrieved_chunks
@@ -66,6 +64,7 @@ def compute_inverted_ranks(true_chunk_id, all_retrieved_chunks):
         return 1 / rank
     else:
         return 0
+
 
 # Sources retrieval evaluation
 def relevance(val, true_chunk_ids):
@@ -99,11 +98,12 @@ llm_judge_settings = {
 
 
 class CompletionEvaluationResponse(BaseModel):
-    score: int = Field(..., 
-                       ge=1, 
-                       le=10, 
-                       description="Le résultat du juge LLM."
-        "Le résultat est compris entre 1 et 10, où 1 indique une réponse très incomplète et 10 indique une réponse très complète."
+    score: int = Field(
+        ...,
+        ge=1,
+        le=10,
+        description="Le résultat du juge LLM."
+        "Le résultat est compris entre 1 et 10, où 1 indique une réponse très incomplète et 10 indique une réponse très complète.",
         # "The output of the LLM judge. It can be one of the following: "
         # "'complete', 'mostly_complete', 'partially_complete', 'incomplete'. "
         # "This indicates how well the generated answer matches the true answer.",
@@ -111,11 +111,12 @@ class CompletionEvaluationResponse(BaseModel):
 
 
 class PrecisionEvaluationResponse(BaseModel):
-    score: int = Field(..., 
-                       ge=1, 
-                       le=10, 
-                       description="Le résultat du juge LLM."
-        "Le résultat est compris entre 1 et 10, où 1 indique une réponse très imprécise et 10 indique une réponse très précise."
+    score: int = Field(
+        ...,
+        ge=1,
+        le=10,
+        description="Le résultat du juge LLM."
+        "Le résultat est compris entre 1 et 10, où 1 indique une réponse très imprécise et 10 indique une réponse très précise.",
         # "The output of the LLM judge. It can be one of the following: "
         # "'Highly_precise', 'mostly_precise', 'low_precision', 'imprecise'. "
         # "This indicates how well the generated answer matches the true answer.",
@@ -167,12 +168,8 @@ La réponse reste-t-elle centrée sur la question ?
 Évite-t-elle les informations sans rapport, vagues ou incorrectes ?
 Le contenu est-il précis et conforme aux faits à la vraie réponse ?"""
 
-llm_completion_judge = ChatOpenAI(**llm_judge_settings).with_structured_output(
-    CompletionEvaluationResponse
-)
-llm_precision_judge = ChatOpenAI(**llm_judge_settings).with_structured_output(
-    PrecisionEvaluationResponse
-)
+llm_completion_judge = ChatOpenAI(**llm_judge_settings).with_structured_output(CompletionEvaluationResponse)
+llm_precision_judge = ChatOpenAI(**llm_judge_settings).with_structured_output(PrecisionEvaluationResponse)
 
 
 async def response_judgment_per_question(
@@ -214,7 +211,7 @@ class Element(TypedDict):
 
 
 async def main():
-    with open("./dataset.json", "r", encoding="utf-8") as f:
+    with open("./dataset.json", encoding="utf-8") as f:
         eval_dataset: list[Element] = json.load(f)
 
     list_response_answer_reference = eval_dataset  # [:10]
@@ -222,7 +219,7 @@ async def main():
     num_port = os.environ.get("APP_PORT")
     num_host = os.environ["APP_URL"]
     openrag_api_base_url = f"http://{num_host}:{num_port}"
-    partition = "pdftest"   # To replace with your wanted partition's name
+    partition = "pdftest"  # To replace with your wanted partition's name
 
     # Create shared semaphores for rate limiting
     openrag_semaphore = asyncio.Semaphore(4)  # Limit concurrent OpenRAG requests
@@ -259,9 +256,7 @@ async def main():
         recalls.append(recall)
 
         # nDCG score calculation
-        nDCG_score = source_score_per_question(
-            chunk_id_reference=chunk_id_reference, chunk_id_llm=openrag_chunk_ids
-        )
+        nDCG_score = source_score_per_question(chunk_id_reference=chunk_id_reference, chunk_id_llm=openrag_chunk_ids)
         nDCG_scores.append(nDCG_score)
 
         # Create task with proper semaphore passing
@@ -273,15 +268,13 @@ async def main():
         )
         response_judge_tasks.append(resp_eval_task)
 
-    llm_judge_scores = await tqdm.gather(
-        *response_judge_tasks, desc="Evaluating responses"
-    )
+    llm_judge_scores = await tqdm.gather(*response_judge_tasks, desc="Evaluating responses")
 
     # Score display
     print(f"Average Hit Rate: {round(np.array(hit_rates).mean(), 3)}")
     print(f"Average MRR: {round(np.array(MRRs).mean(), 3)}")
     print(f"Average Recall: {round(np.array(recalls).mean(), 3)}")
-    
+
     # Filter out error responses
     valid_scores = [(comp, prec) for comp, prec in llm_judge_scores if comp != "error"]
     valid_ndcg_scores = nDCG_scores[: len(valid_scores)]  # Match the filtered scores
@@ -292,19 +285,14 @@ async def main():
     )
     eval_results["nDCG"] = valid_ndcg_scores
     chunks_count = [
-        len(input_reference["chunks"])
-        for input_reference in list_response_answer_reference[: len(valid_scores)]
+        len(input_reference["chunks"]) for input_reference in list_response_answer_reference[: len(valid_scores)]
     ]
     eval_results["n_chunks"] = chunks_count
 
     # Calculate average nDCG for each n_chunks and round values to 3 decimal places
-    avg_ndcg_per_chunk = (
-        eval_results.groupby("n_chunks")["nDCG"].mean().round(3).to_dict()
-    )
+    avg_ndcg_per_chunk = eval_results.groupby("n_chunks")["nDCG"].mean().round(3).to_dict()
     print(f"Average nDCG per chunk count: {avg_ndcg_per_chunk}\n")
-    print(
-        f"Average nDCG: {round(eval_results['nDCG'].mean(), 3)} +/- {eval_results['nDCG'].std():.3f}"
-    )
+    print(f"Average nDCG: {round(eval_results['nDCG'].mean(), 3)} +/- {eval_results['nDCG'].std():.3f}")
 
     # Print evaluation distributions
     print("\n", "-" * 50, "\n")
@@ -315,6 +303,7 @@ async def main():
     print("\nPrecision evaluation distribution:")
     print(eval_results["precision_evaluation"].value_counts())
     print(f"Precision evaluation average: {eval_results['precision_evaluation'].mean():.3f}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

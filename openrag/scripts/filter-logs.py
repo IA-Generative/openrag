@@ -2,16 +2,14 @@
 import argparse
 import json
 import re
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime, timezone
 
 # Expected format at start of record["text"]:
 # "2025-12-11 09:00:42.538 | INFO ..."
-TEXT_TS_RE = re.compile(
-    r"^(?P<date>\d{4}-\d{2}-\d{2})\s+(?P<time>\d{2}:\d{2}:\d{2})(?:\.(?P<ms>\d{1,6}))?"
-)
+TEXT_TS_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\s+(?P<time>\d{2}:\d{2}:\d{2})(?:\.(?P<ms>\d{1,6}))?")
 
-def parse_text_timestamp(text: str, assume_tz: timezone) -> Optional[datetime]:
+
+def parse_text_timestamp(text: str, assume_tz: timezone) -> datetime | None:
     """
     Parse 'YYYY-MM-DD HH:MM:SS(.ffffff)?' at the beginning of text.
     Returns aware datetime in assume_tz, or None if not found/parseable.
@@ -31,6 +29,7 @@ def parse_text_timestamp(text: str, assume_tz: timezone) -> Optional[datetime]:
     dt = dt.replace(microsecond=int(ms_part), tzinfo=assume_tz)
     return dt
 
+
 def parse_cli_datetime(s: str, assume_tz: timezone) -> datetime:
     """
     Accepts:
@@ -49,10 +48,9 @@ def parse_cli_datetime(s: str, assume_tz: timezone) -> datetime:
             pass
     raise ValueError(f"Invalid datetime format: {s}")
 
+
 def main():
-    ap = argparse.ArgumentParser(
-        description="Filter JSON log lines by timestamp found at start of record['text']."
-    )
+    ap = argparse.ArgumentParser(description="Filter JSON log lines by timestamp found at start of record['text'].")
     ap.add_argument("input", help="Input log file (NDJSON: one JSON object per line)")
     ap.add_argument("output", help="Output filtered file")
     ap.add_argument("--start", required=True, help="Start datetime (inclusive), e.g. '2025-12-11 09:00:00'")
@@ -62,19 +60,22 @@ def main():
         default="UTC",
         help="Timezone assumption for timestamps in text (default: UTC). Use 'LOCAL' to use local timezone.",
     )
-    ap.add_argument("--keep-invalid", action="store_true",
-                    help="Also keep lines where timestamp can't be parsed (useful if file has mixed lines).")
+    ap.add_argument(
+        "--keep-invalid",
+        action="store_true",
+        help="Also keep lines where timestamp can't be parsed (useful if file has mixed lines).",
+    )
     ap.add_argument("--stats", action="store_true", help="Print summary stats to stderr.")
     args = ap.parse_args()
 
     if args.tz.upper() == "LOCAL":
         # Local timezone aware (Python 3.9+ uses system tzinfo via astimezone)
-        assume_tz = datetime.now().astimezone().tzinfo or timezone.utc
+        assume_tz = datetime.now().astimezone().tzinfo or UTC
     else:
         # Only support UTC in a simple way without external deps
         if args.tz.upper() != "UTC":
             raise SystemExit("Only --tz UTC or --tz LOCAL supported (to avoid extra dependencies).")
-        assume_tz = timezone.utc
+        assume_tz = UTC
 
     start_dt = parse_cli_datetime(args.start, assume_tz)
     end_dt = parse_cli_datetime(args.end, assume_tz)
@@ -85,8 +86,7 @@ def main():
     out_count = 0
     invalid_count = 0
 
-    with open(args.input, "r", encoding="utf-8", errors="replace") as fin, \
-         open(args.output, "w", encoding="utf-8") as fout:
+    with open(args.input, encoding="utf-8", errors="replace") as fin, open(args.output, "w", encoding="utf-8") as fout:
         for line in fin:
             in_count += 1
             line_stripped = line.strip()
@@ -119,10 +119,11 @@ def main():
 
     if args.stats:
         import sys
+
         print(f"Read lines: {in_count}", file=sys.stderr)
         print(f"Written lines: {out_count}", file=sys.stderr)
         print(f"Invalid/unparsed lines: {invalid_count}", file=sys.stderr)
 
+
 if __name__ == "__main__":
     main()
-

@@ -1,37 +1,25 @@
 import os
 import warnings
-
-# Filter SyntaxWarning from pydub (invalid escape sequences in regex)
-# This is a known issue in pydub 0.25.1 that hasn't been fixed upstream
-warnings.filterwarnings("ignore", category=SyntaxWarning, module="pydub")
+from enum import Enum
+from importlib.metadata import version as get_package_version
+from pathlib import Path
 
 import ray
-from dotenv import dotenv_values
-
-SHARED_ENV = os.environ.get("SHARED_ENV", None)
-
-env_vars = dotenv_values(SHARED_ENV) if SHARED_ENV else {}
-env_vars["PYTHONPATH"] = "/app/openrag"
-
-
-ray.init(dashboard_host="0.0.0.0")
-
-
-import os
-from enum import Enum
-from pathlib import Path
-from typing import Optional
-
 import uvicorn
-from importlib.metadata import version as get_package_version
-
 from config import load_config
-
+from dotenv import dotenv_values
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+ray.init(dashboard_host="0.0.0.0")
+
+# Apply noqa: E402 to ignore "module level import not at top of file" cause ray.init has to be called first
+
+# flake8: noqa: E402
+
 from routers.actors import router as actors_router
 from routers.extract import router as extract_router
 from routers.indexer import router as indexer_router
@@ -39,12 +27,23 @@ from routers.openai import router as openai_router
 from routers.partition import router as partition_router
 from routers.queue import router as queue_router
 from routers.search import router as search_router
-from routers.users import router as users_router
 from routers.tools import router as tools_router
+from routers.users import router as users_router
 from starlette.middleware.base import BaseHTTPMiddleware
 from utils.dependencies import get_vectordb
 from utils.exceptions import OpenRAGError
 from utils.logger import get_logger
+
+# Filter SyntaxWarning from pydub (invalid escape sequences in regex)
+# This is a known issue in pydub 0.25.1 that hasn't been fixed upstream
+warnings.filterwarnings("ignore", category=SyntaxWarning, module="pydub")
+
+
+SHARED_ENV = os.environ.get("SHARED_ENV", None)
+
+env_vars = dotenv_values(SHARED_ENV) if SHARED_ENV else {}
+env_vars["PYTHONPATH"] = "/app/openrag"
+
 
 logger = get_logger()
 config = load_config()
@@ -71,15 +70,12 @@ class AppState:
 
 
 # Read the token from env (or None if not set)
-AUTH_TOKEN: Optional[str] = os.getenv("AUTH_TOKEN")
-INDEXERUI_PORT: Optional[str] = os.getenv("INDEXERUI_PORT", "3042")
-INDEXERUI_URL: Optional[str] = os.getenv(
-    "INDEXERUI_URL", f"http://localhost:{INDEXERUI_PORT}"
-)
-WITH_CHAINLIT_UI: Optional[bool] = (
-    os.getenv("WITH_CHAINLIT_UI", "true").lower() == "true"
-)
-WITH_OPENAI_API: Optional[bool] = os.getenv("WITH_OPENAI_API", "true").lower() == "true"
+AUTH_TOKEN: str | None = os.getenv("AUTH_TOKEN")
+INDEXERUI_PORT: str | None = os.getenv("INDEXERUI_PORT", "3042")
+INDEXERUI_URL: str | None = os.getenv("INDEXERUI_URL", f"http://localhost:{INDEXERUI_PORT}")
+WITH_CHAINLIT_UI: bool = os.getenv("WITH_CHAINLIT_UI", "true").lower() == "true"
+WITH_OPENAI_API: bool = os.getenv("WITH_OPENAI_API", "true").lower() == "true"
+
 
 try:
     app_version = get_package_version("openrag")
@@ -98,9 +94,7 @@ def custom_openapi():
         routes=app.routes,
     )
     # Add global security
-    openapi_schema["components"]["securitySchemes"] = {
-        "BearerAuth": {"type": "http", "scheme": "bearer"}
-    }
+    openapi_schema["components"]["securitySchemes"] = {"BearerAuth": {"type": "http", "scheme": "bearer"}}
     openapi_schema["security"] = [{"BearerAuth": []}]
     app.openapi_schema = openapi_schema
     return app.openapi_schema
@@ -126,7 +120,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/openapi.json",
             "/redoc",
             "/health_check",
-            "/version"
+            "/version",
         ] or request.url.path.startswith("/chainlit"):  # Allow all chainlit subroutes
             return await call_next(request)
 
@@ -189,22 +183,16 @@ app.add_middleware(
 )
 
 app.state.app_state = AppState(config)
-app.mount(
-    "/static", StaticFiles(directory=DATA_DIR.resolve(), check_dir=True), name="static"
-)
+app.mount("/static", StaticFiles(directory=DATA_DIR.resolve(), check_dir=True), name="static")
 
 
-@app.get(
-    "/health_check", summary="Health check endpoint for API", dependencies=[]
-)
+@app.get("/health_check", summary="Health check endpoint for API", dependencies=[])
 async def health_check(request: Request):
     # TODO : Error reporting about llm and vlm
     return "RAG API is up."
 
 
-@app.get(
-    "/version", summary="Get openRAG version", dependencies=[]
-)
+@app.get("/version", summary="Get openRAG version", dependencies=[])
 def get_version():
     return {"version": app.version}
 
@@ -235,9 +223,7 @@ if WITH_CHAINLIT_UI:
     from chainlit.utils import mount_chainlit
 
     mount_chainlit(app, "./app_front.py", path="/chainlit")
-    app.include_router(
-        openai_router, prefix="/v1", tags=[Tags.OPENAI]
-    )  # cause chainlit uses openai api endpoints
+    app.include_router(openai_router, prefix="/v1", tags=[Tags.OPENAI])  # cause chainlit uses openai api endpoints
 
 if __name__ == "__main__":
     if config.ray.serve.enable:
@@ -248,21 +234,14 @@ if __name__ == "__main__":
         class OpenRagAPI:
             pass
 
-        serve.start(
-            http_options={"host": config.ray.serve.host, "port": config.ray.serve.port}
-        )
+        serve.start(http_options={"host": config.ray.serve.host, "port": config.ray.serve.port})
         if WITH_CHAINLIT_UI:
             from chainlit_api import app as chainlit_app
+
             serve.run(OpenRagAPI.bind(), route_prefix="/")
-            uvicorn.run(
-                chainlit_app,
-                host="0.0.0.0",
-                port=config.ray.serve.chainlit_port
-            )
+            uvicorn.run(chainlit_app, host="0.0.0.0", port=config.ray.serve.chainlit_port)
         else:
             serve.run(OpenRagAPI.bind(), route_prefix="/", blocking=True)
 
     else:
-        uvicorn.run(
-            "api:app", host="0.0.0.0", port=8080, reload=True, proxy_headers=True
-        )
+        uvicorn.run("api:app", host="0.0.0.0", port=8080, reload=True, proxy_headers=True)

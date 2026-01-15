@@ -57,6 +57,4 @@ class DotsOCRLoader(OpenAILoader):
                 item["text"] = desc.strip() if isinstance(desc, str) else ""
 
     def _result_to_md(self, result: list[dict]) -> str:
-        return "\n".join(
-            item.get("text", "").strip() for item in result if item.get("text")
-        )
+        return "\n".join(item.get("text", "").strip() for item in result if item.get("text"))

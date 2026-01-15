@@ -20,9 +20,7 @@ class PPTXConverter:
     https://github.com/microsoft/markitdown/blob/main/packages/markitdown/src/markitdown/converters/_pptx_converter.py
     """
 
-    def __init__(
-        self, image_placeholder=r"<image>", page_separator: str = "[PAGE_SEP]"
-    ):
+    def __init__(self, image_placeholder=r"<image>", page_separator: str = "[PAGE_SEP]"):
         self.image_placeholder = image_placeholder
         self.page_separator = page_separator
 
@@ -140,9 +138,7 @@ class PPTXLoader(BaseLoader):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.image_placeholder = r"<image>"
-        self.converter = PPTXConverter(
-            image_placeholder=self.image_placeholder, page_separator=self.page_sep
-        )
+        self.converter = PPTXConverter(image_placeholder=self.image_placeholder, page_separator=self.page_sep)
 
     async def get_captions(self, images):
         tasks = [self.get_image_description(image_data=img) for img in images]

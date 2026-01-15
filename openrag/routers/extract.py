@@ -11,7 +11,8 @@ logger = get_logger()
 router = APIRouter()
 
 
-@router.get("/{extract_id}",
+@router.get(
+    "/{extract_id}",
     description="""Get a specific document chunk by its ID.
 
 **Parameters:**
@@ -56,9 +57,7 @@ async def get_extract(
                 detail=f"Extract '{extract_id}' not found.",
             )
         chunk_partition = chunk.metadata["partition"]
-        log.info(
-            f"User partitions: {user_partitions}, Chunk partition: {chunk_partition}"
-        )
+        log.info(f"User partitions: {user_partitions}, Chunk partition: {chunk_partition}")
         if chunk_partition not in user_partitions and user_partitions != ["all"]:
             log.warning("User does not have access to this extract.")
             raise HTTPException(
@@ -72,7 +71,7 @@ async def get_extract(
         log.exception("Failed to retrieve extract.", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve extract: {str(e)}",
+            detail=f"Failed to retrieve extract: {e!s}",
         )
 
     return JSONResponse(

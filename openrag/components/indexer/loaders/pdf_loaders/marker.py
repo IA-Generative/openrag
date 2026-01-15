@@ -3,7 +3,6 @@ import gc
 import re
 import time
 from pathlib import Path
-from typing import Dict, Optional, Union
 
 import ray
 import torch
@@ -68,15 +67,13 @@ class MarkerWorker:
             self.logger.warning("Resetting multiprocessing pool")
             self.pool.close()
             self.pool.terminate()  # Force kill first
-            self.pool.join()       # Then wait for cleanup
+            self.pool.join()  # Then wait for cleanup
             self.pool = None
         try:
             if mp.get_start_method(allow_none=True) != "spawn":
                 mp.set_start_method("spawn", force=True)
         except RuntimeError:
-            self.logger.warning(
-                "Process start method already set, using existing method"
-            )
+            self.logger.warning("Process start method already set, using existing method")
 
         self.logger.info(f"Initializing MarkerWorker with {self._workers} workers")
         ctx = mp.get_context("spawn")
@@ -124,19 +121,13 @@ class MarkerWorker:
         def run_with_timeout():
             async_result = self.pool.apply_async(self._process_pdf, (file_path, config))
             try:
-                result = async_result.get(
-                    timeout=self.config.loader.get("marker_timeout")
-                )
+                result = async_result.get(timeout=self.config.loader.get("marker_timeout"))
                 return result
             except MPTimeoutError:
-                self.logger.exception(
-                    "MarkerWorker child process timed out", path=file_path
-                )
+                self.logger.exception("MarkerWorker child process timed out", path=file_path)
                 raise
             except Exception:
-                self.logger.exception(
-                    "Error processing with MarkerWorker", path=file_path
-                )
+                self.logger.exception("Error processing with MarkerWorker", path=file_path)
                 raise
 
         result = await loop.run_in_executor(None, run_with_timeout)
@@ -217,8 +208,8 @@ class MarkerLoader(BaseLoader):
 
     async def aload_document(
         self,
-        file_path: Union[str, Path],
-        metadata: Optional[Dict] = None,
+        file_path: str | Path,
+        metadata: dict | None = None,
         save_markdown: bool = False,
     ) -> Document:
         from components.ray_utils import call_ray_actor_with_timeout
@@ -251,9 +242,7 @@ class MarkerLoader(BaseLoader):
                 logger.debug("Image captioning disabled.")
 
             markdown = markdown.split(self.page_sep, 1)[1]
-            markdown = re.sub(
-                r"\{(\d+)\}" + re.escape(self.page_sep), r"[PAGE_\1]", markdown
-            )
+            markdown = re.sub(r"\{(\d+)\}" + re.escape(self.page_sep), r"[PAGE_\1]", markdown)
             markdown = markdown.replace("<br>", "").strip()
 
             doc = Document(page_content=markdown, metadata=metadata)

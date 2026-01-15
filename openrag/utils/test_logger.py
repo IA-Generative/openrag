@@ -1,4 +1,3 @@
-import pytest
 from utils.logger import escape_markup
 
 
@@ -13,4 +12,3 @@ def test_escape_markup_escapes_backslashes_first():
     out = escape_markup(s)
     # backslashes doubled + angle brackets escaped
     assert out == r"path\\to\\file \<tag\>"
-

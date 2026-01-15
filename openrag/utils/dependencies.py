@@ -22,9 +22,7 @@ config = load_config()
 
 
 def get_task_state_manager():
-    return get_or_create_actor(
-        "TaskStateManager", TaskStateManager, lifetime="detached"
-    )
+    return get_or_create_actor("TaskStateManager", TaskStateManager, lifetime="detached")
 
 
 def get_serializer():
@@ -38,6 +36,7 @@ def get_marker_pool():
             return get_or_create_actor("DoclingPool", DoclingPool, lifetime="detached")
         case "MarkerLoader":
             return get_or_create_actor("MarkerPool", MarkerPool, lifetime="detached")
+
 
 def get_indexer():
     return get_or_create_actor("Indexer", Indexer, lifetime="detached")

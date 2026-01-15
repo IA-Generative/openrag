@@ -6,7 +6,7 @@ Create Date: 2025-10-27 15:00:40.022871
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
@@ -30,9 +30,9 @@ def index_exists(index_name: str, table_name: str) -> bool:
 
 # revision identifiers, used by Alembic.
 revision: str = "cd642e4502d8"
-down_revision: Union[str, Sequence[str], None] = "4add4d260575"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "4add4d260575"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -71,12 +71,8 @@ def upgrade() -> None:
             sa.Column("user_id", sa.Integer(), nullable=False),
             sa.Column("role", sa.String(), nullable=False),
             sa.Column("added_at", sa.DateTime(), nullable=False),
-            sa.CheckConstraint(
-                "role IN ('owner','editor','viewer')", name="ck_membership_role"
-            ),
-            sa.ForeignKeyConstraint(
-                ["partition_name"], ["partitions.partition"], ondelete="CASCADE"
-            ),
+            sa.CheckConstraint("role IN ('owner','editor','viewer')", name="ck_membership_role"),
+            sa.ForeignKeyConstraint(["partition_name"], ["partitions.partition"], ondelete="CASCADE"),
             sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("partition_name", "user_id", name="uix_partition_user"),
@@ -84,18 +80,14 @@ def upgrade() -> None:
 
     # Create indexes for partition_memberships table if they don't exist
     if table_exists("partition_memberships"):
-        if not index_exists(
-            "ix_partition_memberships_partition_name", "partition_memberships"
-        ):
+        if not index_exists("ix_partition_memberships_partition_name", "partition_memberships"):
             op.create_index(
                 op.f("ix_partition_memberships_partition_name"),
                 "partition_memberships",
                 ["partition_name"],
                 unique=False,
             )
-        if not index_exists(
-            "ix_partition_memberships_user_id", "partition_memberships"
-        ):
+        if not index_exists("ix_partition_memberships_user_id", "partition_memberships"):
             op.create_index(
                 op.f("ix_partition_memberships_user_id"),
                 "partition_memberships",
@@ -122,9 +114,7 @@ def downgrade() -> None:
                 op.f("ix_partition_memberships_user_id"),
                 table_name="partition_memberships",
             )
-        if index_exists(
-            "ix_partition_memberships_partition_name", "partition_memberships"
-        ):
+        if index_exists("ix_partition_memberships_partition_name", "partition_memberships"):
             op.drop_index(
                 op.f("ix_partition_memberships_partition_name"),
                 table_name="partition_memberships",

@@ -42,22 +42,15 @@ class AudioTranscriber:
         logger.info(f"Detected {len(chunks)} chunks")
 
         # Detect language
-        language = await self._detect_language(
-            sound[chunks[0][0] : chunks[0][1]], wav_path
-        )
+        language = await self._detect_language(sound[chunks[0][0] : chunks[0][1]], wav_path)
         logger.info(f"Detected language: {language}")
 
         # Create tasks for each chunk
-        tasks = [
-            self._process_chunk(i, sound[start:end], wav_path, language)
-            for i, (start, end) in enumerate(chunks)
-        ]
+        tasks = [self._process_chunk(i, sound[start:end], wav_path, language) for i, (start, end) in enumerate(chunks)]
         texts = await tqdm.gather(*tasks, desc="Transcribing audio chunks")
         return self._stitch_transcriptions(texts)
 
-    async def _process_chunk(
-        self, index: int, segment: AudioSegment, wav_path: Path, language: str = None
-    ) -> str:
+    async def _process_chunk(self, index: int, segment: AudioSegment, wav_path: Path, language: str = None) -> str:
         """Export a segment, transcribe it, and clean up."""
         async with get_audio_semaphore():
             tmp_path = wav_path.parent / f"{wav_path.stem}_chunk_{index:03d}.wav"
@@ -66,9 +59,7 @@ class AudioTranscriber:
                 result = await self._transcribe_chunk(tmp_path, language)
                 return result
             except Exception as e:
-                logger.exception(
-                    f"Error transcribing chunk {tmp_path.name}", error=str(e)
-                )
+                logger.exception(f"Error transcribing chunk {tmp_path.name}", error=str(e))
                 return ""
             finally:
                 tmp_path.unlink(missing_ok=True)
@@ -100,9 +91,7 @@ class AudioTranscriber:
         downsampled_sound = sound.set_channels(1).set_frame_rate(16000)
 
         # Reduce analysis resolution
-        silences = await asyncio.to_thread(
-            self._detect_silences_librosa, downsampled_sound
-        )
+        silences = await asyncio.to_thread(self._detect_silences_librosa, downsampled_sound)
         chunks = []
         start = 0
         while start < total_ms:
@@ -124,9 +113,7 @@ class AudioTranscriber:
         """Concatenate with spacing."""
         return "\n".join(t.strip() for t in texts if t.strip())
 
-    async def _detect_language(
-        self, sound: AudioSegment, wav_path, fallback_language="en"
-    ) -> str:
+    async def _detect_language(self, sound: AudioSegment, wav_path, fallback_language="en") -> str:
         """Detect the language of the audio segment."""
         tmp_path = wav_path.parent / f"{wav_path.stem}_langdetect.wav"
         await asyncio.to_thread(sound.export, tmp_path, format="wav")
@@ -171,9 +158,7 @@ class AudioTranscriber:
         hop_length = frame_length // 4
 
         # Calculate RMS energy
-        rms = librosa.feature.rms(
-            y=samples, frame_length=frame_length, hop_length=hop_length
-        )[0]
+        rms = librosa.feature.rms(y=samples, frame_length=frame_length, hop_length=hop_length)[0]
 
         # Convert threshold from dB to amplitude
         threshold = 10 ** (self.silence_thresh_db / 20)
@@ -206,14 +191,11 @@ class VideoAudioLoader(BaseLoader):
         super().__init__(**kwargs)
         self.transcriber = AudioTranscriber(config=self.config)
 
-    async def aload_document(
-        self, file_path, metadata: dict = None, save_markdown=False
-    ):
+    async def aload_document(self, file_path, metadata: dict = None, save_markdown=False):
         path = Path(file_path)
         if path.suffix not in MEDIA_FORMATS:
             logger.warning(
-                f"This audio/video file ({path.suffix}) is not supported. "
-                f"Supported formats: {MEDIA_FORMATS}"
+                f"This audio/video file ({path.suffix}) is not supported. Supported formats: {MEDIA_FORMATS}"
             )
             return None
 
@@ -222,9 +204,7 @@ class VideoAudioLoader(BaseLoader):
             audio_path_wav = path
         else:
             # Run blocking operations in a thread
-            sound = await asyncio.to_thread(
-                AudioSegment.from_file, file=path, format=path.suffix[1:]
-            )
+            sound = await asyncio.to_thread(AudioSegment.from_file, file=path, format=path.suffix[1:])
             audio_path_wav = path.with_suffix(".wav")
             await asyncio.to_thread(sound.export, audio_path_wav, format="wav")
 

@@ -1,5 +1,6 @@
 import asyncio
 import threading
+from typing import ClassVar
 
 import ray
 from config import load_config
@@ -14,7 +15,7 @@ logger = get_logger()
 
 
 class SingletonMeta(type):
-    _instances = {}
+    _instances: ClassVar[dict] = {}
     _lock = threading.Lock()  # Ensures thread safety
 
     def __call__(cls, *args, **kwargs):
@@ -83,7 +84,7 @@ def format_context(docs: list[Document], max_context_tokens: int = 4096) -> str:
     llm = ChatOpenAI(**config.llm)
     _length_function = llm.get_num_tokens
 
-    docs_with_tokens = list(map(lambda d: (_length_function(d.page_content), d), docs))
+    docs_with_tokens = list(map(lambda d: (_length_function(d.page_content), d), docs))  # noqa: C417
 
     reduced_docs = []
 
@@ -95,9 +96,7 @@ def format_context(docs: list[Document], max_context_tokens: int = 4096) -> str:
         total_tokens += n_tokens
 
     sep = "-" * 10 + "\n\n"
-    logger.debug(
-        "Context formatted", total_tokens=total_tokens, doc_count=len(reduced_docs)
-    )
+    logger.debug("Context formatted", total_tokens=total_tokens, doc_count=len(reduced_docs))
     return f"{sep}".join(reduced_docs)
 
 

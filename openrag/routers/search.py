@@ -1,5 +1,3 @@
-from typing import List, Optional
-
 from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import JSONResponse
 from utils.dependencies import get_indexer
@@ -16,7 +14,8 @@ logger = get_logger()
 router = APIRouter()
 
 
-@router.get("",
+@router.get(
+    "",
     description="""Perform semantic search across multiple partitions.
 
 **Query Parameters:**
@@ -46,9 +45,7 @@ Find relevant information across your entire document collection.
 )
 async def search_multiple_partitions(
     request: Request,
-    partitions: Optional[List[str]] = Query(
-        default=["all"], description="List of partitions to search"
-    ),
+    partitions: list[str] | None = Query(default=["all"], description="List of partitions to search"),
     text: str = Query(..., description="Text to search semantically"),
     top_k: int = Query(5, description="Number of top results to return"),
     indexer=Depends(get_indexer),
@@ -61,9 +58,7 @@ async def search_multiple_partitions(
 
     log = logger.bind(partitions=partitions, query=text, top_k=top_k)
 
-    results = await indexer.asearch.remote(
-        query=text, top_k=top_k, partition=partitions
-    )
+    results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partitions)
     log.info(
         "Semantic search on multiple partitions completed.",
         result_count=len(results),
@@ -78,12 +73,11 @@ async def search_multiple_partitions(
         for doc in results
     ]
 
-    return JSONResponse(
-        status_code=status.HTTP_200_OK, content={"documents": documents}
-    )
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"documents": documents})
 
 
-@router.get("/partition/{partition}",
+@router.get(
+    "/partition/{partition}",
     description="""Perform semantic search within a single partition.
 
 **Parameters:**
@@ -116,9 +110,7 @@ async def search_one_partition(
 ):
     log = logger.bind(partition=partition, query=text, top_k=top_k)
     results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partition)
-    log.info(
-        "Semantic search on single partition completed.", result_count=len(results)
-    )
+    log.info("Semantic search on single partition completed.", result_count=len(results))
     documents = [
         {
             "link": str(request.url_for("get_extract", extract_id=doc.metadata["_id"])),
@@ -128,12 +120,11 @@ async def search_one_partition(
         for doc in results
     ]
 
-    return JSONResponse(
-        status_code=status.HTTP_200_OK, content={"documents": documents}
-    )
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"documents": documents})
 
 
-@router.get("/partition/{partition}/file/{file_id}",
+@router.get(
+    "/partition/{partition}/file/{file_id}",
     description="""Perform semantic search within a specific file.
 
 **Parameters:**
@@ -167,9 +158,7 @@ async def search_file(
     partition_viewer=Depends(require_partition_viewer),
 ):
     log = logger.bind(partition=partition, file_id=file_id, query=text, top_k=top_k)
-    results = await indexer.asearch.remote(
-        query=text, top_k=top_k, partition=partition, filter={"file_id": file_id}
-    )
+    results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partition, filter={"file_id": file_id})
     log.info("Semantic search on specific file completed.", result_count=len(results))
 
     documents = [
@@ -181,6 +170,4 @@ async def search_file(
         for doc in results
     ]
 
-    return JSONResponse(
-        status_code=status.HTTP_200_OK, content={"documents": documents}
-    )
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"documents": documents})
