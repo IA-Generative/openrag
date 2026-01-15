@@ -11,7 +11,8 @@ logger = get_logger()
 router = APIRouter()
 
 
-@router.get("/{extract_id}",
+@router.get(
+    "/{extract_id}",
     description="""Get a specific document chunk by its ID.
 
 **Parameters:**
@@ -72,7 +73,7 @@ async def get_extract(
         log.exception("Failed to retrieve extract.", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve extract: {str(e)}",
+            detail=f"Failed to retrieve extract: {e!s}",
         )
 
     return JSONResponse(

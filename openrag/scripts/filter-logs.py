@@ -2,8 +2,7 @@
 import argparse
 import json
 import re
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime, timezone
 
 # Expected format at start of record["text"]:
 # "2025-12-11 09:00:42.538 | INFO ..."
@@ -11,7 +10,7 @@ TEXT_TS_RE = re.compile(
     r"^(?P<date>\d{4}-\d{2}-\d{2})\s+(?P<time>\d{2}:\d{2}:\d{2})(?:\.(?P<ms>\d{1,6}))?"
 )
 
-def parse_text_timestamp(text: str, assume_tz: timezone) -> Optional[datetime]:
+def parse_text_timestamp(text: str, assume_tz: timezone) -> datetime | None:
     """
     Parse 'YYYY-MM-DD HH:MM:SS(.ffffff)?' at the beginning of text.
     Returns aware datetime in assume_tz, or None if not found/parseable.
@@ -69,12 +68,12 @@ def main():
 
     if args.tz.upper() == "LOCAL":
         # Local timezone aware (Python 3.9+ uses system tzinfo via astimezone)
-        assume_tz = datetime.now().astimezone().tzinfo or timezone.utc
+        assume_tz = datetime.now().astimezone().tzinfo or UTC
     else:
         # Only support UTC in a simple way without external deps
         if args.tz.upper() != "UTC":
             raise SystemExit("Only --tz UTC or --tz LOCAL supported (to avoid extra dependencies).")
-        assume_tz = timezone.utc
+        assume_tz = UTC
 
     start_dt = parse_cli_datetime(args.start, assume_tz)
     end_dt = parse_cli_datetime(args.end, assume_tz)
@@ -85,7 +84,7 @@ def main():
     out_count = 0
     invalid_count = 0
 
-    with open(args.input, "r", encoding="utf-8", errors="replace") as fin, \
+    with open(args.input, encoding="utf-8", errors="replace") as fin, \
          open(args.output, "w", encoding="utf-8") as fout:
         for line in fin:
             in_count += 1

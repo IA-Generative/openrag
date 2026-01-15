@@ -1,5 +1,4 @@
 """Partition management API tests."""
-import pytest
 
 
 class TestPartitionCRUD:

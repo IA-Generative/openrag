@@ -47,6 +47,7 @@ dependencies = [
     "langdetect>=1.0.9",
     "alembic>=1.17.0",
     "fast-langdetect>=1.0.0",
+    "ruff>=0.14.1",
     "librosa>=0.11.0",
 ]
 
@@ -66,3 +67,44 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["openrag*"]
+
+
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [
+    ".git",
+    ".venv",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".vscode",
+    "node_modules",
+    "vdb",
+    "ray_mount",
+    "model_weights",
+    "logs",
+    ".astro",
+    "openrag.egg-info",
+    "extern"
+]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "PIE",    # flake8-pie
+    # "RUF",    # Ruff-specific rules
+]
+ignore = [
+    "E501",   # Line too long (already handled by line-length)
+    "F403",
+    "F405",    # Allow star imports - used intentionally for convenience    
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["openrag"]

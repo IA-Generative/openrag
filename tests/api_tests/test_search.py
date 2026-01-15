@@ -1,4 +1,5 @@
 """Search API tests."""
+
 import time
 
 import pytest
@@ -16,7 +17,7 @@ class TestSemanticSearch:
             response = api_client.post(
                 f"/indexer/partition/{created_partition}/file/{file_id}",
                 files={"file": ("test.txt", f, "text/plain")},
-                data={"metadata": "{}"}
+                data={"metadata": "{}"},
             )
 
         data = response.json()
@@ -48,7 +49,7 @@ class TestSemanticSearch:
         """Test searching within a partition."""
         response = api_client.get(
             f"/search/partition/{indexed_partition}",
-            params={"text": "artificial intelligence", "top_k": 5}
+            params={"text": "artificial intelligence", "top_k": 5},
         )
         assert response.status_code == 200
         data = response.json()
@@ -57,8 +58,7 @@ class TestSemanticSearch:
     def test_search_multiple_partitions(self, api_client, indexed_partition):
         """Test searching across partitions."""
         response = api_client.get(
-            "/search",
-            params={"text": "machine learning", "top_k": 5}
+            "/search", params={"text": "machine learning", "top_k": 5}
         )
         assert response.status_code == 200
         data = response.json()
@@ -68,7 +68,7 @@ class TestSemanticSearch:
         """Test search with different top_k values."""
         response = api_client.get(
             f"/search/partition/{indexed_partition}",
-            params={"text": "deep learning", "top_k": 10}
+            params={"text": "deep learning", "top_k": 10},
         )
         assert response.status_code == 200
         data = response.json()
@@ -78,8 +78,7 @@ class TestSemanticSearch:
     def test_search_empty_query(self, api_client, indexed_partition):
         """Test search with empty query."""
         response = api_client.get(
-            f"/search/partition/{indexed_partition}",
-            params={"text": "", "top_k": 5}
+            f"/search/partition/{indexed_partition}", params={"text": "", "top_k": 5}
         )
         # Should return error or empty results
         assert response.status_code in [200, 400, 422]
@@ -88,7 +87,7 @@ class TestSemanticSearch:
         """Test searching non-existent partition."""
         response = api_client.get(
             "/search/partition/nonexistent-partition-xyz",
-            params={"text": "test", "top_k": 5}
+            params={"text": "test", "top_k": 5},
         )
         # May return empty results or error
         assert response.status_code in [200, 404, 500]

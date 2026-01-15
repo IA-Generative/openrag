@@ -30,7 +30,9 @@ actor_creation_map = {
 }
 
 
-@router.get("/", name="list_ray_actors",
+@router.get(
+    "/",
+    name="list_ray_actors",
     description="""List all Ray actors and their current status.
 
 **Permissions:**
@@ -69,7 +71,9 @@ async def list_ray_actors():
         )
 
 
-@router.post("/{actor_name}/restart", name="restart_ray_actor",
+@router.post(
+    "/{actor_name}/restart",
+    name="restart_ray_actor",
     description="""Restart a specific Ray actor.
 
 **Parameters:**
@@ -118,7 +122,7 @@ async def restart_actor(
         logger.exception("Failed to kill actor", actor=actor_name)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to kill actor {actor_name}: {str(e)}",
+            detail=f"Failed to kill actor {actor_name}: {e!s}",
         )
 
     try:
@@ -138,5 +142,5 @@ async def restart_actor(
         logger.exception("Failed to restart actor", actor=actor_name)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to restart actor {actor_name}: {str(e)}",
+            detail=f"Failed to restart actor {actor_name}: {e!s}",
         )

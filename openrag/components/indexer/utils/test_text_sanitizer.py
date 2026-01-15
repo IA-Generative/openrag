@@ -124,10 +124,7 @@ class TestCleanMarkdownTableSpacing:
         table = "| Header 1    | Header 2     |\n|-------------|-------------|\n|  Cell 1   |   Cell 2    |"
         result = clean_markdown_table_spacing(table)
 
-        assert (
-            result
-            == "| Header 1 | Header 2 |\n| ------------- | ------------- |\n| Cell 1 | Cell 2 |"
-        )
+        assert result == "| Header 1 | Header 2 |\n| ------------- | ------------- |\n| Cell 1 | Cell 2 |"
 
     def test_inconsistent_spacing(self):
         """Test normalizing inconsistent spacing across rows."""
@@ -141,19 +138,14 @@ class TestCleanMarkdownTableSpacing:
         table = "| Col1 | Col2 | Col3 |\n|------|------|------|\n| Data |      | More |\n|      | Data |      |"
         result = clean_markdown_table_spacing(table)
 
-        assert (
-            result
-            == "| Col1 | Col2 | Col3 |\n| ------ | ------ | ------ |\n| Data |  | More |\n|  | Data |  |"
-        )
+        assert result == "| Col1 | Col2 | Col3 |\n| ------ | ------ | ------ |\n| Data |  | More |\n|  | Data |  |"
 
     def test_multiline_spacing(self):
         """Test table with varying amounts of whitespace."""
         table = "|  A   |   B    |    C     |\n|------|--------|----------|\n|1|2|3|"
         result = clean_markdown_table_spacing(table)
 
-        assert (
-            result == "| A | B | C |\n| ------ | -------- | ---------- |\n| 1 | 2 | 3 |"
-        )
+        assert result == "| A | B | C |\n| ------ | -------- | ---------- |\n| 1 | 2 | 3 |"
 
 
 class TestSanitizeExtractedText:
@@ -192,7 +184,7 @@ class TestSanitizeExtractedText:
         Some \x00control\x01 characters\x02 too.
         
         And zero-width\u200bspaces.
-        """
+        """  # noqa: W293
 
         result = sanitize_extracted_text(text)
 

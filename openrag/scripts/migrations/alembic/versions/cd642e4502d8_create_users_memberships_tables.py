@@ -6,7 +6,7 @@ Create Date: 2025-10-27 15:00:40.022871
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
@@ -30,9 +30,9 @@ def index_exists(index_name: str, table_name: str) -> bool:
 
 # revision identifiers, used by Alembic.
 revision: str = "cd642e4502d8"
-down_revision: Union[str, Sequence[str], None] = "4add4d260575"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "4add4d260575"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

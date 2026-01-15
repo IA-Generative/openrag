@@ -1,5 +1,6 @@
 import re
-from typing import Callable, Literal, Optional
+from collections.abc import Callable
+from typing import Literal
 
 from components.indexer.utils.text_sanitizer import clean_markdown_table_spacing
 
@@ -23,7 +24,7 @@ class MDElement:
         self,
         type: Literal["text", "table", "image"],
         content: str,
-        page_number: Optional[int] = None,
+        page_number: int | None = None,
     ):
         self.type = type  # 'text', 'table', 'image'
         self.content = content
@@ -193,7 +194,7 @@ def parse_markdown_table(markdown_table):
 def chunk_table(
     table_element: MDElement,
     chunk_size: int = 512,
-    length_function: Optional[Callable[[str], int]] = None,
+    length_function: Callable[[str], int] | None = None,
 ) -> list[MDElement]:
     txt = clean_markdown_table_spacing(table_element.content)
     header_lines, groups = parse_markdown_table(txt)
