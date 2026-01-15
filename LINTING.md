@@ -137,7 +137,7 @@ uv sync --group lint
 
 ### Auto-fix doesn't resolve all issues
 Some issues require manual fixes. Review the error messages and fix them manually, then commit again.
-Sometimes, you will have to ignore a particular check if deemed unecessary
+Sometimes, you will have to ignore a particular check if deemed unnecessary
 
 ```python
 # Example: C417 rule suggest that map here is unnecessary 
