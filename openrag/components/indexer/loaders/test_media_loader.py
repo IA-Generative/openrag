@@ -249,9 +249,7 @@ class TestAudioChunking:
     def test_long_audio_multiple_chunks(self):
         """Test that long audio is split into multiple chunks."""
         # Create 10 seconds of audio with silences
-        segment = Sine(440).to_audio_segment(duration=2000) + AudioSegment.silent(
-            duration=500
-        )
+        segment = Sine(440).to_audio_segment(duration=2000) + AudioSegment.silent(duration=500)
         audio = segment * 3  # Repeat pattern
 
         chunks = self.get_audio_chunks(

@@ -1,9 +1,8 @@
-import os
-from pathlib import Path
-
 import httpx
-from dotenv import load_dotenv
+import os
 from loguru import logger
+from pathlib import Path
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -13,7 +12,6 @@ base_url = f"http://{app_url}:{num_port}"  # the base url of your running app fo
 
 dir_name = "./pdf_files"  # Replace with your directory path
 dir_path = Path(dir_name).resolve()
-
 
 def __check_api(base_url):
     try:

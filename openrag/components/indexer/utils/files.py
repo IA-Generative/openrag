@@ -2,6 +2,7 @@ import re
 import secrets
 import time
 from pathlib import Path
+from typing import Dict, Optional
 
 import aiofiles
 import consts
@@ -70,11 +71,10 @@ async def save_file_to_disk(
     return file_path
 
 
-async def serialize_file(task_id: str, path: str, metadata: dict | None = None):
+async def serialize_file(task_id: str, path: str, metadata: Optional[Dict] = {}):
     import ray
-    from components.ray_utils import call_ray_actor_with_timeout
 
-    metadata = metadata or {}
+    from components.ray_utils import call_ray_actor_with_timeout
 
     serializer = ray.get_actor("DocSerializer", namespace="openrag")
     future = serializer.serialize_document.remote(task_id, path, metadata=metadata)

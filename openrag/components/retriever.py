@@ -1,6 +1,5 @@
 # Import necessary modules and classes
 from abc import ABC, abstractmethod
-from typing import ClassVar
 
 from components.prompts import HYDE_PROMPT, MULTI_QUERY_PROMPT
 from langchain_core.documents.base import Document
@@ -33,7 +32,9 @@ class ABCRetriever(ABC):
 
 # Define the Simple Retriever class
 class BaseRetriever(ABCRetriever):
-    def __init__(self, top_k=6, similarity_threshold=0.95, with_surrounding_chunks=True, **kwargs):
+    def __init__(
+        self, top_k=6, similarity_threshold=0.95, with_surrounding_chunks=True, **kwargs
+    ):
         super().__init__(top_k, similarity_threshold, **kwargs)
         self.top_k = top_k
         self.similarity_threshold = similarity_threshold
@@ -75,8 +76,12 @@ class MultiQueryRetriever(BaseRetriever):
         if llm is None:
             raise ValueError("llm must be provided for MultiQueryRetriever")
 
-        prompt: ChatPromptTemplate = ChatPromptTemplate.from_template(MULTI_QUERY_PROMPT)
-        self.generate_queries = prompt | llm | StrOutputParser() | (lambda x: x.split("[SEP]"))
+        prompt: ChatPromptTemplate = ChatPromptTemplate.from_template(
+            MULTI_QUERY_PROMPT
+        )
+        self.generate_queries = (
+            prompt | llm | StrOutputParser() | (lambda x: x.split("[SEP]"))
+        )
 
     async def retrieve(self, partition: list[str], query: str) -> list[Document]:
         db = get_vectordb()
@@ -138,7 +143,7 @@ class HyDeRetriever(BaseRetriever):
 
 
 class RetrieverFactory:
-    RETRIEVERS: ClassVar[dict] = {
+    RETRIEVERS = {
         "single": SingleRetriever,
         "multiQuery": MultiQueryRetriever,
         "hyde": HyDeRetriever,

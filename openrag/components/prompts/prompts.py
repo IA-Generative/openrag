@@ -22,7 +22,7 @@ def load_prompt(
     if not file_path.exists():
         raise FileNotFoundError(f"Prompt file not found: `{file_path}`")
 
-    with open(file_path) as f:
+    with open(file_path, mode="r") as f:
         sys_msg = f.read()
         return sys_msg
 

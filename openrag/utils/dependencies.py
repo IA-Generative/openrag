@@ -39,7 +39,6 @@ def get_marker_pool():
         case "MarkerLoader":
             return get_or_create_actor("MarkerPool", MarkerPool, lifetime="detached")
 
-
 def get_indexer():
     return get_or_create_actor("Indexer", Indexer, lifetime="detached")
 

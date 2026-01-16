@@ -1,4 +1,5 @@
 """User management API tests."""
+import pytest
 
 
 class TestUserManagement:

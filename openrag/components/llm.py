@@ -38,7 +38,9 @@ class LLM:
                 yield data
             except httpx.HTTPStatusError as e:
                 error_detail = e.response.text
-                raise ValueError(f"LLM API error ({e.response.status_code}): {error_detail}")
+                raise ValueError(
+                    f"LLM API error ({e.response.status_code}): {error_detail}"
+                )
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON in API response: {str(e)}")
 
@@ -61,7 +63,9 @@ class LLM:
                         if response.status_code >= 400:
                             await response.aread()
                             error_detail = response.text
-                            raise ValueError(f"LLM API error ({response.status_code}): {error_detail}")
+                            raise ValueError(
+                                f"LLM API error ({response.status_code}): {error_detail}"
+                            )
                         async for line in response.aiter_lines():
                             yield line
                 except ValueError:
@@ -82,6 +86,8 @@ class LLM:
                     yield data
                 except httpx.HTTPStatusError as e:
                     error_detail = e.response.text
-                    raise ValueError(f"LLM API error ({e.response.status_code}): {error_detail}")
+                    raise ValueError(
+                        f"LLM API error ({e.response.status_code}): {error_detail}"
+                    )
                 except json.JSONDecodeError as e:
                     raise ValueError(f"Invalid JSON in API response: {str(e)}")

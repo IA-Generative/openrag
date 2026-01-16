@@ -25,8 +25,7 @@ def _format_pool_info(worker_info: dict[str, int]) -> dict[str, int]:
     }
 
 
-@router.get(
-    "/info",
+@router.get("/info",
     description="""Get queue and worker pool information.
 
 **Permissions:**
@@ -72,9 +71,7 @@ async def get_queue_info(
     return {"workers": workers_block, "tasks": task_summary}
 
 
-@router.get(
-    "/tasks",
-    name="list_tasks",
+@router.get("/tasks", name="list_tasks",
     description="""List indexing tasks with optional filtering.
 
 **Query Parameters:**

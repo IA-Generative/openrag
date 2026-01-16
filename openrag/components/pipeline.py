@@ -204,7 +204,7 @@ class RagPipeline:
             llm_output = self.llm_client.completions(request=payload)
             return llm_output, docs
         except Exception as e:
-            logger.error(f"Error during chat completion: {e!s}")
+            logger.error(f"Error during chat completion: {str(e)}")
             raise e
 
     async def chat_completion(self, partition: list[str] | None, payload: dict):
@@ -218,5 +218,5 @@ class RagPipeline:
             llm_output = self.llm_client.chat_completion(request=payload)
             return llm_output, docs
         except Exception as e:
-            logger.error(f"Error during chat completion: {e!s}")
+            logger.error(f"Error during chat completion: {str(e)}")
             raise e

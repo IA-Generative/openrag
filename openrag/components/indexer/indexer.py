@@ -4,7 +4,7 @@ import os
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional, Union
 
 import ray
 import torch
@@ -50,15 +50,17 @@ class Indexer:
         self.logger.info("Indexer actor initialized.")
 
     @ray.method(concurrency_group="chunk")
-    async def chunk(self, doc: Document, file_path: str, task_id: str = None) -> list[Document]:
+    async def chunk(
+        self, doc: Document, file_path: str, task_id: str = None
+    ) -> List[Document]:
         chunks = await self.chunker.split_document(doc, task_id)
         return chunks
 
     @ray.method(concurrency_group="serialize")
     async def serialize_file(
         self,
-        path: str,
-        metadata: dict = {},
+        path: Union[str, List[str]],
+        metadata: Optional[Dict] = {},
         task_id: str = None,
     ):
         # Serialize
@@ -67,21 +69,21 @@ class Indexer:
 
     async def add_file(
         self,
-        path: str,
-        metadata: dict | None = None,
-        partition: str | None = None,
-        user: dict | None = None,
+        path: Union[str, List[str]],
+        metadata: Optional[Dict] = {},
+        partition: Optional[str] = None,
+        user: Optional[Dict] = None,
     ):
         task_state_manager = ray.get_actor("TaskStateManager", namespace="openrag")
         task_id = ray.get_runtime_context().get_task_id()
-        metadata = metadata or {}
-
         file_id = metadata.get("file_id", None)
         log = self.logger.bind(file_id=file_id, partition=partition, task_id=task_id)
         log.info("Queued file for indexing.")
         try:
             # Set task details
-            user_metadata = {k: v for k, v in metadata.items() if k not in {"file_id", "source"}}
+            user_metadata = {
+                k: v for k, v in metadata.items() if k not in {"file_id", "source"}
+            }
 
             await task_state_manager.set_details.remote(
                 task_id,
@@ -96,14 +98,18 @@ class Indexer:
             metadata = {**metadata, "partition": partition}
 
             # Serialize
-            doc = await self.serialize_file(path=path, metadata=metadata, task_id=task_id)
+            doc = await self.serialize_file(
+                path=path, metadata=metadata, task_id=task_id
+            )
 
             # Chunk
             if doc:
                 await task_state_manager.set_state.remote(task_id, "CHUNKING")
                 chunks = await self.handle.chunk.remote(doc, str(path), task_id)
             else:
-                log.warning("No document returned from serialization; skipping indexing.")
+                log.warning(
+                    "No document returned from serialization; skipping indexing."
+                )
                 chunks = []
 
             if self.enable_insertion:
@@ -112,9 +118,13 @@ class Indexer:
                     await self.handle.insert_documents.remote(chunks, user=user)
                     log.info(f"Document {path} indexed successfully")
                 else:
-                    log.debug("No chunks to insert !!! Potentially the uploaded file is empty")
+                    log.debug(
+                        "No chunks to insert !!! Potentially the uploaded file is empty"
+                    )
             else:
-                log.info(f"Vectordb insertion skipped (enable_insertion={self.enable_insertion}).")
+                log.info(
+                    f"Vectordb insertion skipped (enable_insertion={self.enable_insertion})."
+                )
 
             # Mark task as completed
             await task_state_manager.set_state.remote(task_id, "COMPLETED")
@@ -155,7 +165,9 @@ class Indexer:
 
         try:
             await vectordb.delete_file.remote(file_id, partition)
-            log.info("Deleted file from partition.", file_id=file_id, partition=partition)
+            log.info(
+                "Deleted file from partition.", file_id=file_id, partition=partition
+            )
 
         except Exception as e:
             log.exception("Error in delete_file", error=str(e))
@@ -165,14 +177,16 @@ class Indexer:
     async def update_file_metadata(
         self,
         file_id: str,
-        metadata: dict,
+        metadata: Dict,
         partition: str,
-        user: dict | None = None,
+        user: Optional[Dict] = None,
     ):
         log = self.logger.bind(file_id=file_id, partition=partition)
         vectordb = ray.get_actor("Vectordb", namespace="openrag")
         if not self.enable_insertion:
-            log.error("Vector database is not enabled, but update_file_metadata was called.")
+            log.error(
+                "Vector database is not enabled, but update_file_metadata was called."
+            )
             return
 
         try:
@@ -192,14 +206,16 @@ class Indexer:
     async def copy_file(
         self,
         file_id: str,
-        metadata: dict,
+        metadata: Dict,
         partition: str,
-        user: dict | None = None,
+        user: Optional[Dict] = None,
     ):
         log = self.logger.bind(file_id=file_id, partition=partition)
         vectordb = ray.get_actor("Vectordb", namespace="openrag")
         if not self.enable_insertion:
-            log.error("Vector database is not enabled, but update_file_metadata was called.")
+            log.error(
+                "Vector database is not enabled, but update_file_metadata was called."
+            )
             return
 
         try:
@@ -226,11 +242,10 @@ class Indexer:
         query: str,
         top_k: int = 5,
         similarity_threshold: float = 0.80,
-        partition: str | list[str] | None = None,
-        filter: dict | None = None,
-    ) -> list[Document]:
+        partition: Optional[Union[str, List[str]]] = None,
+        filter: Optional[Dict] = {},
+    ) -> List[Document]:
         partition_list = self._check_partition_list(partition)
-        filter = filter or {}
         vectordb = ray.get_actor("Vectordb", namespace="openrag")
         return await vectordb.async_search.remote(
             query=query,
@@ -240,7 +255,7 @@ class Indexer:
             filter=filter,
         )
 
-    def _check_partition_str(self, partition: str | None) -> str:
+    def _check_partition_str(self, partition: Optional[str]) -> str:
         if partition is None:
             self.logger.warning("partition not provided; using default.")
             return self.default_partition
@@ -248,7 +263,9 @@ class Indexer:
             raise ValueError("Partition must be a string.")
         return partition
 
-    def _check_partition_list(self, partition: str | list[str] | None) -> list[str]:
+    def _check_partition_list(
+        self, partition: Optional[Union[str, List[str]]]
+    ) -> List[str]:
         if partition is None:
             self.logger.warning("partition not provided; using default.")
             return [self.default_partition]
@@ -261,17 +278,17 @@ class Indexer:
 
 @dataclass
 class TaskInfo:
-    state: str | None = None
-    error: str | None = None
-    details: dict[str, Any] = field(default_factory=dict)
-    object_ref: ray.ObjectRef | None = None
+    state: Optional[str] = None
+    error: Optional[str] = None
+    details: Dict[str, Any] = field(default_factory=dict)
+    object_ref: Optional[ray.ObjectRef] = None
 
 
 @ray.remote(concurrency_groups={"set": 1000, "get": 1000, "queue_info": 1000})
 class TaskStateManager:
     def __init__(self):
-        self.tasks: dict[str, TaskInfo] = {}
-        self.user_index: dict[int, set[str]] = {}
+        self.tasks: Dict[str, TaskInfo] = {}
+        self.user_index: Dict[int, set[str]] = {}
         self.lock = asyncio.Lock()
 
     async def _ensure_task(self, task_id: str) -> TaskInfo:
@@ -319,36 +336,36 @@ class TaskStateManager:
             info.object_ref = object_ref
 
     @ray.method(concurrency_group="get")
-    async def get_state(self, task_id: str) -> str | None:
+    async def get_state(self, task_id: str) -> Optional[str]:
         async with self.lock:
             info = self.tasks.get(task_id)
             return info.state if info else None
 
     @ray.method(concurrency_group="get")
-    async def get_error(self, task_id: str) -> str | None:
+    async def get_error(self, task_id: str) -> Optional[str]:
         async with self.lock:
             info = self.tasks.get(task_id)
             return info.error if info else None
 
     @ray.method(concurrency_group="get")
-    async def get_details(self, task_id: str) -> dict | None:
+    async def get_details(self, task_id: str) -> Optional[dict]:
         async with self.lock:
             info = self.tasks.get(task_id)
             return info.details if info else None
 
     @ray.method(concurrency_group="get")
-    async def get_object_ref(self, task_id: str) -> dict | None:
+    async def get_object_ref(self, task_id: str) -> Optional[dict]:
         async with self.lock:
             info = self.tasks.get(task_id)
             return info.object_ref if info else None
 
     @ray.method(concurrency_group="queue_info")
-    async def get_all_states(self) -> dict[str, str]:
+    async def get_all_states(self) -> Dict[str, str]:
         async with self.lock:
             return {tid: info.state for tid, info in self.tasks.items()}
 
     @ray.method(concurrency_group="queue_info")
-    async def get_all_info(self) -> dict[str, dict]:
+    async def get_all_info(self) -> Dict[str, dict]:
         async with self.lock:
             return {
                 task_id: {
@@ -360,7 +377,7 @@ class TaskStateManager:
             }
 
     @ray.method(concurrency_group="queue_info")
-    async def get_all_user_info(self, user_id: int) -> dict[str, dict]:
+    async def get_all_user_info(self, user_id: int) -> Dict[str, dict]:
         async with self.lock:
             task_ids = self.user_index.get(user_id, set())
             return {
@@ -374,7 +391,7 @@ class TaskStateManager:
             }
 
     @ray.method(concurrency_group="queue_info")
-    async def get_pool_info(self) -> dict[str, int]:
+    async def get_pool_info(self) -> Dict[str, int]:
         return {
             "pool_size": POOL_SIZE,
             "max_tasks_per_worker": MAX_TASKS_PER_WORKER,

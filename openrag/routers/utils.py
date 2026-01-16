@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import consts
 from config import load_config
@@ -197,7 +197,7 @@ async def validate_file_id(file_id: str):
     return file_id
 
 
-async def validate_metadata(metadata: Any | None = Form(None)):
+async def validate_metadata(metadata: Optional[Any] = Form(None)):
     try:
         processed_metadata = metadata or "{}"
         processed_metadata = json.loads(processed_metadata)

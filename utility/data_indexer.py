@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
+import httpx
 import argparse
 from pathlib import Path
-
-import httpx
 from loguru import logger
+
 
 parser = argparse.ArgumentParser(description="Index documents from local file system")
 parser.add_argument(

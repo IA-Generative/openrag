@@ -1,4 +1,5 @@
 """OpenAI-compatible API tests."""
+import pytest
 
 
 class TestOpenAICompatibleAPI:
@@ -21,7 +22,8 @@ class TestOpenAICompatibleAPI:
     def test_chat_completions_endpoint(self, api_client):
         """Test chat completions endpoint exists or is disabled."""
         response = api_client.post(
-            "/v1/chat/completions", json={"model": "openrag-all", "messages": []}
+            "/v1/chat/completions",
+            json={"model": "openrag-all", "messages": []}
         )
         # 404 if endpoint disabled, 400/422 if enabled but invalid input
         assert response.status_code in [400, 404, 422]
@@ -32,8 +34,8 @@ class TestOpenAICompatibleAPI:
             "/v1/chat/completions",
             json={
                 "model": "nonexistent-model",
-                "messages": [{"role": "user", "content": "Hello"}],
-            },
+                "messages": [{"role": "user", "content": "Hello"}]
+            }
         )
         # Should return error for invalid model, 404 if endpoint disabled
         assert response.status_code in [400, 404, 422]
@@ -41,7 +43,8 @@ class TestOpenAICompatibleAPI:
     def test_completions_endpoint(self, api_client):
         """Test completions endpoint exists or is disabled."""
         response = api_client.post(
-            "/v1/completions", json={"model": "openrag-all", "prompt": "Test"}
+            "/v1/completions",
+            json={"model": "openrag-all", "prompt": "Test"}
         )
         # 404 if endpoint disabled, other codes if enabled
         assert response.status_code in [200, 400, 404, 422, 500]

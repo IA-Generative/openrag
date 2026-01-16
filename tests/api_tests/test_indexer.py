@@ -103,7 +103,9 @@ class TestFileIndexing:
 
         assert response.status_code in [200, 201, 202]
 
-    def test_upload_duplicate_file_replaces(self, api_client, created_partition, sample_text_file):
+    def test_upload_duplicate_file_replaces(
+        self, api_client, created_partition, sample_text_file
+    ):
         """Test uploading duplicate file ID - API may allow replacement or reject."""
         file_id = "duplicate-file"
 
@@ -133,7 +135,9 @@ class TestFileIndexing:
 class TestIndexedDocuments:
     """Test document retrieval after indexing."""
 
-    def test_indexed_file_creates_documents(self, api_client, created_partition, pdf_file_path):
+    def test_indexed_file_creates_documents(
+        self, api_client, created_partition, pdf_file_path
+    ):
         """Test that indexed file creates retrievable documents."""
         file_id = "doc-test-001"
 
