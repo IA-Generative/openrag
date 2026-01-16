@@ -76,9 +76,7 @@ class DocxLoader(BaseLoader):
                 image = convert_to_png_image(image)
 
                 images_not_in_order.append(image)
-                order.append(
-                    image_file.split("media/image")[1].split(f".{image_extension}")[0]
-                )
+                order.append(image_file.split("media/image")[1].split(f".{image_extension}")[0])
 
             images = [None] * len(images_not_in_order)  # the images in the right order
             for i in range(len(images_not_in_order)):

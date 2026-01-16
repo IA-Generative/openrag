@@ -18,4 +18,4 @@ class EmbeddingFactory:
         return embedder_class(embeddings_config)
 
 
-__all__ = ["EmbeddingFactory", "BaseEmbedding", "OpenAIEmbedding"]
+__all__ = ["BaseEmbedding", "EmbeddingFactory", "OpenAIEmbedding"]

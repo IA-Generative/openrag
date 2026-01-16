@@ -30,9 +30,7 @@ Guidelines:
 
 
 class SummarizedChunk(BaseModel):
-    relevancy: bool = Field(
-        ..., description="Indicates if the chunk is relevant to the query"
-    )
+    relevancy: bool = Field(..., description="Indicates if the chunk is relevant to the query")
     summary: str = Field(
         "",
         description="The summarized content of the chunk. The field should be empty if relevancy is False.",
@@ -51,9 +49,7 @@ From this document, identify and comprehensively summarize the information usefu
 class RAGMapReduce:
     def __init__(self, config):
         self.config = config
-        self.slm: ChatOpenAI = ChatOpenAI(**config.llm).with_structured_output(
-            SummarizedChunk
-        )
+        self.slm: ChatOpenAI = ChatOpenAI(**config.llm).with_structured_output(SummarizedChunk)
         map_reduce_config = self.config.map_reduce
         self.initial_batch_size = map_reduce_config["initial_batch_size"]
         self.expansion_batch_size = map_reduce_config["expansion_batch_size"]
@@ -77,9 +73,7 @@ class RAGMapReduce:
                         {"role": "system", "content": system_prompt_map},
                         {
                             "role": "user",
-                            "content": user_prompt.format(
-                                query=query, content=chunk.page_content
-                            ),
+                            "content": user_prompt.format(query=query, content=chunk.page_content),
                         },
                     ],
                     **params,
@@ -97,29 +91,23 @@ class RAGMapReduce:
         kth_batch=1,
     ):
         """Process a batch of chunks"""
-        logger.debug(
-            f"Processing {kth_batch}-th batch of chunks", batch_size=len(chunks)
-        )
+        logger.debug(f"Processing {kth_batch}-th batch of chunks", batch_size=len(chunks))
         tasks = [self.infer_chunk_relevancy(query, chunk) for chunk in chunks]
         outputs: list[SummarizedChunk] = await tqdm.gather(
             *tasks, desc="Map & Reduce processing chunks", total=len(chunks)
         )
-        terminate = all(
-            [not o.relevancy for o in outputs[-self.expansion_batch_size :]]
-        )  # if the last 'expansion_batch_size' chunks are all irrelevant, we can terminate
+
+        # if the last 'expansion_batch_size' chunks are all irrelevant, we can terminate
+        terminate = all(not o.relevancy for o in outputs[-self.expansion_batch_size :])
 
         for o, chunk in zip(outputs, chunks):
             if o.relevancy:
-                summaries.append(
-                    Document(page_content=o.summary, metadata=chunk.metadata)
-                )
+                summaries.append(Document(page_content=o.summary, metadata=chunk.metadata))
 
             if self.debug:
                 with open(LOG_DIR / "map_reduce.md", "a") as f:
                     f.write(f"### Query: \n{query}\n")
-                    f.write(
-                        f"### Chunk Content: \n* Relevancy: {o.relevancy} \n\n {chunk.page_content}\n"
-                    )
+                    f.write(f"### Chunk Content: \n* Relevancy: {o.relevancy} \n\n {chunk.page_content}\n")
                     f.write(f"### Summary: \n{o.summary}\n")
                     f.write("\n-------\n\n")
 
@@ -142,23 +130,13 @@ class RAGMapReduce:
             chunks[: self.initial_batch_size],
             chunks[self.initial_batch_size :],
         )
-        _, terminate = await self.map_batch(
-            query, initial_batch, summaries=summaries, kth_batch=1
-        )
+        _, terminate = await self.map_batch(query, initial_batch, summaries=summaries, kth_batch=1)
 
-        if (
-            terminate
-            or not remaining_chunks
-            or len(summaries) >= self.max_total_documents
-        ):
+        if terminate or not remaining_chunks or len(summaries) >= self.max_total_documents:
             return summaries
 
-        for jth_batch, i in enumerate(
-            range(0, len(remaining_chunks), self.expansion_batch_size), start=2
-        ):
-            n = min(
-                self.expansion_batch_size, self.max_total_documents - len(summaries)
-            )
+        for jth_batch, i in enumerate(range(0, len(remaining_chunks), self.expansion_batch_size), start=2):
+            n = min(self.expansion_batch_size, self.max_total_documents - len(summaries))
             if n <= 0:
                 break
 
@@ -175,7 +153,5 @@ class RAGMapReduce:
             if terminate or len(summaries) >= self.max_total_documents:
                 break
 
-        logger.debug(
-            "Map reduce completed", relevant_chunks_count=len(summaries), query=query
-        )
+        logger.debug("Map reduce completed", relevant_chunks_count=len(summaries), query=query)
         return summaries

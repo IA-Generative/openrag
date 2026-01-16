@@ -25,7 +25,9 @@ rdb_host = rag_config.rdb.host
 
 collection_name = rag_config.vectordb.collection_name
 
-database_url = f"postgresql://{rdb_user}:{rdb_password}@{rdb_host}:{rdb_port}/partitions_for_collection_{collection_name}"
+database_url = (
+    f"postgresql://{rdb_user}:{rdb_password}@{rdb_host}:{rdb_port}/partitions_for_collection_{collection_name}"
+)
 config.set_main_option("sqlalchemy.url", database_url)
 
 # add your model's MetaData object here

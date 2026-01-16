@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-import httpx
 import argparse
 from pathlib import Path
-from loguru import logger
 
+import httpx
+from loguru import logger
 
 parser = argparse.ArgumentParser(description="Index documents from local file system")
 parser.add_argument(
@@ -14,9 +14,7 @@ parser.add_argument(
     type=str,
     help="The base url of your OpenRAG instance",
 )
-parser.add_argument(
-    "-a", "--auth", required=False, type=str, help="AUTH_KEY (see the .env.example"
-)
+parser.add_argument("-a", "--auth", required=False, type=str, help="AUTH_KEY (see the .env.example")
 parser.add_argument(
     "-d",
     "--dir",
@@ -24,9 +22,7 @@ parser.add_argument(
     type=str,
     help="The location of the documents to index",
 )
-parser.add_argument(
-    "-p", "--partition", required=True, type=str, help="Target partition"
-)
+parser.add_argument("-p", "--partition", required=True, type=str, help="Target partition")
 args = parser.parse_args()
 
 headers = {"accept": "application/json"}

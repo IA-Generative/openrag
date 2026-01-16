@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import consts
 from config import load_config
@@ -153,9 +153,7 @@ async def require_partitions_viewer(
     return user
 
 
-async def require_task_owner(
-    task_id=Depends(request_task_id), user=Depends(current_user)
-):
+async def require_task_owner(task_id=Depends(request_task_id), user=Depends(current_user)):
     task_details = await task_state_manager.get_details.remote(task_id)
     if not task_details:
         raise HTTPException(
@@ -191,36 +189,27 @@ async def validate_file_id(file_id: str):
             detail=f"File ID contains forbidden characters: {', '.join(FORBIDDEN_CHARS_IN_FILE_ID)}",
         )
     if not file_id.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="File ID cannot be empty."
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File ID cannot be empty.")
     return file_id
 
 
-async def validate_metadata(metadata: Optional[Any] = Form(None)):
+async def validate_metadata(metadata: Any | None = Form(None)):
     try:
         processed_metadata = metadata or "{}"
         processed_metadata = json.loads(processed_metadata)
         return processed_metadata
     except json.JSONDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON in metadata"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON in metadata")
 
 
 async def validate_file_format(
     file: UploadFile,
     metadata: dict = Depends(validate_metadata),
 ):
-    file_extension = (
-        file.filename.split(".")[-1].lower() if "." in file.filename else ""
-    )
+    file_extension = file.filename.split(".")[-1].lower() if "." in file.filename else ""
     mimetype = metadata.get("mimetype", None)
 
-    if (
-        file_extension not in ACCEPTED_FILE_FORMATS
-        and mimetype not in DICT_MIMETYPES.keys()
-    ):
+    if file_extension not in ACCEPTED_FILE_FORMATS and mimetype not in DICT_MIMETYPES.keys():
         details = (
             f"Unsupported file format: {file_extension} or file mimetype.\n"
             f"Supported formats: {', '.join(ACCEPTED_FILE_FORMATS)}\n"
@@ -288,11 +277,7 @@ async def get_partition_name(model_name, user_partitions, is_admin=False):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Partition `{partition}` not found for given model `{model_name}`",
         )
-    if (
-        partition != "all"
-        and partition not in user_partitions
-        and not (is_admin and SUPER_ADMIN_MODE)
-    ):
+    if partition != "all" and partition not in user_partitions and not (is_admin and SUPER_ADMIN_MODE):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Access to model `{model_name}` is forbidden for the current user",

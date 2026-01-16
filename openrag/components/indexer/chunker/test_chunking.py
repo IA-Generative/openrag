@@ -159,10 +159,7 @@ class TestCleanMarkdownTableSpacing:
         table = "| Header 1    | Header 2     |\n|-------------|-------------|\n|  Cell 1   |   Cell 2    |"
         result = clean_markdown_table_spacing(table)
 
-        assert (
-            result
-            == "| Header 1 | Header 2 |\n| ------------- | ------------- |\n| Cell 1 | Cell 2 |"
-        )
+        assert result == "| Header 1 | Header 2 |\n| ------------- | ------------- |\n| Cell 1 | Cell 2 |"
 
     def test_inconsistent_spacing(self):
         """Test normalizing inconsistent spacing across rows."""
@@ -176,19 +173,14 @@ class TestCleanMarkdownTableSpacing:
         table = "| Col1 | Col2 | Col3 |\n|------|------|------|\n| Data |      | More |\n|      | Data |      |"
         result = clean_markdown_table_spacing(table)
 
-        assert (
-            result
-            == "| Col1 | Col2 | Col3 |\n| ------ | ------ | ------ |\n| Data |  | More |\n|  | Data |  |"
-        )
+        assert result == "| Col1 | Col2 | Col3 |\n| ------ | ------ | ------ |\n| Data |  | More |\n|  | Data |  |"
 
     def test_multiline_spacing(self):
         """Test table with varying amounts of whitespace."""
         table = "|  A   |   B    |    C     |\n|------|--------|----------|\n|1|2|3|"
         result = clean_markdown_table_spacing(table)
 
-        assert (
-            result == "| A | B | C |\n| ------ | -------- | ---------- |\n| 1 | 2 | 3 |"
-        )
+        assert result == "| A | B | C |\n| ------ | -------- | ---------- |\n| 1 | 2 | 3 |"
 
 
 class TestChunkTable:
@@ -203,9 +195,7 @@ class TestChunkTable:
         table_content = "| Name | Age |\n|------|-----|\n| John | 30 |\n| Jane | 25 |"
         table_element = MDElement(type="table", content=table_content, page_number=1)
 
-        chunks = chunk_table(
-            table_element, chunk_size=1000, length_function=self.mock_length_function
-        )
+        chunks = chunk_table(table_element, chunk_size=1000, length_function=self.mock_length_function)
 
         assert len(chunks) == 1
         assert chunks[0].type == "table"
@@ -216,17 +206,9 @@ class TestChunkTable:
     def test_chunking_preserves_groups(self):
         """Test that country groups are not split mid-group."""
         header = "| Country | Strategy | Goals |"
-        g1 = (
-            "| USA     | Cyber    | Goal 1 |\n"
-            "|         |          | Goal 2 |\n"
-            "|         |          | Goal 3 |"
-        )
+        g1 = "| USA     | Cyber    | Goal 1 |\n|         |          | Goal 2 |\n|         |          | Goal 3 |"
 
-        g2 = (
-            "| Mexico  | Defense  | Goal X |\n"
-            "|         |          | Goal Y |\n"
-            "|         |          | Goal Z |"
-        )
+        g2 = "| Mexico  | Defense  | Goal X |\n|         |          | Goal Y |\n|         |          | Goal Z |"
 
         table = f"{header}\n|----|----|----|\n{g1}\n{g2}\n"
         table_element = MDElement(type="table", content=table, page_number=2)
@@ -243,9 +225,7 @@ class TestChunkTable:
 
         assert len(chunks) == 2  # Should be chunked
         assert all(chunk.type == "table" for chunk in chunks)
-        assert all(
-            header in chunk.content for chunk in chunks
-        )  # All table chunks should have the header part
+        assert all(header in chunk.content for chunk in chunks)  # All table chunks should have the header part
 
         # check that groups are intact
         assert "USA" in chunks[0].content

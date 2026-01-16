@@ -38,14 +38,10 @@ class DoclingConverter(metaclass=SingletonMeta):
             do_cell_matching=True, mode=TableFormerMode.ACCURATE
         )
 
-        pipeline_options.accelerator_options = AcceleratorOptions(
-            device=AcceleratorDevice.AUTO
-        )
+        pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.AUTO)
         self.converter = DocumentConverter(
             format_options={
-                InputFormat.PDF: PdfFormatOption(
-                    pipeline_options=pipeline_options, backend=PyPdfiumDocumentBackend
-                )
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options, backend=PyPdfiumDocumentBackend)
             }
         )
 
@@ -78,9 +74,7 @@ class DoclingLoader(BaseLoader):
             pictures = result.document.pictures
             descriptions = await self.get_captions(pictures)
             for description in descriptions:
-                enriched_content = enriched_content.replace(
-                    "<!-- image -->", description, 1
-                )
+                enriched_content = enriched_content.replace("<!-- image -->", description, 1)
         else:
             logger.debug("Image captioning disabled. Ignoring images.")
 

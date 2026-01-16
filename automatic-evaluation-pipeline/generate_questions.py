@@ -1,20 +1,18 @@
-import random
-import asyncio
-import os
-import httpx
-import json
-import time
-import numpy as np
 import ast
+import asyncio
+import json
+import os
+import random
+import time
 
-from dotenv import load_dotenv
-from loguru import logger
-from langchain_openai import ChatOpenAI
-from tqdm.asyncio import tqdm
-from sklearn.cluster import DBSCAN
-import umap.umap_ as umap
 import hdbscan
-import pickle
+import httpx
+import numpy as np
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from loguru import logger
+from sklearn.cluster import DBSCAN
+from tqdm.asyncio import tqdm
 
 load_dotenv()  # Charge les variables du .env
 
@@ -56,14 +54,12 @@ La réponse doit être claire et répondre directement à la question en utilisa
 Le résultat doit être la réponse seule, sans texte ni explication supplémentaire."""
 
 
-async def summarize(
-    chunk: str, semaphore: asyncio.Semaphore = asyncio.Semaphore(10)
-) -> str:
+async def summarize(chunk: str, semaphore: asyncio.Semaphore = asyncio.Semaphore(10)) -> str:
     async with semaphore:
         message = [
             {
                 "role": "user",
-                "content": f"Voici le document:\n{chunk}. Donnez-moi un résumé qui précise quel type d'informations et de contenu contient le passage, mais sans entrer dans des détails trop précis."
+                "content": f"Voici le document:\n{chunk}. Donnez-moi un résumé qui précise quel type d'informations et de contenu contient le passage, mais sans entrer dans des détails trop précis.",
             }
         ]
 
@@ -128,9 +124,7 @@ async def get_all_chunks(url: str) -> dict:
                 return None
 
 
-async def generate_questions_from_clusters(
-    clusters: dict, n_min=1, n_max=2, n_questions_per_cluster=10
-):
+async def generate_questions_from_clusters(clusters: dict, n_min=1, n_max=2, n_questions_per_cluster=10):
     tasks = []
     for cluster_label, chunks in clusters.items():  # cluster loop
         for _ in range(n_questions_per_cluster):
@@ -139,9 +133,7 @@ async def generate_questions_from_clusters(
             task = question_answer(chunks=sampled_chunks)
             tasks.append(task)
 
-    questions_and_answers = await tqdm.gather(
-        *tasks, desc="Question and Answer Generation..."
-    )
+    questions_and_answers = await tqdm.gather(*tasks, desc="Question and Answer Generation...")
     return questions_and_answers
 
 
@@ -149,7 +141,7 @@ async def main():
     num_port = os.environ.get("APP_PORT")
     num_host = os.environ["APP_URL"]
     openrag_api_base_url = f"http://{num_host}:{num_port}"
-    partition = "pdftest"   # To replace with your wanted partition's name
+    partition = "pdftest"  # To replace with your wanted partition's name
     url = f"{openrag_api_base_url}/partition/{partition}/chunks"
 
     start = time.time()
@@ -202,9 +194,7 @@ async def main():
     for label, items in clusters.items():
         logger.info(f"Cluster {label}: {[item['id'] for item in items]}")
 
-    questions = await generate_questions_from_clusters(
-        clusters, n_min=1, n_max=3, n_questions_per_cluster=3
-    )
+    questions = await generate_questions_from_clusters(clusters, n_min=1, n_max=3, n_questions_per_cluster=3)
 
     logger.info(f"Questions generated time: ({time.time() - pause}) seconds")
 

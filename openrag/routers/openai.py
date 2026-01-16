@@ -93,9 +93,7 @@ def __prepare_sources(request: Request, docs: list[Document]):
         links.append(
             {
                 "file_url": encoded_url,
-                "chunk_url": str(
-                    request.url_for("get_extract", extract_id=doc_metadata["_id"])
-                ),
+                "chunk_url": str(request.url_for("get_extract", extract_id=doc_metadata["_id"])),
                 **doc_metadata,
             }
         )
@@ -109,11 +107,7 @@ def is_direct_llm_model(
 
     Returns True if model is None, empty, or matches the configured default model.
     """
-    return (
-        request.model is None
-        or request.model == ""
-        or request.model == config.llm.get("model")
-    )
+    return request.model is None or request.model == "" or request.model == config.llm.get("model")
 
 
 @router.post(
@@ -157,17 +151,13 @@ async def openai_chat_completion(
     model_name = request.model or config.llm.get("model")
     log = logger.bind(model=model_name, endpoint="/chat/completions")
 
-    if (
-        not request.messages
-        or request.messages[-1].role != "user"
-        or not request.messages[-1].content
-    ):
+    if not request.messages or request.messages[-1].role != "user" or not request.messages[-1].content:
         log.warning("Invalid request: missing or malformed user message.")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The last message must be a non-empty user message",
         )
-    
+
     log.debug(
         "Received chat completion request with messages: {}",
         truncate(str(request.messages)),
@@ -177,24 +167,20 @@ async def openai_chat_completion(
         if is_direct_llm_model(request):
             partitions = None
         else:
-            partitions = await get_partition_name(
-                model_name, user_partitions, is_admin=user["is_admin"]
-            )
+            partitions = await get_partition_name(model_name, user_partitions, is_admin=user["is_admin"])
             log.debug(f"Using partitions: {partitions}")
     except Exception as e:
         log.warning("Invalid model or partition", error=str(e))
         raise
 
     try:
-        llm_output, docs = await ragpipe.chat_completion(
-            partition=partitions, payload=request.model_dump()
-        )
+        llm_output, docs = await ragpipe.chat_completion(partition=partitions, payload=request.model_dump())
         log.debug("RAG chat completion pipeline executed.")
     except Exception as e:
         log.exception("Chat completion failed.", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Chat completion failed: {str(e)}",
+            detail=f"Chat completion failed: {e!s}",
         )
 
     metadata = __prepare_sources(request2, docs)
@@ -216,9 +202,7 @@ async def openai_chat_completion(
                                 data["extra"] = metadata_json
                                 yield f"data: {json.dumps(data)}\n\n"
                             except json.JSONDecodeError as e:
-                                log.error(
-                                    "Failed to decode streamed chunk.", error=str(e)
-                                )
+                                log.error("Failed to decode streamed chunk.", error=str(e))
                                 raise
             except Exception as e:
                 log.warning("Error while generating streaming answer", error=str(e))
@@ -245,7 +229,7 @@ async def openai_chat_completion(
             log.warning("Error while generating answer", error=str(e))
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error while generating answer: {str(e)}",
+                detail=f"Error while generating answer: {e!s}",
             )
 
 
@@ -305,24 +289,20 @@ async def openai_completion(
         if is_direct_llm_model(request):
             partitions = None
         else:
-            partitions = await get_partition_name(
-                model_name, user_partitions, is_admin=user["is_admin"]
-            )
+            partitions = await get_partition_name(model_name, user_partitions, is_admin=user["is_admin"])
 
     except Exception as e:
         log.warning(f"Invalid model or partition: {e}")
         raise
 
     try:
-        llm_output, docs = await ragpipe.completions(
-            partition=partitions, payload=request.model_dump()
-        )
+        llm_output, docs = await ragpipe.completions(partition=partitions, payload=request.model_dump())
         log.debug("RAG completion pipeline executed.")
     except Exception as e:
         log.exception("Completion request failed.", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Completion failed: {str(e)}",
+            detail=f"Completion failed: {e!s}",
         )
 
     metadata = __prepare_sources(request2, docs)
@@ -337,5 +317,5 @@ async def openai_completion(
         log.warning("No response from LLM.", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"No response from LLM: {str(e)}",
+            detail=f"No response from LLM: {e!s}",
         )

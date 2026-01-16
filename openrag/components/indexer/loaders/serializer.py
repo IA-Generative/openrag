@@ -1,6 +1,5 @@
 import gc
 from pathlib import Path
-from typing import Dict, Optional, Union
 
 import ray
 import torch
@@ -40,9 +39,10 @@ class DocSerializer:
     async def serialize_document(
         self,
         task_id: str,
-        path: Union[str, Path],
-        metadata: Optional[Dict] = {},
+        path: str | Path,
+        metadata: dict | None = None,
     ) -> Document:
+        metadata = metadata or {}
         # Set task state
         log = self.logger.bind(
             file_id=metadata.get("file_id"),

@@ -112,9 +112,7 @@ class TestSilenceDetection:
         from pydub import silence
 
         audio = AudioSegment.silent(duration=1000)
-        silences = silence.detect_silence(
-            audio, min_silence_len=100, silence_thresh=-40
-        )
+        silences = silence.detect_silence(audio, min_silence_len=100, silence_thresh=-40)
 
         # Should detect one long silence
         assert len(silences) >= 1
@@ -127,9 +125,7 @@ class TestSilenceDetection:
         # Loud sine wave
         audio = Sine(440).to_audio_segment(duration=1000)
 
-        silences = silence.detect_silence(
-            audio, min_silence_len=100, silence_thresh=-40
-        )
+        silences = silence.detect_silence(audio, min_silence_len=100, silence_thresh=-40)
 
         # Should not detect any silence
         assert len(silences) == 0
@@ -144,9 +140,7 @@ class TestSilenceDetection:
 
         audio = loud + silent + loud
 
-        silences = silence.detect_silence(
-            audio, min_silence_len=100, silence_thresh=-40
-        )
+        silences = silence.detect_silence(audio, min_silence_len=100, silence_thresh=-40)
 
         # Should detect one silence segment
         assert len(silences) >= 1
@@ -163,9 +157,7 @@ class TestSilenceDetection:
 
         audio = loud + silent + loud + silent + loud
 
-        silences = silence.detect_silence(
-            audio, min_silence_len=100, silence_thresh=-40
-        )
+        silences = silence.detect_silence(audio, min_silence_len=100, silence_thresh=-40)
 
         # Should detect two silence segments
         assert len(silences) >= 2
@@ -181,9 +173,7 @@ class TestSilenceDetection:
         audio = loud + short_silent + loud
 
         # Request minimum 200ms silence
-        silences = silence.detect_silence(
-            audio, min_silence_len=200, silence_thresh=-40
-        )
+        silences = silence.detect_silence(audio, min_silence_len=200, silence_thresh=-40)
 
         # Should not detect the short silence
         assert len(silences) == 0

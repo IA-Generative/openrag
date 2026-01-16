@@ -23,7 +23,8 @@ def _quote_param_value(s: str) -> str:
     return quote(s, safe="")
 
 
-@router.get("/",
+@router.get(
+    "/",
     description="""List all accessible partitions.
 
 **Response:**
@@ -41,15 +42,12 @@ async def list_existant_partitions(
 ):
     if len(partitions) == 1 and partitions[0]["partition"] == "all":
         partitions = await vectordb.list_partitions.remote()
-    logger.debug(
-        "Returned list of existing partitions.", partition_count=len(partitions)
-    )
-    return JSONResponse(
-        status_code=status.HTTP_200_OK, content={"partitions": partitions}
-    )
+    logger.debug("Returned list of existing partitions.", partition_count=len(partitions))
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"partitions": partitions})
 
 
-@router.delete("/{partition}",
+@router.delete(
+    "/{partition}",
     description="""Delete a partition and all its contents.
 
 **Parameters:**
@@ -75,7 +73,8 @@ async def delete_partition(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/{partition}",
+@router.get(
+    "/{partition}",
     description="""List all files in a partition.
 
 **Parameters:**
@@ -101,9 +100,7 @@ async def list_files(
     partition_viewer=Depends(require_partition_viewer),
 ):
     log = logger.bind(partition=partition)
-    file_obj_l = await vectordb.list_partition_files.remote(
-        partition=partition, limit=limit
-    )
+    file_obj_l = await vectordb.list_partition_files.remote(partition=partition, limit=limit)
     file_dicts = file_obj_l.get("files", [])
     log.debug("Listed files in partition", file_count=len(file_dicts))
 
@@ -125,7 +122,8 @@ async def list_files(
     )
 
 
-@router.get("/{partition}/file/{file_id}",
+@router.get(
+    "/{partition}/file/{file_id}",
     description="""Get details and chunks for a specific file.
 
 **Parameters:**
@@ -153,18 +151,11 @@ async def get_file(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"'{file_id}' not found in partition '{partition}'",
         )
-    results = await vectordb.get_file_chunks.remote(
-        partition=partition, file_id=file_id, include_id=True
-    )
+    results = await vectordb.get_file_chunks.remote(partition=partition, file_id=file_id, include_id=True)
 
-    documents = [
-        {"link": str(request.url_for("get_extract", extract_id=doc.metadata["_id"]))}
-        for doc in results
-    ]
+    documents = [{"link": str(request.url_for("get_extract", extract_id=doc.metadata["_id"]))} for doc in results]
 
-    metadata = (
-        {k: v for k, v in results[0].metadata.items() if k != "_id"} if results else {}
-    )
+    metadata = {k: v for k, v in results[0].metadata.items() if k != "_id"} if results else {}
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
@@ -172,7 +163,8 @@ async def get_file(
     )
 
 
-@router.get("/{partition}/chunks",
+@router.get(
+    "/{partition}/chunks",
     description="""List all document chunks in a partition.
 
 **Parameters:**
@@ -199,14 +191,10 @@ async def list_all_chunks(
     vectordb=Depends(get_vectordb),
     partition_viewer=Depends(require_partition_viewer),
 ):
-    chunks = await vectordb.list_all_chunk.remote(
-        partition=partition, include_embedding=include_embedding
-    )
+    chunks = await vectordb.list_all_chunk.remote(partition=partition, include_embedding=include_embedding)
     chunks = [
         {
-            "link": str(
-                request.url_for("get_extract", extract_id=chunk.metadata["_id"])
-            ),
+            "link": str(request.url_for("get_extract", extract_id=chunk.metadata["_id"])),
             "content": chunk.page_content,
             "metadata": chunk.metadata,
         }
@@ -215,7 +203,8 @@ async def list_all_chunks(
     return JSONResponse(status_code=status.HTTP_200_OK, content={"chunks": chunks})
 
 
-@router.post("/{partition}",
+@router.post(
+    "/{partition}",
     description="""Create a new partition.
 
 **Parameters:**
@@ -233,9 +222,7 @@ Returns 201 Created on successful creation.
 Returns 409 Conflict if partition already exists.
 """,
 )
-async def create_partition(
-    request: Request, partition: str, vectordb=Depends(get_vectordb)
-):
+async def create_partition(request: Request, partition: str, vectordb=Depends(get_vectordb)):
     if await vectordb.partition_exists.remote(partition):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -246,7 +233,8 @@ async def create_partition(
     return Response(status_code=status.HTTP_201_CREATED)
 
 
-@router.get("/{partition}/users",
+@router.get(
+    "/{partition}/users",
     description="""List all users with access to a partition.
 
 **Parameters:**
@@ -283,7 +271,8 @@ async def list_partition_users(
     return JSONResponse(status_code=status.HTTP_200_OK, content={"members": members})
 
 
-@router.post("/{partition}/users",
+@router.post(
+    "/{partition}/users",
     description="""Add a user to a partition with a specific role.
 
 **Parameters:**
@@ -315,15 +304,14 @@ async def add_partition_user(
     """
     log = logger.bind(partition=partition, user_id=user_id)
 
-    await vectordb.add_partition_member.remote(
-        partition=partition, user_id=user_id, role=role
-    )
+    await vectordb.add_partition_member.remote(partition=partition, user_id=user_id, role=role)
 
     log.debug("User added to partition successfully")
     return Response(status_code=status.HTTP_201_CREATED)
 
 
-@router.delete("/{partition}/users/{user_id}",
+@router.delete(
+    "/{partition}/users/{user_id}",
     description="""Remove a user from a partition.
 
 **Parameters:**
@@ -359,7 +347,8 @@ async def remove_partition_user(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.patch("/{partition}/users/{user_id}",
+@router.patch(
+    "/{partition}/users/{user_id}",
     description="""Update a user's role in a partition.
 
 **Parameters:**
@@ -391,9 +380,7 @@ async def update_partition_user_role(
     """
     log = logger.bind(partition=partition, user_id=user_id, role=role)
 
-    await vectordb.update_partition_member_role.remote(
-        partition=partition, user_id=user_id, new_role=role
-    )
+    await vectordb.update_partition_member_role.remote(partition=partition, user_id=user_id, new_role=role)
 
     log.debug("User role updated successfully")
     return Response(status_code=status.HTTP_200_OK)

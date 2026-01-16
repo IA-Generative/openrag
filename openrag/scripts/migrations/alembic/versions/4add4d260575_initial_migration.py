@@ -6,7 +6,7 @@ Create Date: 2025-10-27 12:32:52.093810
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
@@ -30,9 +30,9 @@ def index_exists(index_name: str, table_name: str) -> bool:
 
 # revision identifiers, used by Alembic.
 revision: str = "4add4d260575"
-down_revision: Union[str, Sequence[str], None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -77,17 +77,13 @@ def upgrade() -> None:
                 ["partitions.partition"],
             ),
             sa.PrimaryKeyConstraint("id"),
-            sa.UniqueConstraint(
-                "file_id", "partition_name", name="uix_file_id_partition"
-            ),
+            sa.UniqueConstraint("file_id", "partition_name", name="uix_file_id_partition"),
         )
 
     # Create indexes for files table if they don't exist
     if table_exists("files"):
         if not index_exists("ix_files_file_id", "files"):
-            op.create_index(
-                op.f("ix_files_file_id"), "files", ["file_id"], unique=False
-            )
+            op.create_index(op.f("ix_files_file_id"), "files", ["file_id"], unique=False)
         if not index_exists("ix_files_partition_name", "files"):
             op.create_index(
                 op.f("ix_files_partition_name"),

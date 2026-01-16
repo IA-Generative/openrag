@@ -61,16 +61,12 @@ if AUTH_TOKEN:
         # logger.warning(
         #     "`CHAINLIT_AUTH_SECRET` is not set a default value will be used. Not recommended for production."
         # )
-        os.environ["CHAINLIT_AUTH_SECRET"] = (
-            "default_secret_for_openrag_ui"  # Set default value
-        )
+        os.environ["CHAINLIT_AUTH_SECRET"] = "default_secret_for_openrag_ui"  # Set default value
 
     @cl.password_auth_callback
     async def auth_callback(username: str, password: str):
         try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(timeout=httpx.Timeout(4 * 60.0))
-            ) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(timeout=httpx.Timeout(4 * 60.0))) as client:
                 response = await client.get(
                     url=f"{INTERNAL_BASE_URL}/users/info",
                     headers=get_headers(password),
@@ -103,9 +99,7 @@ def get_external_url():
 
 @cl.set_chat_profiles
 async def chat_profile(current_user: cl.User):
-    api_key = (
-        current_user.metadata.get("api_key", "sk-1234") if current_user else "sk-1234"
-    )
+    api_key = current_user.metadata.get("api_key", "sk-1234") if current_user else "sk-1234"
     client = AsyncOpenAI(base_url=f"{INTERNAL_BASE_URL}/v1", api_key=api_key)
     try:
         output = await client.models.list()
@@ -121,15 +115,13 @@ async def chat_profile(current_user: cl.User):
             chat_profiles.append(
                 cl.ChatProfile(
                     name=m.id,
-                    markdown_description=description_template.format(
-                        name=m.id, partition=partition
-                    ),
+                    markdown_description=description_template.format(name=m.id, partition=partition),
                     icon="/public/favicon.svg",
                 )
             )
         return chat_profiles
     except Exception as e:
-        await cl.Message(content=f"An error occured: {str(e)}").send()
+        await cl.Message(content=f"An error occured: {e!s}").send()
 
 
 @cl.on_chat_start
@@ -139,9 +131,7 @@ async def on_chat_start():
     api_key = user.metadata.get("api_key", "sk-1234") if user else "sk-1234"
     logger.debug("New Chat Started", internal_base_url=INTERNAL_BASE_URL)
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout=httpx.Timeout(4 * 60.0))
-        ) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout=httpx.Timeout(4 * 60.0))) as client:
             response = await client.get(
                 url=f"{INTERNAL_BASE_URL}/health_check",
                 headers=get_headers(api_key),
@@ -150,9 +140,7 @@ async def on_chat_start():
         await cl.context.emitter.set_commands(commands)
     except Exception as e:
         logger.exception("An error occured while checking the API health", error=str(e))
-        await cl.Message(
-            content=f"An error occured while checking the API health: {str(e)}"
-        ).send()
+        await cl.Message(content=f"An error occured while checking the API health: {e!s}").send()
 
 
 async def __fetch_page_content(chunk_url, headers=None):
@@ -164,9 +152,7 @@ async def __fetch_page_content(chunk_url, headers=None):
 
 
 async def _format_sources(metadata_sources, only_txt=False, api_key=None):
-    external_url = (
-        get_external_url()
-    )  # used to override the base URL when the front-end requests a file resource
+    external_url = get_external_url()  # used to override the base URL when the front-end requests a file resource
     if not metadata_sources:
         return None, None
 
@@ -175,21 +161,15 @@ async def _format_sources(metadata_sources, only_txt=False, api_key=None):
     for i, s in enumerate(metadata_sources):
         filename = Path(s["filename"])
         file_url = s["file_url"]
-        file_url = file_url.replace(
-            INTERNAL_BASE_URL, external_url
-        )  # put the correct base url
+        file_url = file_url.replace(INTERNAL_BASE_URL, external_url)  # put the correct base url
         file_url = f"{file_url}?token={api_key}"  # add token for authentication
         page = s["page"]
         source_name = f"{filename}" + (
-            f" (page: {page})"
-            if filename.suffix in [".pdf", ".pptx", ".docx", ".doc"]
-            else ""
+            f" (page: {page})" if filename.suffix in [".pdf", ".pptx", ".docx", ".doc"] else ""
         )
 
         if only_txt:
-            chunk_content = await __fetch_page_content(
-                chunk_url=s["chunk_url"], headers=headers
-            )
+            chunk_content = await __fetch_page_content(chunk_url=s["chunk_url"], headers=headers)
             elem = cl.Text(content=chunk_content, name=source_name, display="side")
         else:
             match filename.suffix.lower():
@@ -207,12 +187,8 @@ async def _format_sources(metadata_sources, only_txt=False, api_key=None):
                 case ".mp3":
                     elem = cl.Audio(name=source_name, url=file_url, display="side")
                 case _:
-                    chunk_content = await __fetch_page_content(
-                        chunk_url=s["chunk_url"], headers=headers
-                    )
-                    elem = cl.Text(
-                        content=chunk_content, name=source_name, display="side"
-                    )
+                    chunk_content = await __fetch_page_content(chunk_url=s["chunk_url"], headers=headers)
+                    elem = cl.Text(content=chunk_content, name=source_name, display="side")
 
         d[source_name] = elem
 
@@ -271,9 +247,7 @@ async def on_message(message: cl.Message):
             cl.user_session.set("messages", messages)
 
             # Show sources
-            elements, source_names = await _format_sources(
-                sources, api_key=api_key, only_txt=False
-            )
+            elements, source_names = await _format_sources(sources, api_key=api_key, only_txt=False)
             msg.elements = elements if elements else []
             if source_names:
                 s = "\n\n" + "-" * 50 + "\n\nSources: \n" + "\n".join(source_names)
@@ -281,4 +255,4 @@ async def on_message(message: cl.Message):
                 await msg.update()
         except Exception as e:
             logger.exception("Error during chat completion", error=str(e))
-            await cl.Message(content=f"An error occurred: {str(e)}").send()
+            await cl.Message(content=f"An error occurred: {e!s}").send()

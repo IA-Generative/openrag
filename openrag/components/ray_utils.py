@@ -36,9 +36,7 @@ async def call_ray_actor_with_timeout(
         RuntimeError: If the Ray task failed with an error
     """
     try:
-        ready, pending = await asyncio.to_thread(
-            ray.wait, [future], num_returns=1, timeout=timeout
-        )
+        ready, pending = await asyncio.to_thread(ray.wait, [future], num_returns=1, timeout=timeout)
         if not ready:
             ray.cancel(future, recursive=True)
             raise TimeoutError(f"{task_description} timed out after {timeout}s")

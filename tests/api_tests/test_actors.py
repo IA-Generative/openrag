@@ -1,5 +1,4 @@
 """Ray actors API tests."""
-import pytest
 
 
 class TestActorsAPI:

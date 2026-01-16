@@ -23,9 +23,7 @@ class DocLoader(BaseLoader):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
             file_path = temp_file.name
             document.SaveToFile(file_path, FileFormat.Docx2016)
-        result_string = await self.MDLoader.aload_document(
-            file_path, metadata, save_markdown
-        )
+        result_string = await self.MDLoader.aload_document(file_path, metadata, save_markdown)
         os.remove(file_path)
         document.Close()
         return result_string

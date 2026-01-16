@@ -1,5 +1,8 @@
 import asyncio
+
+import ray
 import torch
+from config import load_config
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.document import ConversionResult
@@ -15,13 +18,8 @@ from docling_core.types.doc.document import PictureItem
 from langchain_core.documents.base import Document
 from tqdm.asyncio import tqdm
 from utils.logger import get_logger
-from config import load_config
-
-import asyncio
 
 from ..base import BaseLoader
-import ray
-
 
 logger = get_logger()
 config = load_config()
@@ -51,14 +49,10 @@ class DoclingWorker:
             do_cell_matching=True, mode=TableFormerMode.ACCURATE
         )
 
-        pipeline_options.accelerator_options = AcceleratorOptions(
-            device=AcceleratorDevice.AUTO
-        )
+        pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.AUTO)
         self.converter = DocumentConverter(
             format_options={
-                InputFormat.PDF: PdfFormatOption(
-                    pipeline_options=pipeline_options, backend=PyPdfiumDocumentBackend
-                )
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options, backend=PyPdfiumDocumentBackend)
             }
         )
 
@@ -103,14 +97,10 @@ class DoclingPool:
 class DoclingLoader2(BaseLoader):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.docling_actor: DoclingPool = ray.get_actor(
-            "DoclingPool", namespace="openrag"
-        )
+        self.docling_actor: DoclingPool = ray.get_actor("DoclingPool", namespace="openrag")
 
     async def aload_document(self, file_path, metadata, save_markdown=False):
-        result: ConversionResult = await self.docling_actor.process_pdf.remote(
-            file_path
-        )
+        result: ConversionResult = await self.docling_actor.process_pdf.remote(file_path)
         n_pages = len(result.pages)
 
         s = ""
@@ -123,9 +113,7 @@ class DoclingLoader2(BaseLoader):
             pictures = result.document.pictures
             descriptions = await self.get_captions(pictures)
             for description in descriptions:
-                enriched_content = enriched_content.replace(
-                    "<!-- image -->", description, 1
-                )
+                enriched_content = enriched_content.replace("<!-- image -->", description, 1)
         else:
             logger.debug("Image captioning disabled. Ignoring images.")
 

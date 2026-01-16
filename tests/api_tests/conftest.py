@@ -1,10 +1,10 @@
 """
 Pytest fixtures for OpenRAG API tests.
 """
+
 import os
 import time
 import uuid
-from pathlib import Path
 
 import httpx
 import pytest

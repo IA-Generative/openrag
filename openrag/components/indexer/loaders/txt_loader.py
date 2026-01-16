@@ -2,18 +2,15 @@
 Text and Markdown file loader implementation.
 """
 
-import asyncio
+import itertools
 import re
 from pathlib import Path
-from typing import Dict, Optional, Union
 
 from components.indexer.loaders.base import BaseLoader
 from langchain_community.document_loaders import TextLoader as LangchainTextLoader
 from langchain_core.documents.base import Document
-from utils.logger import get_logger
-import itertools
 from tqdm.asyncio import tqdm
-
+from utils.logger import get_logger
 
 logger = get_logger()
 
@@ -28,8 +25,8 @@ class TextLoader(BaseLoader):
 
     async def aload_document(
         self,
-        file_path: Union[str, Path],
-        metadata: Optional[Dict] = None,
+        file_path: str | Path,
+        metadata: dict | None = None,
         save_markdown: bool = False,
     ) -> Document:
         if metadata is None:
@@ -61,14 +58,12 @@ class MarkdownLoader(BaseLoader):
         # Pattern for HTTP/HTTPS images
         self._http_img_pattern = re.compile(r"!\[(.*?)\]\((https?://.*?)\)")
         # Pattern for data URI images (base64)
-        self._data_uri_pattern = re.compile(
-            r"!\[(.*?)\]\((data:image/[^;]+;base64,[^)]+)\)"
-        )
+        self._data_uri_pattern = re.compile(r"!\[(.*?)\]\((data:image/[^;]+;base64,[^)]+)\)")
 
     async def aload_document(
         self,
-        file_path: Union[str, Path],
-        metadata: Optional[Dict] = None,
+        file_path: str | Path,
+        metadata: dict | None = None,
         save_markdown: bool = False,
     ) -> Document:
         if metadata is None:
@@ -104,15 +99,11 @@ class MarkdownLoader(BaseLoader):
                 markdown_syntax = f"![{alt}]({url})"
                 tasks[markdown_syntax] = self.get_image_description(url)
 
-            image_to_description = await tqdm.gather(
-                *tasks.values(), desc="Captioning images"
-            )
+            image_to_description = await tqdm.gather(*tasks.values(), desc="Captioning images")
             image_to_description = dict(zip(tasks.keys(), image_to_description))
 
             # Replace images with descriptions
-            logger.debug(
-                "Replacing image references", image_count=len(image_to_description)
-            )
+            logger.debug("Replacing image references", image_count=len(image_to_description))
             for md_syntax, description in image_to_description.items():
                 content = content.replace(md_syntax, description)
 
