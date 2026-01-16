@@ -34,12 +34,8 @@ class DistributedSemaphoreActor:
     async def acquire(self):
         await self.semaphore.acquire()
 
-    async def release(self):
+    def release(self):
         self.semaphore.release()
-
-    def cleanup(self):
-        while self.semaphore.locked():
-            self.semaphore.release()
 
 
 class DistributedSemaphore:
@@ -49,44 +45,35 @@ class DistributedSemaphore:
         name: str = "llmSemaphore",
         namespace="openrag",
         max_concurrent_ops: int = 10,
-        lazy: bool = True,
     ):
-        self._actor = None
         self._name = name
         self._namespace = namespace
         self._max_concurrent_ops = max_concurrent_ops
-        self._lazy = lazy
 
-        if not lazy:
-            self._init_actor()
+    def _get_or_create_actor(self):
+        try:
+            # reuse existing actor if it exists
+            _actor = ray.get_actor(self._name, namespace=self._namespace)
+        except ValueError:
+            # create new actor if it doesn't exist
+            _actor = DistributedSemaphoreActor.options(
+                name=self._name,
+                namespace=self._namespace,
+                lifetime="detached",
+            ).remote(self._max_concurrent_ops)
+        except Exception:
+            raise
 
-    def _init_actor(self):
-        if self._actor is None:
-            try:
-                self._actor = ray.get_actor(
-                    self._name, namespace=self._namespace
-                )  # reuse existing actor if it exists
-            except ValueError:
-                # create new actor if it doesn't exist
-                self._actor = DistributedSemaphoreActor.options(
-                    name=self._name, namespace=self._namespace, lifetime="detached"
-                ).remote(self._max_concurrent_ops)
+        return _actor
 
     async def __aenter__(self):
-        if self._actor is None:
-            self._init_actor()
-        await self._actor.acquire.remote()
+        semaphore_actor = self._get_or_create_actor()
+        await semaphore_actor.acquire.remote()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        if self._actor is None:
-            self._init_actor()
-        await self._actor.release.remote()
-
-    def cleanup(self):
-        if self._actor is None:
-            self._init_actor()
-        ray.get(self._actor.cleanup.remote())
+        semaphore_actor = self._get_or_create_actor()
+        await semaphore_actor.release.remote()
 
 
 def format_context(docs: list[Document], max_context_tokens: int = 4096) -> str:
