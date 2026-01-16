@@ -2,11 +2,9 @@ name: Linting
 
 on:
   push:
+    branches: [ main, dev ]  
+  pull_request:
     branches: [ main, dev ]
-  
-  # Temporarily disabled until merge
-  # pull_request:
-  #   branches: [ main, dev ]
 
 jobs:
   lint:
