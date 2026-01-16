@@ -1,4 +1,5 @@
 """Queue and task management API tests."""
+import pytest
 
 
 class TestQueueManagement:

@@ -1,8 +1,5 @@
 import asyncio
-
-import ray
 import torch
-from config import load_config
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.document import ConversionResult
@@ -18,8 +15,13 @@ from docling_core.types.doc.document import PictureItem
 from langchain_core.documents.base import Document
 from tqdm.asyncio import tqdm
 from utils.logger import get_logger
+from config import load_config
+
+import asyncio
 
 from ..base import BaseLoader
+import ray
+
 
 logger = get_logger()
 config = load_config()

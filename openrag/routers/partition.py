@@ -23,8 +23,7 @@ def _quote_param_value(s: str) -> str:
     return quote(s, safe="")
 
 
-@router.get(
-    "/",
+@router.get("/",
     description="""List all accessible partitions.
 
 **Response:**
@@ -50,8 +49,7 @@ async def list_existant_partitions(
     )
 
 
-@router.delete(
-    "/{partition}",
+@router.delete("/{partition}",
     description="""Delete a partition and all its contents.
 
 **Parameters:**
@@ -77,8 +75,7 @@ async def delete_partition(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get(
-    "/{partition}",
+@router.get("/{partition}",
     description="""List all files in a partition.
 
 **Parameters:**
@@ -128,8 +125,7 @@ async def list_files(
     )
 
 
-@router.get(
-    "/{partition}/file/{file_id}",
+@router.get("/{partition}/file/{file_id}",
     description="""Get details and chunks for a specific file.
 
 **Parameters:**
@@ -176,8 +172,7 @@ async def get_file(
     )
 
 
-@router.get(
-    "/{partition}/chunks",
+@router.get("/{partition}/chunks",
     description="""List all document chunks in a partition.
 
 **Parameters:**
@@ -220,8 +215,7 @@ async def list_all_chunks(
     return JSONResponse(status_code=status.HTTP_200_OK, content={"chunks": chunks})
 
 
-@router.post(
-    "/{partition}",
+@router.post("/{partition}",
     description="""Create a new partition.
 
 **Parameters:**
@@ -252,8 +246,7 @@ async def create_partition(
     return Response(status_code=status.HTTP_201_CREATED)
 
 
-@router.get(
-    "/{partition}/users",
+@router.get("/{partition}/users",
     description="""List all users with access to a partition.
 
 **Parameters:**
@@ -290,8 +283,7 @@ async def list_partition_users(
     return JSONResponse(status_code=status.HTTP_200_OK, content={"members": members})
 
 
-@router.post(
-    "/{partition}/users",
+@router.post("/{partition}/users",
     description="""Add a user to a partition with a specific role.
 
 **Parameters:**
@@ -331,8 +323,7 @@ async def add_partition_user(
     return Response(status_code=status.HTTP_201_CREATED)
 
 
-@router.delete(
-    "/{partition}/users/{user_id}",
+@router.delete("/{partition}/users/{user_id}",
     description="""Remove a user from a partition.
 
 **Parameters:**
@@ -368,8 +359,7 @@ async def remove_partition_user(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.patch(
-    "/{partition}/users/{user_id}",
+@router.patch("/{partition}/users/{user_id}",
     description="""Update a user's role in a partition.
 
 **Parameters:**

@@ -3,7 +3,7 @@
 import json
 import sys
 import time
-from typing import IO, Any
+from typing import IO, Any, Dict, List, Optional, Set, Tuple
 
 import ray
 from components.indexer.vectordb import MilvusDB
@@ -15,9 +15,9 @@ from utils.logger import get_logger
 def read_rdb_section(
     fh: IO[str],
     pfm: PartitionFileManager,
-    include_only: list[str] | None,
-    added_documents: dict[str, set[str]],
-    existing_partitions: dict[str, Any],
+    include_only: Optional[List[str]],
+    added_documents: Dict[str, Set[str]],
+    existing_partitions: Dict[str, Any],
     logger: Any,
     user_id: int,
     verbose: bool = False,
@@ -56,13 +56,19 @@ def read_rdb_section(
         if 0 == len(line):
             break
 
-        if include_only is not None and len(include_only) > 0 and part["name"] not in include_only:
+        if (
+            include_only is not None
+            and len(include_only) > 0
+            and part["name"] not in include_only
+        ):
             continue
 
         try:
             doc = json.loads(line)
         except Exception as e:
-            logger.exception(f"Failed while parsing the following json:\n{line}\n" + str(e))
+            logger.exception(
+                f"Failed while parsing the following json:\n{line}\n" + str(e)
+            )
             raise
 
         if not dry_run:
@@ -70,7 +76,8 @@ def read_rdb_section(
                 res = pfm.add_file_to_partition(doc["file_id"], part["name"], doc, user_id)
             except Exception as e:
                 logger.exception(
-                    f"{type(e)} in add_file_to_partition({doc['file_id']}, {part['name']}, ...)\n" + str(e)
+                    f"{type(e)} in add_file_to_partition({doc['file_id']}, {part['name']}, ...)\n"
+                    + str(e)
                 )
                 raise
         else:
@@ -112,7 +119,9 @@ def insert_into_vdb(
                     f"Unexpected number of items inserted: 'insert_count'=={res['insert_count']} with len(batch)=={len(batch)}"
                 )
     except Exception as e:
-        logger.exception(f"{type(e)} in client.insert({collection_name}, {len(batch)} items)")
+        logger.exception(
+            f"{type(e)} in client.insert({collection_name}, {len(batch)} items)"
+        )
         raise
     elapsed = time.time() - before
     if verbose:
@@ -122,7 +131,7 @@ def insert_into_vdb(
 def read_vdb_section(
     fh: IO[str],
     collection_name: str,
-    added_documents: dict[str, set[str]],
+    added_documents: Dict[str, Set[str]],
     client: MilvusClient,
     batch_size: int,
     logger: Any,
@@ -159,7 +168,10 @@ def read_vdb_section(
 
         chunk = json.loads(line)
 
-        if chunk["partition"] in added_documents and chunk["file_id"] in added_documents[chunk["partition"]]:
+        if (
+            chunk["partition"] in added_documents
+            and chunk["file_id"] in added_documents[chunk["partition"]]
+        ):
             chunk.pop("_id", None)
             batch.append(chunk)
 
@@ -184,7 +196,7 @@ def open_backup_file(file_name: str, logger: Any) -> IO[str]:
 
             return lzma.open(file_name, "rt", encoding="utf-8")
         else:
-            return open(file_name, encoding="utf-8")
+            return open(file_name, "rt", encoding="utf-8")
     except Exception as e:
         logger.error(f"Failed while opening file '{file_name}' for reading:\n" + str(e))
         raise
@@ -205,7 +217,7 @@ def main():
         int: Exit code (0 on success, non-zero on failure).
     """
 
-    def load_openrag_config(logger: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    def load_openrag_config(logger: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
         Loads OpenRAG configuration.
 
@@ -231,7 +243,9 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="OpenRAG restore from backup tool")
-    parser.add_argument("-i", "--include-only", nargs="*", help="Include only listed partitions")
+    parser.add_argument(
+        "-i", "--include-only", nargs="*", help="Include only listed partitions"
+    )
     parser.add_argument(
         "-b",
         "--batch-size",
@@ -239,7 +253,9 @@ def main():
         type=int,
         help="Batch size used to iterate Milvus",
     )
-    parser.add_argument("-v", "--verbose", default=False, action="store_true", help="Be verbose")
+    parser.add_argument(
+        "-v", "--verbose", default=False, action="store_true", help="Be verbose"
+    )
     parser.add_argument(
         "-d",
         "--dry-run",
@@ -247,24 +263,33 @@ def main():
         action="store_true",
         help="Don't change the target database",
     )
-    parser.add_argument("-u", "--user-id", type=int, default=1, help="Create partitions with this user-id")
+    parser.add_argument(
+        "-u",
+        "--user-id",
+        default=1,
+        help="Create partitions with this user-id"
+    )
     parser.add_argument("input", help="input file name")
 
     args = parser.parse_args()
 
     logger = get_logger()
 
+
     try:
         # It will create a the Milvus collection if it doesn't exist
-        vdb_tmp = MilvusDB.options(name="Vectordb", namespace="openrag", lifetime="detached").remote()
+        vdb_tmp = MilvusDB.options(
+            name="Vectordb", namespace="openrag", lifetime="detached"
+        ).remote()
 
         ray.get(
             vdb_tmp.__ray_ready__.remote()
         )  # ensure the actor is fully initialized and ready: collection and all created if nont existing
         print("VectorDB (Milvus) actor fully initialized")
     except Exception as e:
-        logger.exception(f"Failed while trying to create Milvus collection: {e}")
+        logger.exception(f'Failed while trying to create Milvus collection: {e}')
         # TODO: stop execution here
+
 
     rdb, vdb = load_openrag_config(logger)
 
@@ -280,9 +305,13 @@ def main():
             logger=logger,
         )
 
-        existing_partitions = {item["partition"]: item for item in pfm.list_partitions()}
+        existing_partitions = {
+            item["partition"]: item for item in pfm.list_partitions()
+        }
     except Exception as e:
-        logger.error(f"Failed while accessing PartitionFileManager at {rdb['host']}:{rdb['port']}\n{e}")
+        logger.error(
+            f"Failed while accessing PartitionFileManager at {rdb['host']}:{rdb['port']}\n{e}"
+        )
         raise
 
     if args.include_only:

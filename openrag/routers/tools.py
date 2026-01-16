@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import List
 
 import ray
 from components.indexer.utils.files import save_file_to_disk, serialize_file
@@ -27,7 +28,7 @@ class ToolInfo(BaseModel):
     description: str
 
 
-AVAILABLE_TOOLS: list[ToolInfo] = [
+AVAILABLE_TOOLS: List[ToolInfo] = [
     ToolInfo(
         name="extractText",
         description="Extract raw text from a file (PDF, Office, audio, etc.)",
@@ -62,7 +63,7 @@ def validate_tool(tool: str = Form(...)):
 
 @router.get(
     "/tools",
-    response_model=list[ToolInfo],
+    response_model=List[ToolInfo],
     summary="List available tools",
     description="""List available tools
 **Response Format:**

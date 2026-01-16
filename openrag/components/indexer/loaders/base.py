@@ -3,14 +3,16 @@ import re
 from abc import ABC, abstractmethod
 from io import BytesIO
 from pathlib import Path
+from typing import Dict, Optional, Union
 
 from components.prompts import IMAGE_DESCRIBER
 from components.utils import get_vlm_semaphore, load_config
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from PIL import Image
-from utils.external_resource_errors import is_external_resource_error
 from utils.logger import get_logger
+
+from utils.external_resource_errors import is_external_resource_error
 
 logger = get_logger()
 config = load_config()
@@ -32,12 +34,13 @@ class BaseLoader(ABC):
         self.image_captioning = self.config.loader.get("image_captioning", False)
 
         self.vlm_endpoint = ChatOpenAI(**settings).with_retry(stop_after_attempt=2)
+        self.min_width_pixels = 0  # minimum width in pixels
+        self.min_height_pixels = 0  # minimum height in pixels
 
     @abstractmethod
     async def aload_document(
-        self,
-        file_path: str | Path,
-        metadata: dict | None = None,
+        file_path: Union[str, Path],
+        metadata: Optional[Dict] = None,
         save_markdown: bool = False,
     ):
         pass
@@ -65,7 +68,7 @@ class BaseLoader(ABC):
 
     async def get_image_description(
         self,
-        image_data: Image.Image | str,
+        image_data: Union[Image.Image, str],
     ) -> str:
         """
         Creates a description for an image using the LLM model.
@@ -85,6 +88,17 @@ class BaseLoader(ABC):
                 # Determine the type of image data and create appropriate message content
                 if isinstance(image_data, Image.Image):
                     # logger.info("Processing PIL Image", img_size=str(image_data.size))
+                    # Handle PIL Image
+                    width, height = image_data.size
+
+                    # Check minimum dimensions
+                    if (
+                        width <= self.min_width_pixels
+                        or height <= self.min_height_pixels
+                    ):
+                        logger.debug(
+                            f"Image too small: {width}x{height}, skipping description"
+                        )
 
                     # Convert PIL Image to base64
                     img_b64 = self._pil_image_to_base64(image_data)
@@ -109,7 +123,9 @@ class BaseLoader(ABC):
                             image_url = f"data:image/png;base64,{image_data}"
                             logger.debug("Processing raw base64 string")
                         except Exception:
-                            logger.error(f"Invalid image data type or format: {type(image_data)}")
+                            logger.error(
+                                f"Invalid image data type or format: {type(image_data)}"
+                            )
                             return """\n<image_description>\nInvalid image data format\n</image_description>\n"""
                     else:
                         logger.error(f"Unsupported image data type: {type(image_data)}")
@@ -145,7 +161,9 @@ class BaseLoader(ABC):
                         log_extra["url"] = str(image_data)
                     logger.warning(log_msg, **log_extra)
                 else:
-                    logger.exception("Error while generating image description", error=str(e))
+                    logger.exception(
+                        "Error while generating image description", error=str(e)
+                    )
                 image_description = ""
 
             return f"""<image_description>\n\n{image_description}\n\n</image_description>"""

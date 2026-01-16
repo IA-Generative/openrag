@@ -1,6 +1,7 @@
-from typing import Literal
+from typing import Literal, Optional
 
 import openai
+
 from components.indexer.utils.text_sanitizer import sanitize_text
 from components.prompts import CHUNK_CONTEXTUALIZER_PROMPT
 from components.utils import detect_language, get_vlm_semaphore, load_config
@@ -22,9 +23,13 @@ config = load_config()
 # Timeout for individual chunk contextualization LLM calls (in seconds)
 CONTEXTUALIZATION_TIMEOUT = config.chunker.get("contextualization_timeout", 120)
 # Maximum concurrent contextualization tasks to prevent system overload
-MAX_CONCURRENT_CONTEXTUALIZATION = config.chunker.get("max_concurrent_contextualization", 10)
+MAX_CONCURRENT_CONTEXTUALIZATION = config.chunker.get(
+    "max_concurrent_contextualization", 10
+)
 
-BASE_CHUNK_FORMAT = "* filename: {filename}\n\n[CHUNK_START]\n\n{content}\n\n[CHUNK_END]"
+BASE_CHUNK_FORMAT = (
+    "* filename: {filename}\n\n[CHUNK_START]\n\n{content}\n\n[CHUNK_END]"
+)
 CHUNK_FORMAT = "[CONTEXT]\n\n{chunk_context}\n\n" + BASE_CHUNK_FORMAT
 
 
@@ -49,10 +54,10 @@ class ChunkContextualizer:
         user_msg = f"""
         Here is the context to consider for generating the context:
         - Filename: {filename}
-        - First chunks:
+        - First chunks: 
         {"\n--\n".join(c.page_content for c in first_chunks)}
 
-        - Previous chunks:
+        - Previous chunks: 
         {"\n--\n".join(c.page_content for c in prev_chunks)}
 
         Here is the current chunk to contextualize strictly in this {lang} language:
@@ -114,7 +119,8 @@ class ChunkContextualizer:
                 batch_contexts = await tqdm.gather(
                     *batch_tasks,
                     total=len(batch_tasks),
-                    desc=f"Contextualizing chunks of *{filename}* [{batch_start + 1}-{batch_end}/{len(chunks)}]",
+                    desc=f"Contextualizing chunks of *{filename}* "
+                    f"[{batch_start + 1}-{batch_end}/{len(chunks)}]",
                 )
                 contexts.extend(batch_contexts)
 
@@ -142,7 +148,7 @@ class BaseChunker:
         self,
         chunk_size: int = 200,
         chunk_overlap_rate: float = 0.2,
-        llm_config: dict | None = None,
+        llm_config: Optional[dict] = None,
         contextual_retrieval: bool = False,
         **kwargs,
     ):
@@ -158,7 +164,9 @@ class BaseChunker:
         self.contextual_retrieval = contextual_retrieval
 
         # Initialize contextualizer only if needed
-        self.contextualizer = ChunkContextualizer(llm_config) if contextual_retrieval else None
+        self.contextualizer = (
+            ChunkContextualizer(llm_config) if contextual_retrieval else None
+        )
 
     async def _apply_contextualization(
         self,
@@ -170,15 +178,21 @@ class BaseChunker:
         if not self.contextual_retrieval or len(chunks) < 2:
             return [
                 Document(
-                    page_content=BASE_CHUNK_FORMAT.format(chunk_context="", filename=filename, content=c.page_content),
+                    page_content=BASE_CHUNK_FORMAT.format(
+                        chunk_context="", filename=filename, content=c.page_content
+                    ),
                     metadata=c.metadata,
                 )
                 for c in chunks
             ]
 
-        return await self.contextualizer.contextualize_chunks(chunks, lang=lang, filename=filename)
+        return await self.contextualizer.contextualize_chunks(
+            chunks, lang=lang, filename=filename
+        )
 
-    def _prepare_md_elements(self, content: str) -> tuple[list[MDElement], list[MDElement]]:
+    def _prepare_md_elements(
+        self, content: str
+    ) -> tuple[list[MDElement], list[MDElement]]:
         """Prepare and combine markdown elements from raw content."""
         md_elements: list[MDElement] = split_md_elements(content)
 
@@ -186,10 +200,14 @@ class BaseChunker:
 
         for e in md_elements:
             if e.type in ("table", "image"):
-                if e.type == "image" and IMAGE_PLACEHOLDER.lower() in e.content.lower():  # skip placeholder images
+                if (
+                    e.type == "image" and IMAGE_PLACEHOLDER.lower() in e.content.lower()
+                ):  # skip placeholder images
                     continue
 
-                if self._length_function(e.content) <= 100:  # do not isolate small tables/images
+                if (
+                    self._length_function(e.content) <= 100
+                ):  # do not isolate small tables/images
                     texts.append(e)
                 else:
                     tables_and_images.append(e)
@@ -201,7 +219,9 @@ class BaseChunker:
     def split_text(self, text: str) -> list[str]:
         """Split text into chunks using the text splitter."""
         if not self.text_splitter:
-            logger.warning("Text splitter not initialized. Initializing with default RecursiveCharacterTextSplitter.")
+            logger.warning(
+                "Text splitter not initialized. Initializing with default RecursiveCharacterTextSplitter."
+            )
             from langchain.text_splitter import RecursiveCharacterTextSplitter
 
             self.text_splitter = RecursiveCharacterTextSplitter(
@@ -212,7 +232,9 @@ class BaseChunker:
 
         return self.text_splitter.split_text(text)
 
-    def _get_chunks(self, content: str, metadata: dict | None = None, log=None) -> list[Document]:
+    def _get_chunks(
+        self, content: str, metadata: Optional[dict] = None, log=None
+    ) -> list[Document]:
         log = log or logger
         texts, tables_and_images = self._prepare_md_elements(content=content)
         combined_texts = "\n".join([e.content for e in texts])
@@ -268,7 +290,9 @@ class BaseChunker:
 
         prev_page_num = 1
         for c in text_chunks:
-            page_info = get_chunk_page_number(chunk_str=c, previous_chunk_ending_page=prev_page_num)
+            page_info = get_chunk_page_number(
+                chunk_str=c, previous_chunk_ending_page=prev_page_num
+            )
             start_page = page_info["start_page"]
             prev_page_num = page_info["end_page"]
             chunks.append(
@@ -282,10 +306,14 @@ class BaseChunker:
             chunks.sort(key=lambda d: d.metadata.get("page"))
             return chunks
         else:
-            log.warning("No chunks created. Content is empty or image is not informative.")
+            log.warning(
+                "No chunks created. Content is empty or image is not informative."
+            )
             return []
 
-    async def split_document(self, doc: Document, task_id: str | None = None) -> list[Document]:
+    async def split_document(
+        self, doc: Document, task_id: Optional[str] = None
+    ) -> list[Document]:
         """Split document into chunks with optional contextualization."""
         metadata = doc.metadata
         filename = metadata.get("filename", "")
@@ -307,7 +335,9 @@ class BaseChunker:
                 "Contextualizing chunks",
                 apply_contextualization=self.contextual_retrieval,
             )
-            chunks = await self._apply_contextualization(chunks, lang=detected_lang, filename=filename)
+            chunks = await self._apply_contextualization(
+                chunks, lang=detected_lang, filename=filename
+            )
             log.info("Document chunking completed")
             return chunks
         else:
@@ -323,7 +353,9 @@ class RecursiveSplitter(BaseChunker):
         contextual_retrieval=False,
         **kwargs,
     ):
-        super().__init__(chunk_size, chunk_overlap_rate, llm_config, contextual_retrieval, **kwargs)
+        super().__init__(
+            chunk_size, chunk_overlap_rate, llm_config, contextual_retrieval, **kwargs
+        )
 
         from langchain.text_splitter import RecursiveCharacterTextSplitter
 
@@ -344,7 +376,7 @@ class ChunkerFactory:
     @staticmethod
     def create_chunker(
         config: OmegaConf,
-        embedder: BaseEmbedding | None = None,
+        embedder: Optional[BaseEmbedding] = None,
     ) -> BaseChunker:
         # Extract parameters
         chunker_params = OmegaConf.to_container(config.chunker, resolve=True)
@@ -355,7 +387,8 @@ class ChunkerFactory:
 
         if not chunker_cls:
             raise ValueError(
-                f"Chunker '{name}' is not recognized. Available chunkers: {list(ChunkerFactory.CHUNKERS.keys())}"
+                f"Chunker '{name}' is not recognized."
+                f" Available chunkers: {list(ChunkerFactory.CHUNKERS.keys())}"
             )
 
         chunker_params["llm_config"] = config.vlm

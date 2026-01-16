@@ -1,10 +1,10 @@
 """
 Pytest fixtures for OpenRAG API tests.
 """
-
 import os
 import time
 import uuid
+from pathlib import Path
 
 import httpx
 import pytest
@@ -87,9 +87,7 @@ def test_partition_name():
 def created_partition(api_client, test_partition_name):
     """Create a partition and clean it up after the test."""
     response = api_client.post(f"/partition/{test_partition_name}")
-    assert response.status_code in [200, 201], (
-        f"Failed to create partition: {response.text}"
-    )
+    assert response.status_code in [200, 201], f"Failed to create partition: {response.text}"
     yield test_partition_name
     # Cleanup
     try:

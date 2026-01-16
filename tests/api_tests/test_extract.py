@@ -1,4 +1,5 @@
 """Extract (chunk retrieval) API tests."""
+import pytest
 
 
 class TestExtract:

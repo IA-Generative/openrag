@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 
-import json
-import os
 import sys
-from typing import IO, Any
+import os
+import json
 
-from components.indexer.vectordb.utils import PartitionFileManager
-from pymilvus import Collection, connections
+from typing import Dict, Any, Tuple, Optional, List, IO
+
+from pymilvus import connections, Collection
+
 from utils.logger import get_logger
+from components.indexer.vectordb.utils import PartitionFileManager
 
 
 def dump_rdb_part(
-    out_fh: IO[str],
-    pfm: PartitionFileManager,
-    partitions: dict[str, dict[str, Any]],
-    logger: Any,
-    verbose: bool = False,
-):
+        out_fh: IO[str],
+        pfm: PartitionFileManager,
+        partitions: Dict[str, Dict[str, Any]],
+        logger: Any,
+        verbose: bool = False):
     """
     Dumps relational DB data into the backup file:
       - writes only requested partitions
@@ -34,49 +35,39 @@ def dump_rdb_part(
     """
     for part_name in sorted(partitions):
         # Header
-        out_fh.write("rdb\n")
+        out_fh.write('rdb\n')
         if verbose:
-            logger.info("Writing rdb data")
+            logger.info('Writing rdb data')
 
         # Partition details
-        out_fh.write(
-            json.dumps(
-                {"name": part_name, "created": partitions[part_name]["created_at"]},
-                ensure_ascii=False,
-                sort_keys=True,
-            )
-            + "\n"
-        )
+        out_fh.write(json.dumps({ 'name': part_name, 'created': partitions[part_name]['created_at'] }, ensure_ascii=False, sort_keys=True) + '\n')
 
         try:
             files = pfm.list_partition_files(part_name)
         except Exception as e:
-            logger.error(
-                f"Failed while requesting the list of files in partition '{part_name}'\n{e}"
-            )
+            logger.error(f'Failed while requesting the list of files in partition \'{part_name}\'\n{e}')
             raise
 
-        files["files"].sort(key=lambda v: v["file_id"])
+        files['files'].sort(key=lambda v: v['file_id'])
 
-        for f in files["files"]:
-            f.pop("partition", None)
-            out_fh.write(json.dumps(f, ensure_ascii=False, sort_keys=True) + "\n")
+        for f in files['files']:
+            f.pop('partition', None)
+            out_fh.write(json.dumps(f, ensure_ascii=False, sort_keys=True) + '\n')
 
         # Separator
-        out_fh.write("\n")
+        out_fh.write('\n')
 
         if verbose:
-            logger.info(f"Partition '{part_name}' - {len(files['files'])} files")
+            logger.info(f'Partition \'{part_name}\' - {len(files["files"])} files')
 
 
 def dump_vdb_part(
-    out_fh: IO[str],
-    collection: Collection,
-    partitions: dict[str, dict[str, Any]],
-    logger: Any,
-    batch_size: int = 1024,
-    verbose: bool = False,
-):
+        out_fh: IO[str],
+        collection: Collection,
+        partitions: Dict[str, Dict[str, Any]],
+        logger: Any,
+        batch_size: int = 1024,
+        verbose: bool = False):
     """
     Dumps vector DB data into the backup file:
       - writes one chunk per line
@@ -97,47 +88,48 @@ def dump_vdb_part(
     try:
         collection.load()
     except Exception as e:
-        logger.error(f"Failed while loading Milvus collection: {e}")
+        logger.error(f'Failed while loading Milvus collection: {e}')
         raise
 
     try:
         iterator = collection.query_iterator(
-            batch_size=batch_size,  # size of each batch
-            output_fields=["*"],  # all fields
+            batch_size=batch_size,        # size of each batch
+            output_fields=["*"]           # all fields
         )
     except Exception as e:
-        logger.error(f"Failed while trying to obtain Milvus collection iterator: {e}")
+        logger.error(f'Failed while trying to obtain Milvus collection iterator: {e}')
         raise
 
-    out_fh.write("vdb\n")
+    out_fh.write('vdb\n')
     if verbose:
-        logger.info("Writing vdb data")
+        logger.info('Writing vdb data')
         cnt = 0
 
     while True:
         try:
             batch = iterator.next()
         except Exception as e:
-            logger.error(f"iterator.next() failed with: {e}")
+            logger.error(f'iterator.next() failed with: {e}')
             raise
 
         if not batch:  # no more data
             break
 
         for entity in batch:
-            if entity["partition"] in partitions:
-                entity.pop("_id", None)
-                out_fh.write(
-                    json.dumps(entity, ensure_ascii=False, sort_keys=True) + "\n"
-                )
+            if entity['partition'] in partitions:
+                entity.pop('_id', None)
+                out_fh.write(json.dumps(entity, ensure_ascii=False, sort_keys=True) + '\n')
                 if verbose:
                     cnt += 1
 
     if verbose:
-        logger.info(f"{cnt} chunks written")
+        logger.info(f'{cnt} chunks written')
 
 
-def open_output_file(file_name: str, logger: Any) -> IO[str]:
+def open_output_file(
+        file_name: str,
+        logger: Any
+    ) -> IO[str]:
     """
     Opens output file for writing
 
@@ -148,23 +140,20 @@ def open_output_file(file_name: str, logger: Any) -> IO[str]:
     Returns:
         file object:  Opened file handle in text mode.
     """
-    if file_name in ["-"]:
+    if file_name in [ '-' ]:
         return sys.stdout
 
     if os.path.isfile(file_name):
-        raise Exception(f"File '{file_name}' already exists.")
+        raise Exception(f'File \'{file_name}\' already exists.')
 
     try:
-        if file_name.endswith(".xz"):
+        if file_name.endswith('.xz'):
             import lzma
-
-            return lzma.open(
-                file_name, "wt", encoding="utf-8", preset=9 | lzma.PRESET_EXTREME
-            )
+            return lzma.open(file_name, 'wt', encoding='utf-8', preset=9 | lzma.PRESET_EXTREME)
         else:
-            return open(file_name, "w", encoding="utf-8")
+            return open(file_name, 'wt', encoding='utf-8')
     except Exception as e:
-        logger.error(f"Failed while opening file '{file_name}' for writing:\n" + str(e))
+        logger.error(f'Failed while opening file \'{file_name}\' for writing:\n' + str(e))
         raise
 
 
@@ -183,7 +172,6 @@ def main():
     Returns:
         int: Exit code (0 on success, non-zero on failure).
     """
-
     def load_openrag_config(logger):
         """
         Loads OpenRAG configuration.
@@ -201,31 +189,19 @@ def main():
         try:
             config = load_config()
         except Exception as e:
-            logger.error(f"Failed while trying to obtain OpenRAG config: {e}")
+            logger.error(f'Failed while trying to obtain OpenRAG config: {e}')
             raise
 
-        return config["rdb"], config["vectordb"]
+        return config['rdb'], config['vectordb']
+
 
     # Arguments and configs
     import argparse
-
-    parser = argparse.ArgumentParser(description="OpenRAG backup tool")
-    parser.add_argument(
-        "-i", "--include-only", nargs="*", help="Include only listed partitions"
-    )
-    parser.add_argument(
-        "-o", "--output", required=True, help="Output file name (- for STDOUT)"
-    )
-    parser.add_argument(
-        "-b",
-        "--batch-size",
-        default=1024,
-        type=int,
-        help="Batch size used to iterate Milvus",
-    )
-    parser.add_argument(
-        "-v", "--verbose", default=False, action="store_true", help="Be verbose"
-    )
+    parser = argparse.ArgumentParser(description='OpenRAG backup tool')
+    parser.add_argument('-i', '--include-only', nargs='*', help='Include only listed partitions')
+    parser.add_argument('-o', '--output', required=True, help='Output file name (- for STDOUT)')
+    parser.add_argument('-b', '--batch-size', default=1024, type=int, help='Batch size used to iterate Milvus')
+    parser.add_argument('-v', '--verbose', default=False, action='store_true', help='Be verbose')
 
     args = parser.parse_args()
 
@@ -234,9 +210,8 @@ def main():
     rdb, vdb = load_openrag_config(logger)
 
     if args.verbose:
-        logger.info(
-            f"rdb @ {rdb['host']}:{rdb['port']} | vdb @ {vdb['host']}:{vdb['port']} | collection: {vdb['collection_name']}"
-        )
+        logger.info(f'rdb @ {rdb["host"]}:{rdb["port"]} | vdb @ {vdb["host"]}:{vdb["port"]} | collection: {vdb["collection_name"]}')
+
 
     # List existing partitions
     try:
@@ -245,13 +220,9 @@ def main():
             logger=logger,
         )
 
-        existing_partitions = {
-            item["partition"]: item for item in pfm.list_partitions()
-        }
+        existing_partitions = { item['partition']: item for item in pfm.list_partitions() }
     except Exception as e:
-        logger.error(
-            f"Failed while accessing PartitionFileManager at {rdb['host']}:{rdb['port']}\n{e}"
-        )
+        logger.error(f'Failed while accessing PartitionFileManager at {rdb["host"]}:{rdb["port"]}\n{e}')
         raise
 
     if args.include_only:
@@ -266,27 +237,27 @@ def main():
         partitions = existing_partitions
 
     if 0 == len(partitions):
-        logger.error("No partitions meet given conditions.")
+        logger.error(f'No partitions meet given conditions.')
         return 1
 
     if args.verbose:
-        partitions_str = ", ".join(partitions)
-        logger.info(f"partitions: {partitions_str}")
+        partitions_str = ', '.join(partitions)
+        logger.info(f'partitions: {partitions_str}')
+
 
     # Connect to Milvus
     try:
-        connections.connect("default", host=vdb["host"], port=vdb["port"])
+        connections.connect("default", host=vdb['host'], port=vdb['port'])
     except Exception as e:
-        logger.error(f"Can't connect to Milvus at {vdb['host']}:{vdb['port']}\n{e}")
+        logger.error(f'Can\'t connect to Milvus at {vdb["host"]}:{vdb["port"]}\n{e}')
         raise
 
     try:
-        vdb_collection = Collection(vdb["collection_name"])
+        vdb_collection = Collection(vdb['collection_name'])
     except Exception as e:
-        logger.error(
-            f"Can't access Milvus collection {vdb['collection_name']} at {vdb['host']}:{vdb['port']}\n{e}"
-        )
+        logger.error(f'Can\'t access Milvus collection {vdb["collection_name"]} at {vdb["host"]}:{vdb["port"]}\n{e}')
         raise
+
 
     try:
         with open_output_file(args.output, logger) as out_fh:
@@ -294,22 +265,17 @@ def main():
             dump_rdb_part(out_fh, pfm, partitions, logger, args.verbose)
 
             # Dump data from VDB (one line per chunk)
-            dump_vdb_part(
-                out_fh,
-                vdb_collection,
-                partitions,
-                logger,
-                args.batch_size,
-                args.verbose,
-            )
+            dump_vdb_part(out_fh, vdb_collection, partitions, logger, args.batch_size, args.verbose)
 
             out_fh.flush()
     except Exception as e:
-        logger.exception("ERROR: " + str(e))
+        logger.exception(f'ERROR: ' + str(e))
         return 1
+
 
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())
+

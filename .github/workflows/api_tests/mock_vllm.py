@@ -6,7 +6,7 @@ Provides fake embeddings and chat completions without loading actual models.
 import hashlib
 import time
 import uuid
-from typing import Any
+from typing import Any, List, Optional, Union
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -22,19 +22,19 @@ EMBEDDING_DIM = 384
 
 class EmbeddingRequest(BaseModel):
     model: str
-    input: str | list[str]
+    input: Union[str, List[str]]
     encoding_format: str = "float"
 
 
 class EmbeddingData(BaseModel):
     object: str = "embedding"
-    embedding: list[float]
+    embedding: List[float]
     index: int
 
 
 class EmbeddingResponse(BaseModel):
     object: str = "list"
-    data: list[EmbeddingData]
+    data: List[EmbeddingData]
     model: str
     usage: dict
 
@@ -49,13 +49,13 @@ class ChatMessage(BaseModel):
 
 class ChatCompletionRequest(BaseModel):
     model: str
-    messages: list[ChatMessage]
-    temperature: float | None = 0.7
-    max_tokens: int | None = 1024
-    stream: bool | None = False
-    top_p: float | None = 1.0
-    n: int | None = 1
-    stop: str | list[str] | None = None
+    messages: List[ChatMessage]
+    temperature: Optional[float] = 0.7
+    max_tokens: Optional[int] = 1024
+    stream: Optional[bool] = False
+    top_p: Optional[float] = 1.0
+    n: Optional[int] = 1
+    stop: Optional[Union[str, List[str]]] = None
 
 
 class ChatCompletionChoice(BaseModel):
@@ -75,7 +75,7 @@ class ChatCompletionResponse(BaseModel):
     object: str = "chat.completion"
     created: int
     model: str
-    choices: list[ChatCompletionChoice]
+    choices: List[ChatCompletionChoice]
     usage: ChatCompletionUsage
 
 
@@ -84,13 +84,13 @@ class ChatCompletionResponse(BaseModel):
 
 class TextCompletionRequest(BaseModel):
     model: str
-    prompt: str | list[str]
-    temperature: float | None = 0.7
-    max_tokens: int | None = 1024
-    stream: bool | None = False
-    top_p: float | None = 1.0
-    n: int | None = 1
-    stop: str | list[str] | None = None
+    prompt: Union[str, List[str]]
+    temperature: Optional[float] = 0.7
+    max_tokens: Optional[int] = 1024
+    stream: Optional[bool] = False
+    top_p: Optional[float] = 1.0
+    n: Optional[int] = 1
+    stop: Optional[Union[str, List[str]]] = None
 
 
 class TextCompletionChoice(BaseModel):
@@ -104,14 +104,14 @@ class TextCompletionResponse(BaseModel):
     object: str = "text_completion"
     created: int
     model: str
-    choices: list[TextCompletionChoice]
+    choices: List[TextCompletionChoice]
     usage: ChatCompletionUsage  # Same structure as chat
 
 
 # ============== Helper Functions ==============
 
 
-def generate_fake_embedding(text: str, dim: int = EMBEDDING_DIM) -> list[float]:
+def generate_fake_embedding(text: str, dim: int = EMBEDDING_DIM) -> List[float]:
     """Generate deterministic fake embedding based on text hash."""
     h = hashlib.md5(text.encode()).digest()
     result = []
@@ -128,7 +128,7 @@ def count_tokens(text: str) -> int:
     return 10  # Default for non-string content
 
 
-def generate_mock_response(messages: list[ChatMessage]) -> str:
+def generate_mock_response(messages: List[ChatMessage]) -> str:
     """Generate a mock response based on the input messages."""
     last_message = messages[-1] if messages else None
     if not last_message:
@@ -180,7 +180,10 @@ async def list_models():
 async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     inputs = request.input if isinstance(request.input, list) else [request.input]
 
-    data = [EmbeddingData(embedding=generate_fake_embedding(text), index=i) for i, text in enumerate(inputs)]
+    data = [
+        EmbeddingData(embedding=generate_fake_embedding(text), index=i)
+        for i, text in enumerate(inputs)
+    ]
 
     return EmbeddingResponse(
         data=data,
@@ -193,7 +196,9 @@ async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
 async def create_chat_completion(request: ChatCompletionRequest) -> ChatCompletionResponse:
     """Mock chat completion endpoint for LLM/VLM requests."""
     # Calculate token counts
-    prompt_tokens = sum(count_tokens(str(msg.content)) for msg in request.messages)
+    prompt_tokens = sum(
+        count_tokens(str(msg.content)) for msg in request.messages
+    )
 
     # Generate mock response
     response_text = generate_mock_response(request.messages)

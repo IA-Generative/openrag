@@ -1,18 +1,20 @@
-import ast
-import asyncio
-import json
-import os
 import random
-import time
-
-import hdbscan
+import asyncio
+import os
 import httpx
+import json
+import time
 import numpy as np
+import ast
+
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
 from loguru import logger
-from sklearn.cluster import DBSCAN
+from langchain_openai import ChatOpenAI
 from tqdm.asyncio import tqdm
+from sklearn.cluster import DBSCAN
+import umap.umap_ as umap
+import hdbscan
+import pickle
 
 load_dotenv()  # Charge les variables du .env
 
@@ -61,7 +63,7 @@ async def summarize(
         message = [
             {
                 "role": "user",
-                "content": f"Voici le document:\n{chunk}. Donnez-moi un résumé qui précise quel type d'informations et de contenu contient le passage, mais sans entrer dans des détails trop précis.",
+                "content": f"Voici le document:\n{chunk}. Donnez-moi un résumé qui précise quel type d'informations et de contenu contient le passage, mais sans entrer dans des détails trop précis."
             }
         ]
 
@@ -147,7 +149,7 @@ async def main():
     num_port = os.environ.get("APP_PORT")
     num_host = os.environ["APP_URL"]
     openrag_api_base_url = f"http://{num_host}:{num_port}"
-    partition = "pdftest"  # To replace with your wanted partition's name
+    partition = "pdftest"   # To replace with your wanted partition's name
     url = f"{openrag_api_base_url}/partition/{partition}/chunks"
 
     start = time.time()
