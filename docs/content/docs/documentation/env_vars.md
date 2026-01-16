@@ -314,6 +314,7 @@ The following environment variables control Ray's logging behavior, task retry s
 | `RAY_ENABLE_RECORD_ACTOR_TASK_LOGGING` | `number` | `1` | Enables logs at task level in the Ray dashboard for better debugging and monitoring. |
 | `RAY_task_retry_delay_ms` | `number` | `3000` | Delay (in milliseconds) before retrying a failed task. Controls the wait time between retry attempts. |
 | `RAY_ENABLE_UV_RUN_RUNTIME_ENV` | `number` | `0` | Controls UV runtime environment integration. **Critical**: Must be set to `0` when using the newest version of UV to avoid compatibility issues. |
+|`RAY_memory_monitor_refresh_ms`| `number` | 250 ms | To control the frequency of memory usage checks and task or actor termination if needed. If you set this value to 0, task killing is disabled. |
 
 #### Indexer Configuration
 
@@ -330,6 +331,7 @@ Controls the maximum number of concurrent operations for different indexer tasks
 |----------|------|---------|-------------|
 | `INDEXER_DEFAULT_CONCURRENCY` | int | 1000 | Default concurrency limit for general operations |
 | `INDEXER_UPDATE_CONCURRENCY` | int | 100 | Maximum concurrent document update operations |
+| `INDEXER_SERIALIZE_CONCURRENCY` | int | 50 | Maximum concurrent serialization operations |
 | `INDEXER_SEARCH_CONCURRENCY` | int | 100 | Maximum concurrent search/retrieval operations |
 | `INDEXER_DELETE_CONCURRENCY` | int | 100 | Maximum concurrent document deletion operations |
 | `INDEXER_CHUNK_CONCURRENCY` | int | 1000 | Maximum concurrent document chunking operations |

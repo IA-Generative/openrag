@@ -24,7 +24,7 @@ else:  # On CPU
     MARKER_NUM_GPUS = 0
 
 
-@ray.remote(num_gpus=MARKER_NUM_GPUS)
+@ray.remote(num_gpus=MARKER_NUM_GPUS, max_restarts=5)
 class MarkerWorker:
     def __init__(self):
         import os
@@ -156,7 +156,7 @@ class MarkerWorker:
                 pass  # Best effort cleanup
 
 
-@ray.remote
+@ray.remote(max_restarts=5)
 class MarkerPool:
     def __init__(self):
         from config import load_config

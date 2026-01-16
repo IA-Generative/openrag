@@ -160,8 +160,9 @@ ray:
       update: ${oc.decode:${oc.env:INDEXER_UPDATE_CONCURRENCY, 100}}
       search: ${oc.decode:${oc.env:INDEXER_SEARCH_CONCURRENCY, 100}}
       delete: ${oc.decode:${oc.env:INDEXER_DELETE_CONCURRENCY, 100}}
+      serialize: ${oc.decode:${oc.env:INDEXER_SERIALIZE_CONCURRENCY, 50}}
       chunk: ${oc.decode:${oc.env:INDEXER_CHUNK_CONCURRENCY, 1000}}
-      insert: ${oc.decode:${oc.env:INDEXER_INSERT_CONCURRENCY, 10}}
+      insert: ${oc.decode:${oc.env:INDEXER_INSERT_CONCURRENCY, 100}}
   semaphore:
     concurrency: ${oc.decode:${oc.env:RAY_SEMAPHORE_CONCURRENCY, 100000}}
   serve:
