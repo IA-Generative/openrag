@@ -4,7 +4,6 @@ import sys
 from config import load_config
 from loguru import logger
 
-
 config = load_config()
 
 def escape_markup(s: str) -> str:

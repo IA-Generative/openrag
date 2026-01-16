@@ -7,7 +7,6 @@ This module handles the dynamic loading and registration of all document loaders
 import importlib
 import pkgutil
 from pathlib import Path
-from typing import Dict, Set, Type
 
 from utils.logger import get_logger
 
@@ -15,16 +14,15 @@ from .base import BaseLoader
 
 logger = get_logger()
 
-def get_loader_classes(config: dict) -> Dict[str, Type[BaseLoader]]:
+
+def get_loader_classes(config: dict) -> dict[str, type[BaseLoader]]:
     # 1. Discover all subclasses
     root_pkg = "components.indexer.loaders"
     root_path = Path(__file__).parent
 
-    discovered: Dict[str, Type[BaseLoader]] = {}
+    discovered: dict[str, type[BaseLoader]] = {}
 
-    for finder, module_name, is_pkg in pkgutil.walk_packages(
-        path=[str(root_path)], prefix=f"{root_pkg}."
-    ):
+    for finder, module_name, is_pkg in pkgutil.walk_packages(path=[str(root_path)], prefix=f"{root_pkg}."):
         try:
             module = importlib.import_module(module_name)
         except ImportError as e:
@@ -32,17 +30,13 @@ def get_loader_classes(config: dict) -> Dict[str, Type[BaseLoader]]:
             continue
 
         for attr in vars(module).values():
-            if (
-                isinstance(attr, type)
-                and issubclass(attr, BaseLoader)
-                and attr is not BaseLoader
-            ):
+            if isinstance(attr, type) and issubclass(attr, BaseLoader) and attr is not BaseLoader:
                 discovered[attr.__name__] = attr
 
     # logger.debug(f"Discovered loaders: {discovered}")
 
     # 2. Read your config map of extensions → class names
-    loader_classes: Dict[str, Type[BaseLoader]] = {}
+    loader_classes: dict[str, type[BaseLoader]] = {}
     file_loaders = config.get("loader", {}).get("file_loaders", {})
 
     for ext, cls_name in file_loaders.items():
@@ -57,7 +51,7 @@ def get_loader_classes(config: dict) -> Dict[str, Type[BaseLoader]]:
     return loader_classes
 
 
-def get_supported_extensions(loader_classes: Dict[str, Type[BaseLoader]]) -> Set[str]:
+def get_supported_extensions(loader_classes: dict[str, type[BaseLoader]]) -> set[str]:
     """
     Get the set of supported file extensions from the loaded classes.
 

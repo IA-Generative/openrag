@@ -1,7 +1,9 @@
-from .base import BaseLoader
-from PIL import Image
 from pathlib import Path
+
 from langchain_core.documents import Document
+from PIL import Image
+
+from .base import BaseLoader
 
 
 class ImageLoader(BaseLoader):

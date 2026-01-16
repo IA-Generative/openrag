@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
-import sys
-import os
 import json
-import time
 import logging
-
-from typing import IO, Any, Dict, List, Optional, Set, Tuple
+import os
+import sys
+import time
+from typing import IO, Any
 
 
 class Embedder:
@@ -31,7 +30,8 @@ class Embedder:
         model_name: str,
         batch_size: int,
         logger: Any,
-        verbose: bool = False):
+        verbose: bool = False,
+    ):
         """
         Initialize an Embedder instance.
 
@@ -54,13 +54,12 @@ class Embedder:
 
         self.max_batch_size = 1024 * 4
         self.curr_batch_size = 1
-        self.durations = { self.curr_batch_size: [] }
+        self.durations = {self.curr_batch_size: []}
         self.max_duration_items = 12
         self.num_outliers = 2
         if self.batch_size <= 0:
             self.batch_size = None
             # We'll guess the best value
-
 
     def get_batch_size(self) -> int:
         """
@@ -75,14 +74,13 @@ class Embedder:
                 if self.curr_batch_size >= self.max_batch_size:
                     # We are ready to make a choice
                     self.calc_batch_size()
-                    assert(self.batch_size is not None and self.batch_size > 0)
+                    assert self.batch_size is not None and self.batch_size > 0
                     return self.batch_size
                 self.curr_batch_size *= 2
             return self.curr_batch_size
 
-        assert(self.batch_size is not None and self.batch_size > 0)
+        assert self.batch_size is not None and self.batch_size > 0
         return self.batch_size
-
 
     def calc_batch_size(self) -> None:
         """
@@ -94,22 +92,21 @@ class Embedder:
         """
         data = []
         for k, v in self.durations.items():
-            assert(len(v) >= self.max_duration_items)
-            assert(int == type(k))
+            assert len(v) >= self.max_duration_items
+            assert isinstance(k, int)
 
             v.sort()
 
             # remove outliers
-            v = v[self.num_outliers:-self.num_outliers]
+            v = v[self.num_outliers : -self.num_outliers]
             mean = float(sum(v)) / len(v)
-            data.append({ 'batch_size': k, 'time_per_item': mean / k })
+            data.append({"batch_size": k, "time_per_item": mean / k})
 
             if self.verbose:
-                self.logger.info(f'calc_batch_size: batch_size={k} time_per_item={mean/k:.4f} mean={mean:.4f}\n')
+                self.logger.info(f"calc_batch_size: batch_size={k} time_per_item={mean / k:.4f} mean={mean:.4f}\n")
 
-        data.sort(key=lambda item: item['time_per_item'])
-        self.batch_size = data[0]['batch_size']
-
+        data.sort(key=lambda item: item["time_per_item"])
+        self.batch_size = data[0]["batch_size"]
 
     def embed(self, data: list) -> list:
         """
@@ -123,30 +120,28 @@ class Embedder:
 
         """
         before = time.time()
-        response = self.client.embeddings.create(
-            model=self.model_name,
-            input=data
-        )
+        response = self.client.embeddings.create(model=self.model_name, input=data)
 
         elapsed = time.time() - before
-        l = len(data)
-        if l not in self.durations:
-            self.durations[l] = []
-        elif len(self.durations[l]) >= self.max_duration_items:
-            self.durations[l].pop(0)
-        self.durations[l].append(elapsed)
+        batch_size = len(data)
+        if batch_size not in self.durations:
+            self.durations[batch_size] = []
+        elif len(self.durations[batch_size]) >= self.max_duration_items:
+            self.durations[batch_size].pop(0)
+        self.durations[batch_size].append(elapsed)
 
-        return [ item.embedding for item in response.data ]
+        return [item.embedding for item in response.data]
 
 
 def call_embedder_and_save(
-        embedder: Embedder,
-        ofh: IO[str],
-        batch: list,
-        text_field_name: str,
-        vector_field_name: str,
-        logger: Any,
-        verbose: bool = False):
+    embedder: Embedder,
+    ofh: IO[str],
+    batch: list,
+    text_field_name: str,
+    vector_field_name: str,
+    logger: Any,
+    verbose: bool = False,
+):
     """
     Call the embedder on a batch of items and save the results.
 
@@ -160,22 +155,22 @@ def call_embedder_and_save(
         verbose:            If True, logs extra info.
 
     """
-    embd = embedder.embed([ item[text_field_name] for item in batch ])
+    embd = embedder.embed([item[text_field_name] for item in batch])
 
     for i in range(len(batch)):
         batch[i][vector_field_name] = embd[i]
-        ofh.write(json.dumps(batch[i], ensure_ascii=False, sort_keys=True) + '\n')
+        ofh.write(json.dumps(batch[i], ensure_ascii=False, sort_keys=True) + "\n")
 
 
 def read_vdb_section(
-        ifh: IO[str],
-        ofh: IO[str],
-        embedder: Any,
-        logger: Any,
-        text_field_name: str = 'text',
-        vector_field_name: str = 'vector',
-        verbose: bool = False,
-    ) -> None:
+    ifh: IO[str],
+    ofh: IO[str],
+    embedder: Any,
+    logger: Any,
+    text_field_name: str = "text",
+    vector_field_name: str = "vector",
+    verbose: bool = False,
+) -> None:
     """
     Reads chunks, deletes old vectors and creates new ones with given embedder.
 
@@ -189,25 +184,32 @@ def read_vdb_section(
         verbose:           If True, logs additional info.
     """
     if verbose:
-        logger.info(f'Read vdb section')
+        logger.info("Read vdb section")
 
     batch_size = embedder.get_batch_size()
 
     batch = []
-    cnt = 0
     for line in ifh:
         # End of section
         if 0 == len(line):
             break
 
         if len(batch) >= batch_size:
-            call_embedder_and_save(embedder, ofh, batch, text_field_name, vector_field_name, logger, verbose)
+            call_embedder_and_save(
+                embedder,
+                ofh,
+                batch,
+                text_field_name,
+                vector_field_name,
+                logger,
+                verbose,
+            )
             batch = []
             batch_size = embedder.get_batch_size()
 
         chunk = json.loads(line)
 
-        chunk.pop('_id', None)
+        chunk.pop("_id", None)
         chunk.pop(vector_field_name, None)
         batch.append(chunk)
 
@@ -215,10 +217,7 @@ def read_vdb_section(
         call_embedder_and_save(embedder, ofh, batch, text_field_name, vector_field_name, logger, verbose)
 
 
-def open_input_file(
-        file_name: str,
-        logger: Any
-    ) -> IO[str]:
+def open_input_file(file_name: str, logger: Any) -> IO[str]:
     """
     Opens a input file for reading, with support for plain text and LZMA-compressed (.xz) files.
 
@@ -229,24 +228,22 @@ def open_input_file(
     Returns:
         file object:  Opened file handle in text mode.
     """
-    if file_name in [ '-' ]:
+    if file_name in ["-"]:
         return sys.stdin
 
     try:
-        if file_name.endswith('.xz'):
+        if file_name.endswith(".xz"):
             import lzma
-            return lzma.open(file_name, 'rt', encoding='utf-8')
+
+            return lzma.open(file_name, "rt", encoding="utf-8")
         else:
-            return open(file_name, 'rt', encoding='utf-8')
+            return open(file_name, encoding="utf-8")
     except Exception as e:
-        logger.error(f'Failed while opening file \'{file_name}\' for reading:\n' + str(e))
+        logger.error(f"Failed while opening file '{file_name}' for reading:\n" + str(e))
         raise
 
 
-def open_output_file(
-        file_name: str,
-        logger: Any
-    ) -> IO[str]:
+def open_output_file(file_name: str, logger: Any) -> IO[str]:
     """
     Opens output file for writing
 
@@ -257,28 +254,25 @@ def open_output_file(
     Returns:
         file object:  Opened file handle in text mode.
     """
-    if file_name in [ '-' ]:
+    if file_name in ["-"]:
         return sys.stdout
 
     if os.path.isfile(file_name):
-        raise Exception(f'File \'{file_name}\' already exists.')
+        raise Exception(f"File '{file_name}' already exists.")
 
     try:
-        if file_name.endswith('.xz'):
+        if file_name.endswith(".xz"):
             import lzma
-            return lzma.open(file_name, 'wt', encoding='utf-8', preset=9 | lzma.PRESET_EXTREME)
+
+            return lzma.open(file_name, "wt", encoding="utf-8", preset=9 | lzma.PRESET_EXTREME)
         else:
-            return open(file_name, 'wt', encoding='utf-8')
+            return open(file_name, "w", encoding="utf-8")
     except Exception as e:
-        logger.error(f'Failed while opening file \'{file_name}\' for writing:\n' + str(e))
+        logger.error(f"Failed while opening file '{file_name}' for writing:\n" + str(e))
         raise
 
 
-def close_file(
-        file_handle: IO[str],
-        file_name: str,
-        logger: Any
-    ) -> None:
+def close_file(file_handle: IO[str], file_name: str, logger: Any) -> None:
     """
     Depending of the file name closes the file handle or does nothing
 
@@ -290,13 +284,13 @@ def close_file(
     Returns:
         Nothing
     """
-    if file_name in [ '-' ] or file_handle is None:
+    if file_name in ["-"] or file_handle is None:
         return
 
     try:
         file_handle.close()
     except Exception as e:
-        logger.exception(f'Failed to close file \'{file_name}\': ' + str(e))
+        logger.exception(f"Failed to close file '{file_name}': " + str(e))
         raise
 
 
@@ -312,27 +306,38 @@ def main():
         int: Exit code (0 on success, non-zero on failure).
     """
 
-
     # Arguments and configs
     import argparse
-    parser = argparse.ArgumentParser(description='OpenRAG embed tool')
-    parser.add_argument('-b', '--batch-size', default=0, type=int, help='Batch size (0 - guess optimal batch size)')
-    parser.add_argument('-v', '--verbose', default=False, action='store_true', help='Be verbose')
-    parser.add_argument('-i', '--input', default='-', type=str, help='Input file name (\'-\' for STDIN)')
-    parser.add_argument('-o', '--output', default='-', type=str, help='Output file name (\'-\' for STDOUT)')
-    parser.add_argument('-u', '--url', type=str, help='URL to embedder OpenAI compatible endpoint')
-    parser.add_argument('-k', '--key', type=str, help='Secret key to access embedder')
-    parser.add_argument('-m', '--model', required=True, type=str, help='Model name')
+
+    parser = argparse.ArgumentParser(description="OpenRAG embed tool")
+    parser.add_argument(
+        "-b",
+        "--batch-size",
+        default=0,
+        type=int,
+        help="Batch size (0 - guess optimal batch size)",
+    )
+    parser.add_argument("-v", "--verbose", default=False, action="store_true", help="Be verbose")
+    parser.add_argument("-i", "--input", default="-", type=str, help="Input file name ('-' for STDIN)")
+    parser.add_argument(
+        "-o",
+        "--output",
+        default="-",
+        type=str,
+        help="Output file name ('-' for STDOUT)",
+    )
+    parser.add_argument("-u", "--url", type=str, help="URL to embedder OpenAI compatible endpoint")
+    parser.add_argument("-k", "--key", type=str, help="Secret key to access embedder")
+    parser.add_argument("-m", "--model", required=True, type=str, help="Model name")
 
     args = parser.parse_args()
 
     logger = logging.getLogger(__name__)
 
-
     try:
         embedder = Embedder(args.url, args.key, args.model, args.batch_size, logger, args.verbose)
     except Exception as e:
-        logger.exception(f'Failed while trying to create embedder: ' + str(e))
+        logger.exception("Failed while trying to create embedder: " + str(e))
         raise
 
     try:
@@ -343,17 +348,16 @@ def main():
         for line in ifh:
             ofh.write(line)
 
-            if line.strip() in [ 'vdb' ]:
-                read_vdb_section(ifh, ofh, embedder, logger, 'text', 'vector', args.verbose)
+            if line.strip() in ["vdb"]:
+                read_vdb_section(ifh, ofh, embedder, logger, "text", "vector", args.verbose)
 
     except Exception as e:
-        logger.exception(f'Error: ' + str(e))
+        logger.exception("Error: " + str(e))
         raise
     finally:
         close_file(ifh, args.input, logger)
         close_file(ofh, args.output, logger)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
-

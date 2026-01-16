@@ -1,16 +1,17 @@
-import os
 import asyncio
 import json
 import math
-from typing import Literal, TypedDict
-from loguru import logger
+import os
+from typing import TypedDict
+
 import numpy as np
-from openai import AsyncOpenAI
-from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
-from dotenv import load_dotenv
-from tqdm.asyncio import tqdm
 import pandas as pd
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from loguru import logger
+from openai import AsyncOpenAI
+from pydantic import BaseModel, Field
+from tqdm.asyncio import tqdm
 
 load_dotenv()
 
@@ -49,6 +50,7 @@ async def retrieve_response_and_docs_openrag(
             logger.debug(f"Error fetching chunks and response: {e}")
             return None, []
 
+
 def compute_hits(true_chunk_id, all_retrieved_chunks):
     return true_chunk_id in all_retrieved_chunks
 
@@ -66,6 +68,7 @@ def compute_inverted_ranks(true_chunk_id, all_retrieved_chunks):
         return 1 / rank
     else:
         return 0
+
 
 # Sources retrieval evaluation
 def relevance(val, true_chunk_ids):
@@ -99,11 +102,12 @@ llm_judge_settings = {
 
 
 class CompletionEvaluationResponse(BaseModel):
-    score: int = Field(..., 
-                       ge=1, 
-                       le=10, 
-                       description="Le résultat du juge LLM."
-        "Le résultat est compris entre 1 et 10, où 1 indique une réponse très incomplète et 10 indique une réponse très complète."
+    score: int = Field(
+        ...,
+        ge=1,
+        le=10,
+        description="Le résultat du juge LLM."
+        "Le résultat est compris entre 1 et 10, où 1 indique une réponse très incomplète et 10 indique une réponse très complète.",
         # "The output of the LLM judge. It can be one of the following: "
         # "'complete', 'mostly_complete', 'partially_complete', 'incomplete'. "
         # "This indicates how well the generated answer matches the true answer.",
@@ -111,11 +115,12 @@ class CompletionEvaluationResponse(BaseModel):
 
 
 class PrecisionEvaluationResponse(BaseModel):
-    score: int = Field(..., 
-                       ge=1, 
-                       le=10, 
-                       description="Le résultat du juge LLM."
-        "Le résultat est compris entre 1 et 10, où 1 indique une réponse très imprécise et 10 indique une réponse très précise."
+    score: int = Field(
+        ...,
+        ge=1,
+        le=10,
+        description="Le résultat du juge LLM."
+        "Le résultat est compris entre 1 et 10, où 1 indique une réponse très imprécise et 10 indique une réponse très précise.",
         # "The output of the LLM judge. It can be one of the following: "
         # "'Highly_precise', 'mostly_precise', 'low_precision', 'imprecise'. "
         # "This indicates how well the generated answer matches the true answer.",
@@ -214,7 +219,7 @@ class Element(TypedDict):
 
 
 async def main():
-    with open("./dataset.json", "r", encoding="utf-8") as f:
+    with open("./dataset.json", encoding="utf-8") as f:
         eval_dataset: list[Element] = json.load(f)
 
     list_response_answer_reference = eval_dataset  # [:10]
@@ -222,7 +227,7 @@ async def main():
     num_port = os.environ.get("APP_PORT")
     num_host = os.environ["APP_URL"]
     openrag_api_base_url = f"http://{num_host}:{num_port}"
-    partition = "pdftest"   # To replace with your wanted partition's name
+    partition = "pdftest"  # To replace with your wanted partition's name
 
     # Create shared semaphores for rate limiting
     openrag_semaphore = asyncio.Semaphore(4)  # Limit concurrent OpenRAG requests
@@ -248,14 +253,18 @@ async def main():
     ):
         if openrag_response is None:
             continue
-        chunk_id_reference = [c["id"] for c in input_reference["chunks"]]  # The "true answer" ids list
+        chunk_id_reference = [
+            c["id"] for c in input_reference["chunks"]
+        ]  # The "true answer" ids list
 
         # Hit rate and MRR
         hit_rates.append(compute_hits(chunk_id_reference[0], openrag_chunk_ids))
         MRRs.append(compute_inverted_ranks(chunk_id_reference[0], openrag_chunk_ids))
 
         # Recall computaton
-        recall = len(list(set(chunk_id_reference) & set(openrag_chunk_ids))) / len(chunk_id_reference)
+        recall = len(list(set(chunk_id_reference) & set(openrag_chunk_ids))) / len(
+            chunk_id_reference
+        )
         recalls.append(recall)
 
         # nDCG score calculation
@@ -281,7 +290,7 @@ async def main():
     print(f"Average Hit Rate: {round(np.array(hit_rates).mean(), 3)}")
     print(f"Average MRR: {round(np.array(MRRs).mean(), 3)}")
     print(f"Average Recall: {round(np.array(recalls).mean(), 3)}")
-    
+
     # Filter out error responses
     valid_scores = [(comp, prec) for comp, prec in llm_judge_scores if comp != "error"]
     valid_ndcg_scores = nDCG_scores[: len(valid_scores)]  # Match the filtered scores
@@ -310,11 +319,16 @@ async def main():
     print("\n", "-" * 50, "\n")
     print("\nCompletion evaluation distribution:")
     print(eval_results["completion_evaluation"].value_counts())
-    print(f"Completion evaluation average: {eval_results['completion_evaluation'].mean():.3f}")
+    print(
+        f"Completion evaluation average: {eval_results['completion_evaluation'].mean():.3f}"
+    )
     print("\n", "-" * 50, "\n")
     print("\nPrecision evaluation distribution:")
     print(eval_results["precision_evaluation"].value_counts())
-    print(f"Precision evaluation average: {eval_results['precision_evaluation'].mean():.3f}")
+    print(
+        f"Precision evaluation average: {eval_results['precision_evaluation'].mean():.3f}"
+    )
+
 
 if __name__ == "__main__":
     asyncio.run(main())

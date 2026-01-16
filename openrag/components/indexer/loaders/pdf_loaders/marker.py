@@ -3,7 +3,6 @@ import gc
 import re
 import time
 from pathlib import Path
-from typing import Dict, Optional, Union
 
 import ray
 import torch
@@ -217,8 +216,8 @@ class MarkerLoader(BaseLoader):
 
     async def aload_document(
         self,
-        file_path: Union[str, Path],
-        metadata: Optional[Dict] = None,
+        file_path: str | Path,
+        metadata: dict | None = None,
         save_markdown: bool = False,
     ) -> Document:
         from components.ray_utils import call_ray_actor_with_timeout

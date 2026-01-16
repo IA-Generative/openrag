@@ -1,4 +1,3 @@
-import pytest
 from utils.logger import escape_markup
 
 

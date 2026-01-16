@@ -44,7 +44,7 @@ class OpenAIEmbedding(BaseEmbedding):
         except openai.APIError as e:
             logger.error("API error in embed_documents", error=str(e))
             raise EmbeddingAPIError(
-                f"OpenAI API error during document embedding: {str(e)}",
+                f"OpenAI API error during document embedding: {e!s}",
                 model_name=self.embedding_model,
                 base_url=self.base_url,
                 error=str(e),
@@ -62,7 +62,7 @@ class OpenAIEmbedding(BaseEmbedding):
         except Exception as e:
             logger.exception("Unexpected error while embedding documents", error=str(e))
             raise UnexpectedEmbeddingError(
-                f"Failed to embed documents: {str(e)}",
+                f"Failed to embed documents: {e!s}",
                 model_name=self.embedding_model,
                 base_url=self.base_url,
                 error=str(e),

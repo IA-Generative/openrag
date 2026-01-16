@@ -2,7 +2,6 @@ import hashlib
 import os
 import secrets
 from datetime import datetime
-from typing import Dict, Optional
 
 from sqlalchemy import (
     JSON,
@@ -153,7 +152,7 @@ class PartitionFileManager:
 
         except Exception as e:
             raise VDBConnectionError(
-                f"Failed to connect to database: {str(e)}",
+                f"Failed to connect to database: {e!s}",
                 db_url=database_url,
                 db_type="SQLAlchemy",
             )
@@ -179,7 +178,7 @@ class PartitionFileManager:
                 s.commit()
                 self.logger.info("Upgraded existing user to admin")
 
-    def list_partition_files(self, partition: str, limit: Optional[int] = None):
+    def list_partition_files(self, partition: str, limit: int | None = None):
         """List files in a partition with optional limit - Optimized by querying File table directly"""
         log = self.logger.bind(partition=partition)
         with self.Session() as session:
@@ -208,8 +207,8 @@ class PartitionFileManager:
         self,
         file_id: str,
         partition: str,
-        file_metadata: Optional[Dict] = None,
-        user_id: Optional[int] = None,
+        file_metadata: dict | None = None,
+        user_id: int | None = None,
     ):
         """Add a file to a partition - Optimized with direct partition lookup"""
         log = self.logger.bind(file_id=file_id, partition=partition)
@@ -334,8 +333,8 @@ class PartitionFileManager:
 
     def create_user(
         self,
-        display_name: Optional[str] = None,
-        external_user_id: Optional[str] = None,
+        display_name: str | None = None,
+        external_user_id: str | None = None,
         is_admin: bool = False,
     ) -> dict:
         """Create a user and generate an API token for them."""
@@ -375,7 +374,7 @@ class PartitionFileManager:
                 for u in users
             ]
 
-    def get_user_by_token(self, token: str) -> Optional[dict]:
+    def get_user_by_token(self, token: str) -> dict | None:
         with self.Session() as s:
             hashed_token = self.hash_token(token)
             user = s.query(User).filter(User.token == hashed_token).first()
@@ -399,7 +398,7 @@ class PartitionFileManager:
                 "memberships": memberships,
             }
 
-    def get_user_by_id(self, user_id: int) -> Optional[dict]:
+    def get_user_by_id(self, user_id: int) -> dict | None:
         with self.Session() as s:
             user = s.query(User).filter(User.id == user_id).first()
             if not user:

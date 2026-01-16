@@ -129,7 +129,7 @@ async def chat_profile(current_user: cl.User):
             )
         return chat_profiles
     except Exception as e:
-        await cl.Message(content=f"An error occured: {str(e)}").send()
+        await cl.Message(content=f"An error occured: {e!s}").send()
 
 
 @cl.on_chat_start
@@ -151,7 +151,7 @@ async def on_chat_start():
     except Exception as e:
         logger.exception("An error occured while checking the API health", error=str(e))
         await cl.Message(
-            content=f"An error occured while checking the API health: {str(e)}"
+            content=f"An error occured while checking the API health: {e!s}"
         ).send()
 
 
@@ -281,4 +281,4 @@ async def on_message(message: cl.Message):
                 await msg.update()
         except Exception as e:
             logger.exception("Error during chat completion", error=str(e))
-            await cl.Message(content=f"An error occurred: {str(e)}").send()
+            await cl.Message(content=f"An error occurred: {e!s}").send()

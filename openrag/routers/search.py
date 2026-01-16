@@ -1,4 +1,3 @@
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import JSONResponse
@@ -16,7 +15,8 @@ logger = get_logger()
 router = APIRouter()
 
 
-@router.get("",
+@router.get(
+    "",
     description="""Perform semantic search across multiple partitions.
 
 **Query Parameters:**
@@ -46,7 +46,7 @@ Find relevant information across your entire document collection.
 )
 async def search_multiple_partitions(
     request: Request,
-    partitions: Optional[List[str]] = Query(
+    partitions: list[str] | None = Query(
         default=["all"], description="List of partitions to search"
     ),
     text: str = Query(..., description="Text to search semantically"),
@@ -83,7 +83,8 @@ async def search_multiple_partitions(
     )
 
 
-@router.get("/partition/{partition}",
+@router.get(
+    "/partition/{partition}",
     description="""Perform semantic search within a single partition.
 
 **Parameters:**
@@ -133,7 +134,8 @@ async def search_one_partition(
     )
 
 
-@router.get("/partition/{partition}/file/{file_id}",
+@router.get(
+    "/partition/{partition}/file/{file_id}",
     description="""Perform semantic search within a specific file.
 
 **Parameters:**

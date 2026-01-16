@@ -1,4 +1,3 @@
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -11,7 +10,8 @@ logger = get_logger()
 router = APIRouter()
 
 
-@router.get("/",
+@router.get(
+    "/",
     description="""List all users in the system.
 
 **Permissions:**
@@ -34,7 +34,8 @@ async def list_users(vectordb=Depends(get_vectordb), admin_user=Depends(require_
     return JSONResponse(status_code=status.HTTP_200_OK, content={"users": users})
 
 
-@router.get("/info",
+@router.get(
+    "/info",
     description="""Get current authenticated user information.
 
 **Authentication:**
@@ -56,7 +57,8 @@ async def get_current_user(request: Request):
     return user
 
 
-@router.post("/",
+@router.post(
+    "/",
     description="""Create a new user account.
 
 **Parameters:**
@@ -79,8 +81,8 @@ Returns created user including:
 """,
 )
 async def create_user(
-    display_name: Optional[str] = Form(None),
-    external_user_id: Optional[str] = Form(None),
+    display_name: str | None = Form(None),
+    external_user_id: str | None = Form(None),
     is_admin: bool = Form(False),
     vectordb=Depends(get_vectordb),
     admin_user=Depends(require_admin),
@@ -97,7 +99,8 @@ async def create_user(
     return JSONResponse(status_code=status.HTTP_201_CREATED, content=user)
 
 
-@router.get("/{user_id}",
+@router.get(
+    "/{user_id}",
     description="""Get details for a specific user.
 
 **Parameters:**
@@ -127,7 +130,8 @@ async def get_user(
     return JSONResponse(status_code=status.HTTP_200_OK, content=user)
 
 
-@router.delete("/{user_id}",
+@router.delete(
+    "/{user_id}",
     description="""Delete a user account.
 
 **Parameters:**
@@ -155,13 +159,15 @@ async def delete_user(
     """
     if user_id == 1:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete default admin user."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete default admin user.",
         )
     await vectordb.delete_user.remote(user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/{user_id}/regenerate_token",
+@router.post(
+    "/{user_id}/regenerate_token",
     description="""Regenerate a user's authentication token.
 
 **Parameters:**

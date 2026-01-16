@@ -2565,8 +2565,8 @@ wheels = [
 
 [[package]]
 name = "openrag"
-version = "0.1.0"
-source = { virtual = "." }
+version = "1.1.6"
+source = { editable = "." }
 dependencies = [
     { name = "aiopath" },
     { name = "alembic" },
@@ -2607,6 +2607,7 @@ dependencies = [
     { name = "ray", extra = ["default"] },
     { name = "robotframework" },
     { name = "robotframework-requests" },
+    { name = "ruff" },
     { name = "spire-doc" },
     { name = "sqlalchemy-utils" },
     { name = "torch" },
@@ -2663,6 +2664,7 @@ requires-dist = [
     { name = "ray", extras = ["default"], specifier = ">=2.47.1" },
     { name = "robotframework", specifier = ">=7.2.2" },
     { name = "robotframework-requests", specifier = ">=0.9.7" },
+    { name = "ruff", specifier = ">=0.14.1" },
     { name = "spire-doc", specifier = ">=13.1.0" },
     { name = "sqlalchemy-utils" },
     { name = "torch", specifier = ">=2.4.1" },

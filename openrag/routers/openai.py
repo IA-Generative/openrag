@@ -167,7 +167,7 @@ async def openai_chat_completion(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The last message must be a non-empty user message",
         )
-    
+
     log.debug(
         "Received chat completion request with messages: {}",
         truncate(str(request.messages)),
@@ -194,7 +194,7 @@ async def openai_chat_completion(
         log.exception("Chat completion failed.", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Chat completion failed: {str(e)}",
+            detail=f"Chat completion failed: {e!s}",
         )
 
     metadata = __prepare_sources(request2, docs)
@@ -245,7 +245,7 @@ async def openai_chat_completion(
             log.warning("Error while generating answer", error=str(e))
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error while generating answer: {str(e)}",
+                detail=f"Error while generating answer: {e!s}",
             )
 
 
@@ -322,7 +322,7 @@ async def openai_completion(
         log.exception("Completion request failed.", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Completion failed: {str(e)}",
+            detail=f"Completion failed: {e!s}",
         )
 
     metadata = __prepare_sources(request2, docs)
@@ -337,5 +337,5 @@ async def openai_completion(
         log.warning("No response from LLM.", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"No response from LLM: {str(e)}",
+            detail=f"No response from LLM: {e!s}",
         )

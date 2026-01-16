@@ -4,7 +4,6 @@ Related to: https://github.com/linagora/openrag/issues/182
 """
 
 import pytest
-
 from utils.external_resource_errors import is_external_resource_error
 
 
