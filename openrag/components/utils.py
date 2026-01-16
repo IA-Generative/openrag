@@ -1,8 +1,5 @@
 import asyncio
-import atexit
 import threading
-import time
-from abc import ABCMeta
 
 import ray
 from config import load_config
@@ -29,38 +26,6 @@ class SingletonMeta(type):
         return cls._instances[cls]
 
 
-class SingletonABCMeta(ABCMeta, SingletonMeta):
-    pass
-
-
-class LLMSemaphore(metaclass=SingletonMeta):
-    def __init__(self, max_concurrent_ops: int):
-        if max_concurrent_ops <= 0:
-            raise ValueError("max_concurrent_ops must be a positive integer")
-        self.max_concurrent_ops = max_concurrent_ops
-        self._semaphore = asyncio.Semaphore(max_concurrent_ops)
-        atexit.register(self.cleanup)
-
-    async def __aenter__(self):
-        await self._semaphore.acquire()
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        self._semaphore.release()
-
-    async def acquire(self):
-        await self._semaphore.acquire()
-
-    def release(self):
-        self._semaphore.release()
-
-    def cleanup(self):
-        """Ensure semaphore is released at shutdown"""
-        while self._semaphore.locked():
-            self._semaphore.release()
-            time.sleep(0.001)  # Prevent CPU spin
-
-
 @ray.remote(max_restarts=5, max_concurrency=config.ray.semaphore.concurrency)
 class DistributedSemaphoreActor:
     def __init__(self, max_concurrent_ops: int):
@@ -75,7 +40,6 @@ class DistributedSemaphoreActor:
     def cleanup(self):
         while self.semaphore.locked():
             self.semaphore.release()
-            time.sleep(0.001)  # Prevent CPU spin
 
 
 class DistributedSemaphore:
@@ -179,5 +143,13 @@ def get_vlm_semaphore() -> DistributedSemaphore:
     )
 
 
+def get_audio_semaphore() -> DistributedSemaphore:
+    return DistributedSemaphore(
+        name="audioSemaphore",
+        max_concurrent_ops=config.loader.transcriber.max_concurrent_chunks,
+    )
+
+
 get_llm_semaphore()
 get_vlm_semaphore()
+get_audio_semaphore()
