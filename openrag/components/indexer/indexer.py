@@ -96,7 +96,7 @@ class Indexer:
             metadata = {**metadata, "partition": partition}
 
             # Serialize
-            doc = await self.serialize_file(path=path, metadata=metadata, task_id=task_id)
+            doc = await self.handle.serialize_file.remote(path=path, metadata=metadata, task_id=task_id)
 
             # Chunk
             if doc:
