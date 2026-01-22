@@ -1,5 +1,8 @@
 import re
-from typing import Callable, Literal, Optional
+from collections.abc import Callable
+from typing import Literal
+
+from components.indexer.utils.text_sanitizer import clean_markdown_table_spacing
 
 # Regex to match a Markdown table (header + delimiter + at least one row)
 TABLE_RE = re.compile(
@@ -21,7 +24,7 @@ class MDElement:
         self,
         type: Literal["text", "table", "image"],
         content: str,
-        page_number: Optional[int] = None,
+        page_number: int | None = None,
     ):
         self.type = type  # 'text', 'table', 'image'
         self.content = content
@@ -191,7 +194,7 @@ def parse_markdown_table(markdown_table):
 def chunk_table(
     table_element: MDElement,
     chunk_size: int = 512,
-    length_function: Optional[Callable[[str], int]] = None,
+    length_function: Callable[[str], int] | None = None,
 ) -> list[MDElement]:
     txt = clean_markdown_table_spacing(table_element.content)
     header_lines, groups = parse_markdown_table(txt)
@@ -224,11 +227,7 @@ def chunk_table(
                 current_rows.append(prev_last_row)  # add overlapping row
 
             current_rows.append(group_txt)
-            current_size = (
-                header_ntoks
-                + (length_function(prev_last_row) if prev_last_row else 0)
-                + g_ntoks
-            )
+            current_size = header_ntoks + (length_function(prev_last_row) if prev_last_row else 0) + g_ntoks
 
         else:
             # fits → just append normally
@@ -251,30 +250,3 @@ def chunk_table(
         )
         for subtable in subtables
     ]
-
-
-def clean_markdown_table_spacing(markdown_table: str) -> str:
-    """
-    Normalize spacing inside a markdown table:
-    - trims each cell
-    - keeps table shape intact
-    """
-
-    cleaned_lines = []
-
-    for line in markdown_table.strip().split("\n"):
-        if "|" not in line:
-            cleaned_lines.append(line.strip())
-            continue
-
-        # Split row into cells (preserve leading/trailing pipes)
-        parts = line.split("|")
-
-        # Strip each cell except the outer empty ones
-        cleaned_cells = [cell.strip() for cell in parts]
-
-        # Rebuild with a single space around each cell
-        new_line = "| " + " | ".join(cleaned_cells[1:-1]) + " |"
-        cleaned_lines.append(new_line)
-
-    return "\n".join(cleaned_lines)

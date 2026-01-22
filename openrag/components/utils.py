@@ -1,7 +1,6 @@
 import asyncio
-import atexit
 import threading
-from abc import ABCMeta
+from typing import ClassVar
 
 import ray
 from config import load_config
@@ -16,7 +15,7 @@ logger = get_logger()
 
 
 class SingletonMeta(type):
-    _instances = {}
+    _instances: ClassVar[dict] = {}
     _lock = threading.Lock()  # Ensures thread safety
 
     def __call__(cls, *args, **kwargs):
@@ -28,38 +27,7 @@ class SingletonMeta(type):
         return cls._instances[cls]
 
 
-class SingletonABCMeta(ABCMeta, SingletonMeta):
-    pass
-
-
-class LLMSemaphore(metaclass=SingletonMeta):
-    def __init__(self, max_concurrent_ops: int):
-        if max_concurrent_ops <= 0:
-            raise ValueError("max_concurrent_ops must be a positive integer")
-        self.max_concurrent_ops = max_concurrent_ops
-        self._semaphore = asyncio.Semaphore(max_concurrent_ops)
-        atexit.register(self.cleanup)
-
-    async def __aenter__(self):
-        await self._semaphore.acquire()
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        self._semaphore.release()
-
-    async def acquire(self):
-        await self._semaphore.acquire()
-
-    def release(self):
-        self._semaphore.release()
-
-    def cleanup(self):
-        """Ensure semaphore is released at shutdown"""
-        while self._semaphore.locked():
-            self._semaphore.release()
-
-
-@ray.remote(max_restarts=-1, max_concurrency=config.ray.semaphore.concurrency)
+@ray.remote(max_restarts=5, max_concurrency=config.ray.semaphore.concurrency)
 class DistributedSemaphoreActor:
     def __init__(self, max_concurrent_ops: int):
         self.semaphore = asyncio.Semaphore(max_concurrent_ops)
@@ -67,12 +35,8 @@ class DistributedSemaphoreActor:
     async def acquire(self):
         await self.semaphore.acquire()
 
-    async def release(self):
+    def release(self):
         self.semaphore.release()
-
-    def cleanup(self):
-        while self.semaphore.locked():
-            self.semaphore.release()
 
 
 class DistributedSemaphore:
@@ -82,44 +46,35 @@ class DistributedSemaphore:
         name: str = "llmSemaphore",
         namespace="openrag",
         max_concurrent_ops: int = 10,
-        lazy: bool = True,
     ):
-        self._actor = None
         self._name = name
         self._namespace = namespace
         self._max_concurrent_ops = max_concurrent_ops
-        self._lazy = lazy
 
-        if not lazy:
-            self._init_actor()
+    def _get_or_create_actor(self):
+        try:
+            # reuse existing actor if it exists
+            _actor = ray.get_actor(self._name, namespace=self._namespace)
+        except ValueError:
+            # create new actor if it doesn't exist
+            _actor = DistributedSemaphoreActor.options(
+                name=self._name,
+                namespace=self._namespace,
+                lifetime="detached",
+            ).remote(self._max_concurrent_ops)
+        except Exception:
+            raise
 
-    def _init_actor(self):
-        if self._actor is None:
-            try:
-                self._actor = ray.get_actor(
-                    self._name, namespace=self._namespace
-                )  # reuse existing actor if it exists
-            except ValueError:
-                # create new actor if it doesn't exist
-                self._actor = DistributedSemaphoreActor.options(
-                    name=self._name, namespace=self._namespace, lifetime="detached"
-                ).remote(self._max_concurrent_ops)
+        return _actor
 
     async def __aenter__(self):
-        if self._actor is None:
-            self._init_actor()
-        await self._actor.acquire.remote()
+        semaphore_actor = self._get_or_create_actor()
+        await semaphore_actor.acquire.remote()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        if self._actor is None:
-            self._init_actor()
-        await self._actor.release.remote()
-
-    def cleanup(self):
-        if self._actor is None:
-            self._init_actor()
-        ray.get(self._actor.cleanup.remote())
+        semaphore_actor = self._get_or_create_actor()
+        await semaphore_actor.release.remote()
 
 
 def format_context(docs: list[Document], max_context_tokens: int = 4096) -> str:
@@ -129,7 +84,7 @@ def format_context(docs: list[Document], max_context_tokens: int = 4096) -> str:
     llm = ChatOpenAI(**config.llm)
     _length_function = llm.get_num_tokens
 
-    docs_with_tokens = list(map(lambda d: (_length_function(d.page_content), d), docs))
+    docs_with_tokens = list(map(lambda d: (_length_function(d.page_content), d), docs))  # noqa: C417
 
     reduced_docs = []
 
@@ -141,9 +96,7 @@ def format_context(docs: list[Document], max_context_tokens: int = 4096) -> str:
         total_tokens += n_tokens
 
     sep = "-" * 10 + "\n\n"
-    logger.debug(
-        "Context formatted", total_tokens=total_tokens, doc_count=len(reduced_docs)
-    )
+    logger.debug("Context formatted", total_tokens=total_tokens, doc_count=len(reduced_docs))
     return f"{sep}".join(reduced_docs)
 
 
@@ -176,5 +129,13 @@ def get_vlm_semaphore() -> DistributedSemaphore:
     )
 
 
+def get_audio_semaphore() -> DistributedSemaphore:
+    return DistributedSemaphore(
+        name="audioSemaphore",
+        max_concurrent_ops=config.loader.transcriber.max_concurrent_chunks,
+    )
+
+
 get_llm_semaphore()
 get_vlm_semaphore()
+get_audio_semaphore()

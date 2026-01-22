@@ -17,27 +17,21 @@ class VDBCreateOrLoadCollectionError(VDBError):
     """Raised when there's an issue with collection operations."""
 
     def __init__(self, message: str, **kwargs):
-        super().__init__(
-            message=message, code="VDB_COLLECTION_ERROR", status_code=422, **kwargs
-        )
+        super().__init__(message=message, code="VDB_COLLECTION_ERROR", status_code=422, **kwargs)
 
 
 class VDBInsertError(VDBError):
     """Raised when data insertion fails."""
 
     def __init__(self, message: str, status_code: int = 422, **kwargs):
-        super().__init__(
-            message=message, code="VDB_INSERT_ERROR", status_code=status_code, **kwargs
-        )
+        super().__init__(message=message, code="VDB_INSERT_ERROR", status_code=status_code, **kwargs)
 
 
 class VDBFileIDAlreadyExistsError(VDBError):
     """Raised when a file already exists in the vector database."""
 
     def __init__(self, message: str, **kwargs):
-        super().__init__(
-            message=message, code="VDB_FILE_ALREADY_EXISTS", status_code=409, **kwargs
-        )
+        super().__init__(message=message, code="VDB_FILE_ALREADY_EXISTS", status_code=409, **kwargs)
 
 
 class VDBDeleteError(VDBError):
@@ -49,9 +43,7 @@ class VDBDeleteError(VDBError):
         status_code=422,
         **kwargs,
     ):
-        super().__init__(
-            message=message, code="VDB_DELETE_ERROR", status_code=status_code, **kwargs
-        )
+        super().__init__(message=message, code="VDB_DELETE_ERROR", status_code=status_code, **kwargs)
 
 
 class VDBSearchError(VDBError):

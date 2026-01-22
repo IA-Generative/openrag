@@ -24,9 +24,7 @@ class CustomDocLoader(BaseLoader):
         cls_loader = CustomDocLoader.doc_loaders.get(path.suffix, None)
 
         if cls_loader is None:
-            raise ValueError(
-                f"This loader only supports {CustomDocLoader.doc_loaders.keys()} format"
-            )
+            raise ValueError(f"This loader only supports {CustomDocLoader.doc_loaders.keys()} format")
 
         loader = cls_loader(
             file_path=str(file_path),

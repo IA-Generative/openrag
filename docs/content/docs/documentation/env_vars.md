@@ -19,6 +19,7 @@ Openrag loads all files into a pivot markdown file format before proceeding to c
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `IMAGE_CAPTIONING` | `bool` | `true` | If `true`, an LLM is used to describe images and convert them into text using a [specific prompt](https://github.com/linagora/openrag/blob/main/prompts/example1/image_captioning_tmpl.txt). The image in files are replaced by their descriptions |
+| `IMAGE_CAPTIONING_URL` | `bool` | `true` | If `true`, HTTP/HTTPS image URLs in markdown files are fetched and described by the VLM. |
 | `SAVE_MARKDOWN` | `bool` | `false` | If `true`, the pivot-format markdown produced during parsing is saved. Useful for debugging and verifying the correctness of the generated markdown. |
 |`SAVE_UPLOADED_FILES`|`bool`|`false`| When `true`, uploaded files are stored on disk. You must enable this option if you want Chainlit to show sources while chatting.|
 | `PDFLoader` | `str` | `MarkerLoader` | Specifies the PDF parsing engine to use. Available options: `PyMuPDFLoader`, `PyMuPDF4LLMLoader`, `MarkerLoader` and `DotsOCRLoader`.|
@@ -100,6 +101,8 @@ As noted in [this PR](https://github.com/linagora/openrag/pull/134), the current
 | `CONTEXTUAL_RETRIEVAL` | `bool` | true                 | Enables contextual retrieval to chunk context, a technique introduced by Anthropic to improve retrieval performance ([Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval)) |
 | `CHUNK_SIZE`           | `int`  | 512                  | Maximum size (in characters) of each chunk. |
 | `CHUNK_OVERLAP_RATE`   | `float`| 0.2                  | Percentage of overlap between consecutive chunks. |
+| `CONTEXTUALIZATION_TIMEOUT` | `int` | 120 | Timeout in seconds for individual chunk contextualization LLM calls. Prevents long-running contextualization tasks from blocking the system. |
+| `MAX_CONCURRENT_CONTEXTUALIZATION` | `int` | 10 | Maximum number of concurrent chunk contextualization tasks. Limits parallel LLM requests to prevent CPU exhaustion during batch indexing. |
 
 After files are converted to Markdown, only the **text content** is chunked.
 **Image descriptions and Markdown tables are not chunked.**
@@ -312,6 +315,7 @@ The following environment variables control Ray's logging behavior, task retry s
 | `RAY_ENABLE_RECORD_ACTOR_TASK_LOGGING` | `number` | `1` | Enables logs at task level in the Ray dashboard for better debugging and monitoring. |
 | `RAY_task_retry_delay_ms` | `number` | `3000` | Delay (in milliseconds) before retrying a failed task. Controls the wait time between retry attempts. |
 | `RAY_ENABLE_UV_RUN_RUNTIME_ENV` | `number` | `0` | Controls UV runtime environment integration. **Critical**: Must be set to `0` when using the newest version of UV to avoid compatibility issues. |
+|`RAY_memory_monitor_refresh_ms`| `number` | 250 ms | To control the frequency of memory usage checks and task or actor termination if needed. If you set this value to 0, task killing is disabled. |
 
 #### Indexer Configuration
 
@@ -328,6 +332,7 @@ Controls the maximum number of concurrent operations for different indexer tasks
 |----------|------|---------|-------------|
 | `INDEXER_DEFAULT_CONCURRENCY` | int | 1000 | Default concurrency limit for general operations |
 | `INDEXER_UPDATE_CONCURRENCY` | int | 100 | Maximum concurrent document update operations |
+| `INDEXER_SERIALIZE_CONCURRENCY` | int | 50 | Maximum concurrent serialization operations |
 | `INDEXER_SEARCH_CONCURRENCY` | int | 100 | Maximum concurrent search/retrieval operations |
 | `INDEXER_DELETE_CONCURRENCY` | int | 100 | Maximum concurrent document deletion operations |
 | `INDEXER_CHUNK_CONCURRENCY` | int | 1000 | Maximum concurrent document chunking operations |
@@ -414,6 +419,7 @@ The following environment variables configure the FastAPI server and control acc
 | `AUTH_TOKEN` | `string` | `EMPTY` | An authentication token is required to access protected API endpoints. By default, this token corresponds to the API key of the created admin (see [Admin Bootstrapping](/openrag/documentation/user_auth/#2-admin-bootstrapping)). If left empty, authentication is disabled. |
 | `SUPER_ADMIN_MODE` | `boolean` | `false` | Enables super admin privileges when set to `true`, [granting unrestricted access](/openrag/documentation/data_model/#access-control) to all operations and bypassing standard access controls. This is for debugging |
 |`API_NUM_WORKERS`|`int`|1|Number of uvicorn workers|
+| `PREFERRED_URL_SCHEME` | `string` | `null` | URL scheme (`http` or `https`) used when generating URLs in API responses (e.g., `task_status_url`). When running behind a reverse proxy that terminates SSL, set this to `https` to ensure generated URLs use the correct scheme. If unset, the scheme from the incoming request is used. |
 
 
 

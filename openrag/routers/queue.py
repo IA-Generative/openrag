@@ -25,7 +25,8 @@ def _format_pool_info(worker_info: dict[str, int]) -> dict[str, int]:
     }
 
 
-@router.get("/info",
+@router.get(
+    "/info",
     description="""Get queue and worker pool information.
 
 **Permissions:**
@@ -49,9 +50,7 @@ Returns system status including:
 Monitor system load and worker utilization.
 """,
 )
-async def get_queue_info(
-    admin=Depends(require_admin), task_state_manager=Depends(get_task_state_manager)
-):
+async def get_queue_info(admin=Depends(require_admin), task_state_manager=Depends(get_task_state_manager)):
     all_states: dict = await task_state_manager.get_all_states.remote()
     status_counts = Counter(all_states.values())
 
@@ -71,7 +70,9 @@ async def get_queue_info(
     return {"workers": workers_block, "tasks": task_summary}
 
 
-@router.get("/tasks", name="list_tasks",
+@router.get(
+    "/tasks",
+    name="list_tasks",
     description="""List indexing tasks with optional filtering.
 
 **Query Parameters:**
@@ -118,26 +119,16 @@ async def list_tasks(
     if user.get("is_admin"):
         all_info: dict[str, dict] = await task_state_manager.get_all_info.remote()
     else:
-        all_info: dict[str, dict] = await task_state_manager.get_all_user_info.remote(
-            user.get("id")
-        )
+        all_info: dict[str, dict] = await task_state_manager.get_all_user_info.remote(user.get("id"))
 
     if task_status is None:
         filtered = all_info.items()
     else:
         if task_status.lower() == "active":
             active_states = {"QUEUED", "SERIALIZING", "CHUNKING", "INSERTING"}
-            filtered = [
-                (tid, info)
-                for tid, info in all_info.items()
-                if info["state"] in active_states
-            ]
+            filtered = [(tid, info) for tid, info in all_info.items() if info["state"] in active_states]
         else:
-            filtered = [
-                (tid, info)
-                for tid, info in all_info.items()
-                if info["state"].lower() == task_status.lower()
-            ]
+            filtered = [(tid, info) for tid, info in all_info.items() if info["state"].lower() == task_status.lower()]
 
     # format the response
     tasks = []

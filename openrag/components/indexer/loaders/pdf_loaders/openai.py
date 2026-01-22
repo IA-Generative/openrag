@@ -5,8 +5,6 @@ import json
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, List, Optional, Union
-import ray
 
 import pypdfium2 as pdfium
 from langchain.schema import Document
@@ -17,16 +15,11 @@ from utils.logger import logger
 from ..base import BaseLoader
 
 
-@ray.remote(max_concurrency=10)
-class PDFToImagesWorker:
-    def __init__(self):
-        pass
+async def pdf_to_images(pdf_path: str, scale: float = 1.0) -> list[Image.Image]:
+    pdf: pdfium.PdfDocument = await asyncio.to_thread(pdfium.PdfDocument, pdf_path)
+    return [p.render(scale=scale).to_pil() for p in pdf]
 
-    async def pdf_to_images(self, pdf_path: str, scale: float = 1.0) -> List[Image.Image]:
-        pdf = pdfium.PdfDocument(pdf_path)
-        return [p.render(scale=scale).to_pil() for p in pdf]
 
-pdf_worker = PDFToImagesWorker.remote()
 class OpenAILoader(BaseLoader, ABC):
     """Generic OpenAI-compatible loader for multimodal OCR-style models."""
 
@@ -44,13 +37,12 @@ class OpenAILoader(BaseLoader, ABC):
             max_retries=self.config.loader["openai"].get("max_retries", 2),
             top_p=self.config.loader["openai"].get("top_p", 0.9),
         )
-        self.llm_semaphore = asyncio.Semaphore(
-            self.config.loader["openai"].get("concurrency_limit", 20)
-        )
+        self.llm_semaphore = asyncio.Semaphore(self.config.loader["openai"].get("concurrency_limit", 20))
+
     async def aload_document(
         self,
-        file_path: Union[str, Path],
-        metadata: Optional[Dict] = None,
+        file_path: str | Path,
+        metadata: dict | None = None,
         save_markdown: bool = False,
     ) -> Document:
         """Main pipeline: PDF → OCR → Caption → Markdown."""
@@ -61,7 +53,7 @@ class OpenAILoader(BaseLoader, ABC):
         file_path = str(file_path)
 
         try:
-            pages = await pdf_worker.pdf_to_images.remote(file_path)
+            pages = await pdf_to_images(file_path)
             ocr_results = await self._run_ocr_on_pages(pages)
             markdown = await self._assemble_markdown(pages, ocr_results)
 
@@ -76,13 +68,11 @@ class OpenAILoader(BaseLoader, ABC):
             logger.exception("Error in OpenAILoader.aload_document", path=file_path)
             raise
 
-    async def _run_ocr_on_pages(self, pages: List[Image.Image]) -> List[dict]:
+    async def _run_ocr_on_pages(self, pages: list[Image.Image]) -> list[dict]:
         tasks = [self._img2result(img) for img in pages]
         return await asyncio.gather(*tasks)
 
-    async def _assemble_markdown(
-        self, pages: List[Image.Image], results: List[dict]
-    ) -> str:
+    async def _assemble_markdown(self, pages: list[Image.Image], results: list[dict]) -> str:
         markdown_parts = []
         for page_img, page_res in zip(pages, results):
             if not page_res:
@@ -113,9 +103,7 @@ class OpenAILoader(BaseLoader, ABC):
                         "content": [
                             {
                                 "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/{format.lower()};base64,{img_b64}"
-                                },
+                                "image_url": {"url": f"data:image/{format.lower()};base64,{img_b64}"},
                             },
                             {
                                 "type": "text",
@@ -136,9 +124,7 @@ class OpenAILoader(BaseLoader, ABC):
     @abstractmethod
     def _result_to_md(self, result: list[dict]) -> str:
         """Convert structured OCR + caption results to markdown format."""
-        pass
 
     @abstractmethod
     async def _caption_images(self, page_img: Image.Image, page_res: list):
         """Extract picture elements and caption them."""
-        pass

@@ -5,7 +5,6 @@ from io import BytesIO
 from langchain_core.documents.base import Document
 from markitdown import MarkItDown
 from PIL import Image
-from tqdm.asyncio import tqdm
 from utils.logger import get_logger
 
 from .base import BaseLoader
@@ -32,9 +31,9 @@ class DocxLoader(BaseLoader):
         result = self.converter.convert(file_path).text_content
 
         if self.image_captioning:
+            # Handle embedded images (extracted from docx zip)
             images = self.get_images_from_zip(file_path)
-
-            captions = await self.get_captions(images)
+            captions = await self.caption_images(images, desc="Captioning embedded images")
             for caption in captions:
                 result = re.sub(
                     r"!\[.*?\]\(data:image/.*?\)",
@@ -43,6 +42,13 @@ class DocxLoader(BaseLoader):
                     count=1,
                 )
 
+            # Handle linked images (HTTP URLs) using shared method
+            # Only caption HTTP URLs, data URIs are already handled above
+            result = await self.replace_markdown_images_with_captions(
+                result,
+                caption_data_uris=False,
+                desc="Captioning linked images",
+            )
         else:
             logger.info("Image captioning disabled. Ignoring images.")
 
@@ -50,10 +56,6 @@ class DocxLoader(BaseLoader):
         if save_markdown:
             self.save_content(result, str(file_path))
         return doc
-
-    async def get_captions(self, images):
-        tasks = [self.get_image_description(image_data=img) for img in images]
-        return await tqdm.gather(*tasks, desc="Generating captions")
 
     def get_images_from_zip(self, input_file):
         with zipfile.ZipFile(input_file, "r") as docx:
@@ -76,9 +78,7 @@ class DocxLoader(BaseLoader):
                 image = convert_to_png_image(image)
 
                 images_not_in_order.append(image)
-                order.append(
-                    image_file.split("media/image")[1].split(f".{image_extension}")[0]
-                )
+                order.append(image_file.split("media/image")[1].split(f".{image_extension}")[0])
 
             images = [None] * len(images_not_in_order)  # the images in the right order
             for i in range(len(images_not_in_order)):

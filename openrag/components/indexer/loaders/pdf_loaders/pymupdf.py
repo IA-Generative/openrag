@@ -11,9 +11,7 @@ class PyMuPDFLoader(BaseLoader):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    async def aload_document(
-        self, file_path, metadata: dict = None, save_markdown=False
-    ):
+    async def aload_document(self, file_path, metadata: dict = None, save_markdown=False):
         loader = pymupdf_loader(
             file_path=Path(file_path),
         )
@@ -33,9 +31,7 @@ class PyMuPDF4LLMLoader(BaseLoader):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
-    async def aload_document(
-        self, file_path, metadata: dict = None, save_markdown=False
-    ):
+    async def aload_document(self, file_path, metadata: dict = None, save_markdown=False):
         pages = pymupdf4llm.to_markdown(file_path, write_images=False, page_chunks=True)
 
         s = ""

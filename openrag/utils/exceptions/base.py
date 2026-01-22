@@ -28,16 +28,12 @@ class OpenRAGError(Exception):
 class EmbeddingError(OpenRAGError):
     """Base exception for all embedding-related errors."""
 
-    def __init__(
-        self, message, code, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, **kwargs
-    ):
+    def __init__(self, message, code, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, **kwargs):
         super().__init__(message, code, status_code, **kwargs)
 
 
 class VDBError(OpenRAGError):
     """Base exception for all vector database-related errors."""
 
-    def __init__(
-        self, message, code, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, **kwargs
-    ):
+    def __init__(self, message, code, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, **kwargs):
         super().__init__(message, code, status_code, **kwargs)

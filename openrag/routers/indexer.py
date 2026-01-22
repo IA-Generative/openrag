@@ -1,10 +1,10 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import ray
-from components.files import sanitize_filename, save_file_to_disk
+from components.indexer.utils.files import sanitize_filename, save_file_to_disk
 from config import load_config
 from fastapi import (
     APIRouter,
@@ -17,7 +17,6 @@ from fastapi import (
     status,
 )
 from fastapi.responses import JSONResponse
-from components.files import save_file_to_disk
 from utils.dependencies import get_indexer, get_task_state_manager, get_vectordb
 from utils.logger import get_logger
 
@@ -45,6 +44,18 @@ LOG_FILE = Path(config.paths.log_dir or "logs") / "app.json"
 # supported file formats or mimetypes
 ACCEPTED_FILE_FORMATS = dict(config.loader["file_loaders"]).keys()
 DICT_MIMETYPES = dict(config.loader["mimetypes"])
+
+# URL scheme configuration
+PREFERRED_URL_SCHEME = config.server.preferred_url_scheme
+
+
+def build_url(request: Request, route_name: str, **path_params) -> str:
+    """Build a URL using the preferred scheme if configured."""
+    url = request.url_for(route_name, **path_params)
+    if PREFERRED_URL_SCHEME:
+        url = url.replace(scheme=PREFERRED_URL_SCHEME)
+    return str(url)
+
 
 # Create an APIRouter instance
 router = APIRouter()
@@ -93,7 +104,7 @@ JSON string containing file metadata. Example:
 
 **Common Mimetypes:**
 - `text/plain` - Plain text files
-- `text/markdown` - Markdown files  
+- `text/markdown` - Markdown files
 - `application/pdf` - PDF documents
 - `message/rfc822` - Email files
 
@@ -152,18 +163,12 @@ async def add_file(
     metadata["file_id"] = file_id
 
     # Indexing the file
-    task = indexer.add_file.remote(
-        path=file_path, metadata=metadata, partition=partition, user=user
-    )
+    task = indexer.add_file.remote(path=file_path, metadata=metadata, partition=partition, user=user)
     await task_state_manager.set_state.remote(task.task_id().hex(), "QUEUED")
     await task_state_manager.set_object_ref.remote(task.task_id().hex(), {"ref": task})
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
-        content={
-            "task_status_url": str(
-                request.url_for("get_task_status", task_id=task.task_id().hex())
-            )
-        },
+        content={"task_status_url": build_url(request, "get_task_status", task_id=task.task_id().hex())},
     )
 
 
@@ -274,19 +279,13 @@ async def put_file(
     metadata["file_id"] = file_id
 
     # Indexing the file
-    task = indexer.add_file.remote(
-        path=file_path, metadata=metadata, partition=partition
-    )
+    task = indexer.add_file.remote(path=file_path, metadata=metadata, partition=partition, user=user)
     await task_state_manager.set_state.remote(task.task_id().hex(), "QUEUED")
     await task_state_manager.set_object_ref.remote(task.task_id().hex(), {"ref": task})
 
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
-        content={
-            "task_status_url": str(
-                request.url_for("get_task_status", task_id=task.task_id().hex())
-            )
-        },
+        content={"task_status_url": build_url(request, "get_task_status", task_id=task.task_id().hex())},
     )
 
 
@@ -311,7 +310,7 @@ Returns 200 OK with a success message.
 async def patch_file(
     partition: str,
     file_id: str = Depends(validate_file_id),
-    metadata: Optional[Any] = Depends(validate_metadata),
+    metadata: Any | None = Depends(validate_metadata),
     indexer=Depends(get_indexer),
     user=Depends(require_partition_editor),
     user_partitions=Depends(current_user_partitions),
@@ -356,7 +355,7 @@ Returns 201 Created on successful copy.
 async def copy_file_between_partitions(
     partition: str,
     file_id: str = Depends(validate_file_id),
-    metadata: Optional[Any] = Depends(validate_metadata),
+    metadata: Any | None = Depends(validate_metadata),
     source_partition: str = Form(...),
     source_file_id: str = Form(...),
     indexer=Depends(get_indexer),
@@ -373,9 +372,7 @@ async def copy_file_between_partitions(
     metadata["file_id"] = file_id
     metadata["partition"] = partition
 
-    await indexer.copy_file.remote(
-        file_id=source_file_id, metadata=metadata, partition=source_partition, user=user
-    )
+    await indexer.copy_file.remote(file_id=source_file_id, metadata=metadata, partition=source_partition, user=user)
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
         content={"message": "File copied successfully."},
@@ -419,7 +416,7 @@ async def get_task_status(
     }
 
     if state == "FAILED":
-        content["error_url"] = str(request.url_for("get_task_error", task_id=task_id))
+        content["error_url"] = build_url(request, "get_task_error", task_id=task_id)
 
     return JSONResponse(status_code=status.HTTP_200_OK, content=content)
 
@@ -477,15 +474,13 @@ Returns task logs including:
 **Note:** Logs are returned in chronological order (oldest first).
 """,
 )
-async def get_task_logs(
-    task_id: str, max_lines: int = 100, task_details=Depends(require_task_owner)
-):
+async def get_task_logs(task_id: str, max_lines: int = 100, task_details=Depends(require_task_owner)):
     try:
         if not LOG_FILE.exists():
             raise HTTPException(status_code=500, detail="Log file not found.")
 
         logs = []
-        with open(LOG_FILE, "r", errors="replace") as f:
+        with open(LOG_FILE, errors="replace") as f:
             for line in reversed(list(f)):
                 try:
                     record = json.loads(line).get("record", {})
@@ -499,17 +494,13 @@ async def get_task_logs(
                     continue
 
         if not logs:
-            raise HTTPException(
-                status_code=404, detail=f"No logs found for task '{task_id}'"
-            )
+            raise HTTPException(status_code=404, detail=f"No logs found for task '{task_id}'")
 
-        return JSONResponse(
-            content={"task_id": task_id, "logs": logs[::-1]}
-        )  # restore order
+        return JSONResponse(content={"task_id": task_id, "logs": logs[::-1]})  # restore order
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch logs: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch logs: {e!s}")
 
 
 @router.delete(

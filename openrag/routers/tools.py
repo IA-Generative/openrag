@@ -1,14 +1,15 @@
 import json
-from typing import List
 from pathlib import Path
 
-from config import load_config
-from fastapi import APIRouter, Depends, Form, HTTPException, status, UploadFile
-from fastapi.responses import JSONResponse
-from components.files import save_file_to_disk, serialize_file
-from utils.logger import get_logger
 import ray
+from components.indexer.utils.files import save_file_to_disk, serialize_file
+from components.indexer.utils.text_sanitizer import sanitize_extracted_text
+from config import load_config
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from utils.logger import get_logger
+
 from .utils import (
     validate_file_format,
     validate_metadata,
@@ -26,7 +27,7 @@ class ToolInfo(BaseModel):
     description: str
 
 
-AVAILABLE_TOOLS: List[ToolInfo] = [
+AVAILABLE_TOOLS: list[ToolInfo] = [
     ToolInfo(
         name="extractText",
         description="Extract raw text from a file (PDF, Office, audio, etc.)",
@@ -50,7 +51,7 @@ def validate_tool(tool: str = Form(...)):
             detail="Invalid 'tool' field: missing 'name'.",
         )
 
-    if not (t.name == name for t in AVAILABLE_TOOLS):
+    if not any(t.name == name for t in AVAILABLE_TOOLS):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Tool {name} not found",
@@ -61,7 +62,7 @@ def validate_tool(tool: str = Form(...)):
 
 @router.get(
     "/tools",
-    response_model=List[ToolInfo],
+    response_model=list[ToolInfo],
     summary="List available tools",
     description="""List available tools
 **Response Format:**
@@ -101,15 +102,16 @@ async def execute_tool(
 
             task_id = ray.get_runtime_context().get_task_id()
 
-            logger.debug(
-                f"Execute tool extractText for task {task_id} with file {file.filename}"
-            )
+            logger.debug(f"Execute tool extractText for task {task_id} with file {file.filename}")
             doc = await serialize_file(task_id, path=file_path, metadata=metadata)
             logger.debug(f"extractText done for task {task_id}")
 
+            # Sanitize the extracted text to remove useless characters and improve quality
+            sanitized_content = sanitize_extracted_text(doc.page_content)
+
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
-                content={"message": doc.page_content},
+                content={"message": sanitized_content},
             )
         else:
             raise HTTPException(
@@ -117,11 +119,13 @@ async def execute_tool(
                 detail=f"Tool {tool['name']} not found",
             )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Failed during tool execution.", extra={"error": str(e)})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Tool execution failed due to an internal error.",
         )
     finally:
         # Cleanup of the temporary file

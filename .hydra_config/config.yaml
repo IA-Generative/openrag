@@ -69,6 +69,9 @@ map_reduce:
 verbose:
   level: ${oc.env:LOG_LEVEL, DEBUG}
 
+server:
+  preferred_url_scheme: ${oc.env:PREFERRED_URL_SCHEME, null}
+
 paths:
   prompts_dir: ${oc.env:PROMPTS_DIR, ../prompts/example1}
   data_dir: ${oc.env:DATA_DIR, ../data}
@@ -88,6 +91,7 @@ prompts:
 
 loader:
   image_captioning: ${oc.decode:${oc.env:IMAGE_CAPTIONING, true}}
+  image_captioning_url: ${oc.decode:${oc.env:IMAGE_CAPTIONING_URL, true}}
   save_markdown: ${oc.decode:${oc.env:SAVE_MARKDOWN, false}}
   mimetypes:
     text/plain: .txt
@@ -124,7 +128,7 @@ loader:
   marker_pool_size: ${oc.decode:${oc.env:MARKER_POOL_SIZE, 1}} # Value au increment if you have a cluster of machines
   marker_max_processes: ${oc.decode:${oc.env:MARKER_MAX_PROCESSES, 2}} # Maximum number of concurrent PDF parsing processes
   marker_min_processes: ${oc.decode:${oc.env:MARKER_MIN_PROCESSES, 1}}
-  marker_num_gpus: ${oc.decode:${oc.env:MARKER_NUM_GPUS, 0.01}}
+  marker_num_gpus: ${oc.decode:${oc.env:MARKER_NUM_GPUS, 0.01}} # See https://docs.ray.io/en/latest/cluster/kubernetes/user-guides/gpu.html
   marker_timeout: ${oc.decode:${oc.env:MARKER_TIMEOUT, 3600}}
   transcriber:
     base_url: ${oc.env:TRANSCRIBER_BASE_URL, http://transcriber:8000/v1}
@@ -134,6 +138,7 @@ loader:
     silence_thresh_db: ${oc.decode:${oc.env:TRANSCRIBER_SILENCE_THRESH_DB, -40}}
     min_silence_len_ms: ${oc.decode:${oc.env:TRANSCRIBER_MIN_SILENCE_LEN_MS, 500}}
     max_concurrent_chunks: ${oc.decode:${oc.env:TRANSCRIBER_MAX_CONCURRENT_CHUNKS, 20}}
+    timeout: ${oc.decode:${oc.env:TRANSCRIBER_TIMEOUT, 60}} # Timeout per chunk transcription in seconds
   openai:
     base_url: ${oc.env:OPENAI_LOADER_BASE_URL, http://openai:8000/v1}
     api_key: ${oc.env:OPENAI_LOADER_API_KEY, EMPTY}
@@ -150,14 +155,15 @@ ray:
   max_tasks_per_worker: ${oc.decode:${oc.env:RAY_MAX_TASKS_PER_WORKER, 8}} # Number of tasks per serializer instance
   indexer:
     max_task_retries: ${oc.decode:${oc.env:RAY_MAX_TASK_RETRIES, 2}}
-    serialize_timeout: ${oc.decode:${oc.env:INDEXER_SERIALIZE_TIMEOUT, 36000}}
+    serialize_timeout: ${oc.decode:${oc.env:INDEXER_SERIALIZE_TIMEOUT, 3600}}
     concurrency_groups:
       default: ${oc.decode:${oc.env:INDEXER_DEFAULT_CONCURRENCY, 1000}}
       update: ${oc.decode:${oc.env:INDEXER_UPDATE_CONCURRENCY, 100}}
       search: ${oc.decode:${oc.env:INDEXER_SEARCH_CONCURRENCY, 100}}
       delete: ${oc.decode:${oc.env:INDEXER_DELETE_CONCURRENCY, 100}}
+      serialize: ${oc.decode:${oc.env:INDEXER_SERIALIZE_CONCURRENCY, 50}}
       chunk: ${oc.decode:${oc.env:INDEXER_CHUNK_CONCURRENCY, 1000}}
-      insert: ${oc.decode:${oc.env:INDEXER_INSERT_CONCURRENCY, 10}}
+      insert: ${oc.decode:${oc.env:INDEXER_INSERT_CONCURRENCY, 100}}
   semaphore:
     concurrency: ${oc.decode:${oc.env:RAY_SEMAPHORE_CONCURRENCY, 100000}}
   serve:

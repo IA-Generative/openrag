@@ -44,15 +44,9 @@ class RetrieverPipeline:
         if self.reranker_enabled:
             self.reranker = Reranker(logger, config)
 
-    async def retrieve_docs(
-        self, partition: list[str], query: str, use_map_reduce: bool = False
-    ) -> list[Document]:
+    async def retrieve_docs(self, partition: list[str], query: str, use_map_reduce: bool = False) -> list[Document]:
         docs = await self.retriever.retrieve(partition=partition, query=query)
-        top_k = (
-            max(self.map_reduce_max_docs, self.reranker_top_k)
-            if use_map_reduce
-            else self.reranker_top_k
-        )
+        top_k = max(self.map_reduce_max_docs, self.reranker_top_k) if use_map_reduce else self.reranker_top_k
         logger.debug("Documents retreived", document_count=len(docs))
         if docs:
             # rerank documents
@@ -74,14 +68,10 @@ class RagPipeline:
         # RAG
         self.rag_mode = config.rag["mode"]
         self.chat_history_depth = config.rag["chat_history_depth"]
-        self.max_context_tokens = config.reranker.get("top_k", 10) * config.chunker.get(
-            "chunk_size", 512
-        )
+        self.max_context_tokens = config.reranker.get("top_k", 10) * config.chunker.get("chunk_size", 512)
 
         self.llm_client = LLM(config.llm, logger)
-        self.contextualizer = AsyncOpenAI(
-            base_url=config.llm["base_url"], api_key=config.llm["api_key"]
-        )
+        self.contextualizer = AsyncOpenAI(base_url=config.llm["base_url"], api_key=config.llm["api_key"])
         self.max_contextualized_query_len = config.rag["max_contextualized_query_len"]
 
         # map reduce
@@ -103,9 +93,7 @@ class RagPipeline:
                 params = dict(self.config.llm_params)
                 params.pop("max_retries")
                 params["max_completion_tokens"] = self.max_contextualized_query_len
-                params["extra_body"] = {
-                    "chat_template_kwargs": {"enable_thinking": False}
-                }
+                params["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
 
                 response = await self.contextualizer.chat.completions.create(
                     model=self.config.llm["model"],
@@ -171,13 +159,9 @@ class RagPipeline:
         prompt = payload["prompt"]
 
         # 1. get the query
-        query = await self.generate_query(
-            messages=[{"role": "user", "content": prompt}]
-        )
+        query = await self.generate_query(messages=[{"role": "user", "content": prompt}])
         # 2. get docs
-        docs = await self.retriever_pipeline.retrieve_docs(
-            partition=partition, query=query
-        )
+        docs = await self.retriever_pipeline.retrieve_docs(partition=partition, query=query)
 
         # 3. Format the retrieved docs
         context = format_context(docs, max_context_tokens=self.max_context_tokens)
@@ -198,13 +182,11 @@ class RagPipeline:
             if partition is None:
                 docs = []
             else:
-                payload, docs = await self._prepare_for_completions(
-                    partition=partition, payload=payload
-                )
+                payload, docs = await self._prepare_for_completions(partition=partition, payload=payload)
             llm_output = self.llm_client.completions(request=payload)
             return llm_output, docs
         except Exception as e:
-            logger.error(f"Error during chat completion: {str(e)}")
+            logger.error(f"Error during chat completion: {e!s}")
             raise e
 
     async def chat_completion(self, partition: list[str] | None, payload: dict):
@@ -212,11 +194,9 @@ class RagPipeline:
             if partition is None:
                 docs = []
             else:
-                payload, docs = await self._prepare_for_chat_completion(
-                    partition=partition, payload=payload
-                )
+                payload, docs = await self._prepare_for_chat_completion(partition=partition, payload=payload)
             llm_output = self.llm_client.chat_completion(request=payload)
             return llm_output, docs
         except Exception as e:
-            logger.error(f"Error during chat completion: {str(e)}")
+            logger.error(f"Error during chat completion: {e!s}")
             raise e

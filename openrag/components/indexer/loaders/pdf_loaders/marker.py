@@ -3,14 +3,12 @@ import gc
 import re
 import time
 from pathlib import Path
-from typing import Dict, Optional, Union
 
 import ray
 import torch
 from config import load_config
 from langchain_core.documents.base import Document
 from marker.converters.pdf import PdfConverter
-from tqdm.asyncio import tqdm
 from utils.logger import get_logger
 
 from ..base import BaseLoader
@@ -24,7 +22,7 @@ else:  # On CPU
     MARKER_NUM_GPUS = 0
 
 
-@ray.remote(num_gpus=MARKER_NUM_GPUS)
+@ray.remote(num_gpus=MARKER_NUM_GPUS, max_restarts=5)
 class MarkerWorker:
     def __init__(self):
         import os
@@ -67,16 +65,14 @@ class MarkerWorker:
         if self.pool:
             self.logger.warning("Resetting multiprocessing pool")
             self.pool.close()
-            self.pool.join()
-            self.pool.terminate()
+            self.pool.terminate()  # Force kill first
+            self.pool.join()  # Then wait for cleanup
             self.pool = None
         try:
             if mp.get_start_method(allow_none=True) != "spawn":
                 mp.set_start_method("spawn", force=True)
         except RuntimeError:
-            self.logger.warning(
-                "Process start method already set, using existing method"
-            )
+            self.logger.warning("Process start method already set, using existing method")
 
         self.logger.info(f"Initializing MarkerWorker with {self._workers} workers")
         ctx = mp.get_context("spawn")
@@ -124,19 +120,13 @@ class MarkerWorker:
         def run_with_timeout():
             async_result = self.pool.apply_async(self._process_pdf, (file_path, config))
             try:
-                result = async_result.get(
-                    timeout=self.config.loader.get("marker_timeout")
-                )
+                result = async_result.get(timeout=self.config.loader.get("marker_timeout"))
                 return result
             except MPTimeoutError:
-                self.logger.exception(
-                    "MarkerWorker child process timed out", path=file_path
-                )
+                self.logger.exception("MarkerWorker child process timed out", path=file_path)
                 raise
             except Exception:
-                self.logger.exception(
-                    "Error processing with MarkerWorker", path=file_path
-                )
+                self.logger.exception("Error processing with MarkerWorker", path=file_path)
                 raise
 
         result = await loop.run_in_executor(None, run_with_timeout)
@@ -145,8 +135,18 @@ class MarkerWorker:
     def get_current_pool_size(self):
         return len([p for p in self.pool._pool if p.is_alive()])
 
+    def __del__(self):
+        """Clean up multiprocessing pool on actor destruction"""
+        if self.pool:
+            try:
+                self.pool.close()
+                self.pool.terminate()
+                self.pool.join()
+            except Exception:
+                pass  # Best effort cleanup
 
-@ray.remote
+
+@ray.remote(max_restarts=5)
 class MarkerPool:
     def __init__(self):
         from config import load_config
@@ -178,6 +178,8 @@ class MarkerPool:
             await worker.setup_mp.remote()
 
     async def process_pdf(self, file_path: str):
+        from components.ray_utils import call_ray_actor_with_timeout
+
         # Wait until any slot is free
         worker = await self._queue.get()
         if worker:
@@ -185,13 +187,13 @@ class MarkerPool:
             # Ensure the worker pool is healthy
             await self.ensure_worker_pool_healthy(worker)
         try:
-            markdown, images = await worker.process_pdf.remote(file_path)
-            return markdown, images
-        except Exception as e:
-            self.logger.exception(
-                "Error processing PDF with MarkerWorker", error=str(e)
+            timeout = self.config.loader.get("marker_timeout", 3600)
+            future = worker.process_pdf.remote(file_path)
+            return await call_ray_actor_with_timeout(
+                future,
+                timeout=timeout,
+                task_description=f"MarkerPool PDF processing ({file_path})",
             )
-            raise
         finally:
             await self._queue.put(worker)
             self.logger.debug("MarkerWorker returned to pool")
@@ -205,10 +207,12 @@ class MarkerLoader(BaseLoader):
 
     async def aload_document(
         self,
-        file_path: Union[str, Path],
-        metadata: Optional[Dict] = None,
+        file_path: str | Path,
+        metadata: dict | None = None,
         save_markdown: bool = False,
     ) -> Document:
+        from components.ray_utils import call_ray_actor_with_timeout
+
         if metadata is None:
             metadata = {}
 
@@ -216,24 +220,28 @@ class MarkerLoader(BaseLoader):
         start = time.time()
 
         try:
-            markdown, images = await self.worker.process_pdf.remote(file_path_str)
+            timeout = self.config.loader.get("marker_timeout", 3600)
+            future = self.worker.process_pdf.remote(file_path_str)
+            markdown, images = await call_ray_actor_with_timeout(
+                future,
+                timeout=timeout,
+                task_description=f"MarkerLoader PDF loading ({file_path_str})",
+            )
 
             if not markdown:
                 raise RuntimeError(f"Conversion failed for {file_path_str}")
 
-            if self.config["loader"]["image_captioning"]:
-                captions_dict = await self._get_captions(images)
-                for key, desc in captions_dict.items():
-                    tag = f"![]({key})"
-                    markdown = markdown.replace(tag, desc)
+            if self.image_captioning:
+                keys = list(images.keys())
+                captions = await self.caption_images(list(images.values()))
+                for key, caption in zip(keys, captions):
+                    markdown = markdown.replace(f"![]({key})", caption)
 
             else:
                 logger.debug("Image captioning disabled.")
 
             markdown = markdown.split(self.page_sep, 1)[1]
-            markdown = re.sub(
-                r"\{(\d+)\}" + re.escape(self.page_sep), r"[PAGE_\1]", markdown
-            )
+            markdown = re.sub(r"\{(\d+)\}" + re.escape(self.page_sep), r"[PAGE_\1]", markdown)
             markdown = markdown.replace("<br>", "").strip()
 
             doc = Document(page_content=markdown, metadata=metadata)
@@ -248,27 +256,3 @@ class MarkerLoader(BaseLoader):
         except Exception:
             logger.exception("Error in aload_document", path=file_path_str)
             raise
-
-    async def _get_captions(self, img_dict: dict) -> dict:
-        if not img_dict:
-            return {}
-
-        tasks = []
-        keys = []
-        for key, picture in img_dict.items():
-            tasks.append(self.get_image_description(image_data=picture))
-            keys.append(key)
-
-        try:
-            results = await tqdm.gather(*tasks, desc="Captioning images")
-            assert len(keys) == len(results), "Mismatch between keys and results count"
-        except asyncio.CancelledError:
-            logger.warning("Image captioning tasks cancelled")
-            for task in tasks:
-                task.cancel()
-            raise
-        except Exception:
-            logger.exception("Error during image captioning")
-            raise
-        result_dict = dict(zip(keys, results))
-        return result_dict

@@ -6,7 +6,6 @@ import pptx
 from html_to_markdown import convert
 from langchain_core.documents.base import Document
 from PIL import Image
-from tqdm.asyncio import tqdm
 from utils.logger import get_logger
 
 from .base import BaseLoader
@@ -20,9 +19,7 @@ class PPTXConverter:
     https://github.com/microsoft/markitdown/blob/main/packages/markitdown/src/markitdown/converters/_pptx_converter.py
     """
 
-    def __init__(
-        self, image_placeholder=r"<image>", page_separator: str = "[PAGE_SEP]"
-    ):
+    def __init__(self, image_placeholder=r"<image>", page_separator: str = "[PAGE_SEP]"):
         self.image_placeholder = image_placeholder
         self.page_separator = page_separator
 
@@ -140,26 +137,25 @@ class PPTXLoader(BaseLoader):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.image_placeholder = r"<image>"
-        self.converter = PPTXConverter(
-            image_placeholder=self.image_placeholder, page_separator=self.page_sep
-        )
-
-    async def get_captions(self, images):
-        tasks = [self.get_image_description(image_data=img) for img in images]
-        return await tqdm.gather(*tasks, desc="Generating captions")
+        self.converter = PPTXConverter(image_placeholder=self.image_placeholder, page_separator=self.page_sep)
 
     async def aload_document(self, file_path, metadata=None, save_markdown=False):
         md_content, imgs = self.converter.convert(local_path=file_path)
 
-        images_captions = await self.get_captions(imgs)
+        if self.image_captioning:
+            images_captions = await self.caption_images(imgs, desc="Generating captions")
 
-        for caption in images_captions:
-            md_content = re.sub(
-                self.image_placeholder,
-                caption.replace("\\", "/"),
-                md_content,
-                count=1,
-            )
+            for caption in images_captions:
+                md_content = re.sub(
+                    self.image_placeholder,
+                    caption.replace("\\", "/"),
+                    md_content,
+                    count=1,
+                )
+        else:
+            logger.info("Image captioning disabled. Ignoring images.")
+            # Remove image placeholders when captioning is disabled
+            md_content = md_content.replace(self.image_placeholder, "")
 
         doc = Document(page_content=md_content, metadata=metadata)
         if save_markdown:
