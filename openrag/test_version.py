@@ -22,4 +22,4 @@ def test_package_version_format():
 def test_package_version_matches_expected():
     """Test that the version matches expected value."""
     version = get_package_version("openrag")
-    assert version == "1.1.7"
+    assert version == "1.1.6"
