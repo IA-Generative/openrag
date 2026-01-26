@@ -244,9 +244,9 @@ async def check_llm_model_availability(request: Request):
     api_key = llm_param.get("api_key")
     timeout = 30
 
-    log = logger.bind(base_url=llm_param["base_url"], model=llm_param["model"], model_type="LLM")
+    log = logger.bind(base_url=llm_param["base_url"], model=llm_param["model"])
     try:
-        log.info("Validating model")
+        log.debug("Validating model")
         client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
         openai_models = await client.models.list(timeout=timeout)
         available_models = {m.id for m in openai_models.data}
@@ -256,9 +256,10 @@ async def check_llm_model_availability(request: Request):
                 detail=f"The underlying model '{model}' is not available via this endpoint.",
             )
     except openai.APIError as e:
-        log.exception("API Endpoint error while validating model", error=str(e))
+        log.error("API Endpoint error while validating model", error=str(e))
+        status_code = getattr(e, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status_code,
             detail=f"OpenAI API Endpoint error: {str(e)}",
         )
 
