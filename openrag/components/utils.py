@@ -77,13 +77,18 @@ class DistributedSemaphore:
         await semaphore_actor.release.remote()
 
 
+def get_num_tokens():
+    llm = ChatOpenAI(**config.llm)
+    _length_function = llm.get_num_tokens
+    return _length_function
+
+
 def format_context(docs: list[Document], max_context_tokens: int = 4096) -> str:
     n_docs = 0
     if not docs:
         return "No document found from the database", n_docs
 
-    llm = ChatOpenAI(**config.llm)
-    _length_function = llm.get_num_tokens
+    _length_function = get_num_tokens()
 
     docs_with_tokens = list(map(lambda d: (_length_function(d.page_content), d), docs))  # noqa: C417
 
