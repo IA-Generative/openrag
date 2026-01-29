@@ -433,6 +433,7 @@ async def get_related_files(
 **Parameters:**
 - `partition`: The partition name
 - `file_id`: The file identifier (can be any node in a hierarchy)
+- `max_ancestor_depth`: Maximum depth of ancestor files to include. None means unlimited. (default: None)
 
 **Response:**
 Returns the complete path from root to the specified file:
@@ -455,6 +456,7 @@ async def get_file_ancestors(
     request: Request,
     partition: str,
     file_id: str,
+    max_ancestor_depth: int | None = None,  # Optional limit on ancestor depth
     vectordb=Depends(get_vectordb),
     partition_viewer=Depends(require_partition_viewer),
 ):
@@ -466,7 +468,9 @@ async def get_file_ancestors(
             detail=f"'{file_id}' not found in partition '{partition}'",
         )
 
-    ancestors = await vectordb.get_file_ancestors.remote(partition=partition, file_id=file_id)
+    ancestors = await vectordb.get_file_ancestors.remote(
+        partition=partition, file_id=file_id, max_ancestor_depth=max_ancestor_depth
+    )
     log.debug("Listed file ancestors", ancestor_count=len(ancestors))
     return JSONResponse(
         status_code=status.HTTP_200_OK,

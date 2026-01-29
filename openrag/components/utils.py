@@ -78,8 +78,9 @@ class DistributedSemaphore:
 
 
 def format_context(docs: list[Document], max_context_tokens: int = 4096) -> str:
+    n_docs = 0
     if not docs:
-        return "No document found from the database"
+        return "No document found from the database", n_docs
 
     llm = ChatOpenAI(**config.llm)
     _length_function = llm.get_num_tokens
@@ -93,11 +94,12 @@ def format_context(docs: list[Document], max_context_tokens: int = 4096) -> str:
         if total_tokens + n_tokens > max_context_tokens:
             break
         reduced_docs.append(doc.page_content)
+        n_docs += 1
         total_tokens += n_tokens
 
     sep = "-" * 10 + "\n\n"
     logger.debug("Context formatted", total_tokens=total_tokens, doc_count=len(reduced_docs))
-    return f"{sep}".join(reduced_docs)
+    return f"{sep}".join(reduced_docs), n_docs
 
 
 # Initialize language detector

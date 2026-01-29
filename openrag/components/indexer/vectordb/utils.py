@@ -579,7 +579,7 @@ class PartitionFileManager:
             )
             return [r[0] for r in results]
 
-    def get_file_ancestors(self, partition: str, file_id: str) -> list[dict]:
+    def get_file_ancestors(self, partition: str, file_id: str, max_ancestor_depth: int | None = None) -> list[dict]:
         """Get all ancestors of a file using recursive CTE.
 
         Returns ordered list from root to the specified file (direct path only).
@@ -587,18 +587,20 @@ class PartitionFileManager:
         Args:
             partition: Partition name
             file_id: The file identifier to find ancestors for
+            max_ancestor_depth: Maximum depth to traverse (None = unlimited)
 
         Returns:
             List of file dictionaries ordered from root to the specified file
         """
 
         with self.Session() as session:
-            # Recursive CTE for ancestor traversal
-            query = text("""
+            # Recursive CTE for ancestor traversal with optional max depth
+            depth_condition = "WHERE a.depth < :max_ancestor_depth" if max_ancestor_depth is not None else ""
+            query = text(f"""
                 WITH RECURSIVE ancestors AS (
                     -- Base case: start with the target file
                     SELECT id, file_id, partition_name, parent_id, file_metadata,
-                           relationship_id, 0 as depth
+                        relationship_id, 0 as depth
                     FROM files
                     WHERE file_id = :file_id AND partition_name = :partition
 
@@ -606,15 +608,20 @@ class PartitionFileManager:
 
                     -- Recursive case: get parent
                     SELECT f.id, f.file_id, f.partition_name, f.parent_id,
-                           f.file_metadata, f.relationship_id, a.depth + 1
+                        f.file_metadata, f.relationship_id, a.depth + 1
                     FROM files f
                     INNER JOIN ancestors a ON f.file_id = a.parent_id
                         AND f.partition_name = a.partition_name
+                    {depth_condition}
                 )
                 SELECT * FROM ancestors ORDER BY depth DESC
             """)
 
-            result = session.execute(query, {"file_id": file_id, "partition": partition})
+            params = {"file_id": file_id, "partition": partition}
+            if max_ancestor_depth is not None:
+                params["max_ancestor_depth"] = max_ancestor_depth
+
+            result = session.execute(query, params)
 
             return [
                 {
@@ -628,7 +635,7 @@ class PartitionFileManager:
                 for row in result
             ]
 
-    def get_ancestor_file_ids(self, partition: str, file_id: str) -> list[str]:
+    def get_ancestor_file_ids(self, partition: str, file_id: str, max_ancestor_depth: int | None = None) -> list[str]:
         """Get file_ids for all ancestors of a file.
 
         Returns ordered list from root to the specified file (direct path only).
@@ -636,9 +643,9 @@ class PartitionFileManager:
         Args:
             partition: Partition name
             file_id: The file identifier to find ancestors for
-
+            max_ancestor_depth: Maximum depth to traverse (None = unlimited)
         Returns:
             List of file_id strings ordered from root to the specified file
         """
-        ancestors = self.get_file_ancestors(partition, file_id)
+        ancestors = self.get_file_ancestors(partition, file_id, max_ancestor_depth)
         return [a["file_id"] for a in ancestors]

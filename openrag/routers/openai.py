@@ -28,7 +28,7 @@ logger = get_logger()
 config = load_config()
 router = APIRouter()
 
-ragpipe = RagPipeline(config=config)
+ragpipe = RagPipeline()
 
 
 @router.get(

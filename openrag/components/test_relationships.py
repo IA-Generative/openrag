@@ -101,29 +101,38 @@ class PartitionFileManagerHelper:
             )
             return [f.file_id for f in files]
 
-    def get_file_ancestors(self, partition: str, file_id: str) -> list[dict]:
+    def get_file_ancestors(self, partition: str, file_id: str, max_ancestor_depth: int | None = None) -> list[dict]:
         """Get the ancestor chain for a file using recursive CTE."""
         with self.Session() as session:
-            query = text(
-                """
+            # Recursive CTE for ancestor traversal with optional max depth
+            depth_condition = "WHERE a.depth < :max_ancestor_depth" if max_ancestor_depth is not None else ""
+            query = text(f"""
                 WITH RECURSIVE ancestors AS (
+                    -- Base case: start with the target file
                     SELECT id, file_id, partition_name, parent_id, file_metadata,
-                           relationship_id, 0 as depth
+                        relationship_id, 0 as depth
                     FROM files
                     WHERE file_id = :file_id AND partition_name = :partition
 
                     UNION ALL
 
+                    -- Recursive case: get parent
                     SELECT f.id, f.file_id, f.partition_name, f.parent_id,
-                           f.file_metadata, f.relationship_id, a.depth + 1
+                        f.file_metadata, f.relationship_id, a.depth + 1
                     FROM files f
                     INNER JOIN ancestors a ON f.file_id = a.parent_id
                         AND f.partition_name = a.partition_name
+                    {depth_condition}
                 )
                 SELECT * FROM ancestors ORDER BY depth DESC
-            """
-            )
-            result = session.execute(query, {"file_id": file_id, "partition": partition})
+            """)
+
+            params = {"file_id": file_id, "partition": partition}
+            if max_ancestor_depth is not None:
+                params["max_ancestor_depth"] = max_ancestor_depth
+
+            result = session.execute(query, params)
+
             rows = result.fetchall()
             return [
                 {
@@ -136,9 +145,9 @@ class PartitionFileManagerHelper:
                 for row in rows
             ]
 
-    def get_ancestor_file_ids(self, partition: str, file_id: str) -> list[str]:
+    def get_ancestor_file_ids(self, partition: str, file_id: str, max_ancestor_depth: int | None = None) -> list[str]:
         """Get file IDs of ancestors."""
-        ancestors = self.get_file_ancestors(partition, file_id)
+        ancestors = self.get_file_ancestors(partition, file_id, max_ancestor_depth=max_ancestor_depth)
         return [a["file_id"] for a in ancestors]
 
 
@@ -430,6 +439,145 @@ class TestGetFileAncestors:
 
         assert len(ancestor_ids) == 2
         assert ancestor_ids == ["parent_file", "child_file"]
+
+    def test_get_file_ancestors_max_ancestor_depth_none_returns_all(self, file_manager):
+        """Test that max_ancestor_depth=None returns all ancestors (unlimited traversal)."""
+        # Create deep hierarchy: 0 -> 1 -> 2 -> ... -> 5
+        file_manager.add_file_to_partition(
+            partition="test_partition",
+            file_id="level_0",
+            file_metadata={"filename": "root.txt"},
+        )
+        for i in range(1, 6):
+            file_manager.add_file_to_partition(
+                partition="test_partition",
+                file_id=f"level_{i}",
+                file_metadata={"filename": f"level_{i}.txt"},
+                parent_id=f"level_{i - 1}",
+            )
+
+        # Without max_ancestor_depth (None), should return all 6 levels
+        ancestors = file_manager.get_file_ancestors(
+            partition="test_partition",
+            file_id="level_5",
+            max_ancestor_depth=None,
+        )
+
+        assert len(ancestors) == 6
+        file_ids = [a["file_id"] for a in ancestors]
+        assert file_ids == ["level_0", "level_1", "level_2", "level_3", "level_4", "level_5"]
+
+    def test_get_file_ancestors_max_ancestor_depth_limits_traversal(self, file_manager):
+        """Test that max_ancestor_depth limits how many ancestors are returned."""
+        # Create deep hierarchy: 0 -> 1 -> 2 -> ... -> 5
+        file_manager.add_file_to_partition(
+            partition="test_partition",
+            file_id="node_0",
+            file_metadata={"filename": "root.txt"},
+        )
+        for i in range(1, 6):
+            file_manager.add_file_to_partition(
+                partition="test_partition",
+                file_id=f"node_{i}",
+                file_metadata={"filename": f"node_{i}.txt"},
+                parent_id=f"node_{i - 1}",
+            )
+
+        # With max_ancestor_depth=2, should return target (depth 0) + 2 ancestors
+        ancestors = file_manager.get_file_ancestors(
+            partition="test_partition",
+            file_id="node_5",
+            max_ancestor_depth=2,
+        )
+
+        # Should get node_5 (depth 0), node_4 (depth 1), node_3 (depth 2)
+        assert len(ancestors) == 3
+        file_ids = [a["file_id"] for a in ancestors]
+        assert file_ids == ["node_3", "node_4", "node_5"]
+
+    def test_get_file_ancestors_max_ancestor_depth_zero_returns_only_target(self, file_manager):
+        """Test that max_ancestor_depth=0 returns only the target file itself."""
+        file_manager.add_file_to_partition(
+            partition="test_partition",
+            file_id="root",
+            file_metadata={"filename": "root.txt"},
+        )
+        file_manager.add_file_to_partition(
+            partition="test_partition",
+            file_id="child",
+            file_metadata={"filename": "child.txt"},
+            parent_id="root",
+        )
+
+        # max_ancestor_depth=0 means no traversal beyond the target
+        ancestors = file_manager.get_file_ancestors(
+            partition="test_partition",
+            file_id="child",
+            max_ancestor_depth=0,
+        )
+
+        # Should only return the target file (depth 0 is included, but no recursion)
+        assert len(ancestors) == 1
+        assert ancestors[0]["file_id"] == "child"
+
+    def test_get_file_ancestors_max_ancestor_depth_exceeds_chain_length(self, file_manager):
+        """Test that max_ancestor_depth larger than chain length returns full chain."""
+        # Create short chain: A -> B -> C
+        file_manager.add_file_to_partition(
+            partition="test_partition",
+            file_id="short_0",
+            file_metadata={"filename": "a.txt"},
+        )
+        file_manager.add_file_to_partition(
+            partition="test_partition",
+            file_id="short_1",
+            file_metadata={"filename": "b.txt"},
+            parent_id="short_0",
+        )
+        file_manager.add_file_to_partition(
+            partition="test_partition",
+            file_id="short_2",
+            file_metadata={"filename": "c.txt"},
+            parent_id="short_1",
+        )
+
+        # max_ancestor_depth=100 but chain is only 3 levels
+        ancestors = file_manager.get_file_ancestors(
+            partition="test_partition",
+            file_id="short_2",
+            max_ancestor_depth=100,
+        )
+
+        # Should return all 3 levels
+        assert len(ancestors) == 3
+        file_ids = [a["file_id"] for a in ancestors]
+        assert file_ids == ["short_0", "short_1", "short_2"]
+
+    def test_get_ancestor_file_ids_with_max_ancestor_depth(self, file_manager):
+        """Test that get_ancestor_file_ids respects max_ancestor_depth parameter."""
+        # Create chain: A -> B -> C -> D
+        file_manager.add_file_to_partition(
+            partition="test_partition",
+            file_id="chain_0",
+            file_metadata={"filename": "a.txt"},
+        )
+        for i in range(1, 4):
+            file_manager.add_file_to_partition(
+                partition="test_partition",
+                file_id=f"chain_{i}",
+                file_metadata={"filename": f"{chr(97 + i)}.txt"},
+                parent_id=f"chain_{i - 1}",
+            )
+
+        # With max_ancestor_depth=1, should get target + 1 ancestor
+        ancestor_ids = file_manager.get_ancestor_file_ids(
+            partition="test_partition",
+            file_id="chain_3",
+            max_ancestor_depth=1,
+        )
+
+        assert len(ancestor_ids) == 2
+        assert ancestor_ids == ["chain_2", "chain_3"]
 
 
 class TestFileModelFields:

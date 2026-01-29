@@ -1,5 +1,7 @@
 # Import necessary modules and classes
+import asyncio
 from abc import ABC, abstractmethod
+from itertools import chain
 from typing import ClassVar
 
 from components.prompts import HYDE_PROMPT, MULTI_QUERY_PROMPT
@@ -22,6 +24,10 @@ class ABCRetriever(ABC):
         self,
         top_k: int = 6,
         similarity_threshold: int = 0.95,
+        include_related: bool = False,
+        include_ancestors: bool = False,
+        related_limit: int = 10,
+        max_ancestor_depth: int | None = None,
         **kwargs,
     ) -> None:
         pass
@@ -30,14 +36,40 @@ class ABCRetriever(ABC):
     async def retrieve(self, partition: list[str], query: str) -> list[Document]:
         pass
 
+    async def expand_search_results(self, results: list[Document]) -> list[Document]:
+        pass
+
 
 # Define the Simple Retriever class
 class BaseRetriever(ABCRetriever):
-    def __init__(self, top_k=6, similarity_threshold=0.95, with_surrounding_chunks=True, **kwargs):
-        super().__init__(top_k, similarity_threshold, **kwargs)
+    def __init__(
+        self,
+        top_k=6,
+        similarity_threshold=0.95,
+        with_surrounding_chunks=True,
+        include_related=False,
+        include_ancestors=False,
+        related_limit=10,
+        max_ancestor_depth: int | None = None,
+        **kwargs,
+    ):
+        super().__init__(
+            top_k,
+            similarity_threshold,
+            include_related=include_related,
+            include_ancestors=include_ancestors,
+            related_limit=related_limit,
+            max_ancestor_depth=max_ancestor_depth,
+            **kwargs,
+        )
         self.top_k = top_k
         self.similarity_threshold = similarity_threshold
         self.with_surrounding_chunks = with_surrounding_chunks
+        self.include_related = include_related
+        self.include_ancestors = include_ancestors
+        self.related_limit = related_limit
+        self.max_ancestor_depth = max_ancestor_depth
+        self.expansion_enabled = include_related or include_ancestors
 
     async def retrieve(
         self,
@@ -54,6 +86,18 @@ class BaseRetriever(ABCRetriever):
         )
         return chunks
 
+    async def expand_search_results(self, results: list[Document]) -> list[Document]:
+        """Expand search results with related and ancestor chunks."""
+        db = get_vectordb()
+        return await _expand_with_related_chunks(
+            db=db,
+            results=results,
+            include_related=self.include_related,
+            include_ancestors=self.include_ancestors,
+            related_limit=self.related_limit,
+            max_ancestor_depth=self.max_ancestor_depth,
+        )
+
 
 class SingleRetriever(BaseRetriever):
     pass
@@ -64,11 +108,26 @@ class MultiQueryRetriever(BaseRetriever):
         self,
         top_k=6,
         similarity_threshold=0.95,
+        with_surrounding_chunks=True,
+        include_related=False,
+        include_ancestors=False,
+        related_limit=10,
+        max_ancestor_depth=None,
         k_queries: int = 3,
         llm: ChatOpenAI = None,
         **kwargs,
     ):
-        super().__init__(top_k, similarity_threshold, **kwargs)
+        super().__init__(
+            top_k,
+            similarity_threshold,
+            with_surrounding_chunks,
+            include_related,
+            include_ancestors,
+            related_limit,
+            max_ancestor_depth,
+            **kwargs,
+        )
+
         self.k_queries = k_queries
         self.llm = llm
 
@@ -102,10 +161,26 @@ class HyDeRetriever(BaseRetriever):
         self,
         top_k=6,
         similarity_threshold=0.95,
+        with_surrounding_chunks=True,
+        include_related=False,
+        include_ancestors=False,
+        related_limit=10,
+        max_ancestor_depth=None,
         llm: ChatOpenAI = None,
         combine: bool = False,
         **kwargs,
     ):
+        super().__init__(
+            top_k,
+            similarity_threshold,
+            with_surrounding_chunks,
+            include_related,
+            include_ancestors,
+            related_limit,
+            max_ancestor_depth,
+            **kwargs,
+        )
+
         super().__init__(top_k, similarity_threshold, **kwargs)
         if llm is None:
             raise ValueError("llm must be provided for HyDeRetriever")
@@ -137,121 +212,91 @@ class HyDeRetriever(BaseRetriever):
         )
 
 
-class RelationshipAwareRetriever(BaseRetriever):
-    """
-    Retriever that expands search results with related and ancestor documents.
+async def _expand_with_related_chunks(
+    db,
+    results: list[Document],
+    include_related: bool,
+    include_ancestors: bool,
+    related_limit: int = 10,
+    max_ancestor_depth: int | None = None,
+) -> list[Document]:
+    """Expand results with related and/or ancestor chunks."""
+    if not results or (not include_related and not include_ancestors):
+        return results
 
-    This retriever performs standard semantic search, then optionally expands
-    results to include:
-    - Related chunks: Documents sharing the same relationship_id (e.g., email thread)
-    - Ancestor chunks: Documents in the parent hierarchy (e.g., parent emails)
+    # Track what we already have to avoid duplicates
+    seen_ids = {doc.metadata.get("_id") for doc in results}
+    expanded_results = list(results)
 
-    Use cases:
-    - Email threads: Find an email and include the full conversation context
-    - Folder structures: Find a file and include related files in the same folder
-    - Document hierarchies: Find a section and include parent document context
-    """
+    # Collect unique relationship_ids and file_ids from results
+    relationship_ids = set()
+    file_infos = []  # List of (partition, file_id) tuples
 
-    def __init__(
-        self,
-        top_k=6,
-        similarity_threshold=0.95,
-        include_related: bool = False,
-        include_ancestors: bool = False,
-        related_limit: int = 20,
-        **kwargs,
-    ):
-        super().__init__(top_k, similarity_threshold, **kwargs)
-        self.include_related = include_related
-        self.include_ancestors = include_ancestors
-        self.related_limit = related_limit
+    for doc in results:
+        metadata = doc.metadata
+        if include_related and metadata.get("relationship_id"):
+            relationship_ids.add((metadata.get("partition"), metadata.get("relationship_id")))
+        if include_ancestors:
+            file_infos.append((metadata.get("partition"), metadata.get("file_id")))
 
-    async def retrieve(
-        self,
-        partition: list[str],
-        query: str,
-    ) -> list[Document]:
-        # 1. Standard semantic search
-        chunks = await super().retrieve(partition, query)
+    # Create tasks for parallel fetching
+    async def fetch_related(partition: str, rel_id: str) -> list[Document]:
+        """Fetch related chunks with error handling."""
+        try:
+            return await db.get_related_chunks.remote(
+                partition=partition,
+                relationship_id=rel_id,
+                limit=related_limit,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to fetch related chunks",
+                relationship_id=rel_id,
+                error=str(e),
+            )
+            return []
 
-        # 2. Expand with related/ancestor chunks if enabled
-        if self.include_related or self.include_ancestors:
-            chunks = await self._expand_with_related(chunks)
+    async def fetch_ancestors(partition: str, file_id: str) -> list[Document]:
+        """Fetch ancestor chunks with error handling."""
+        try:
+            return await db.get_ancestor_chunks.remote(
+                partition=partition,
+                file_id=file_id,
+                limit=related_limit,
+                max_ancestor_depth=max_ancestor_depth,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to fetch ancestor chunks",
+                file_id=file_id,
+                error=str(e),
+            )
+            return []
 
-        return chunks
+    # Build list of tasks for parallel execution
+    tasks = []
 
-    async def _expand_with_related(self, chunks: list[Document]) -> list[Document]:
-        """Expand results with related and/or ancestor chunks."""
-        if not chunks:
-            return chunks
+    if include_related:
+        tasks.extend(fetch_related(partition, rel_id) for partition, rel_id in relationship_ids if partition and rel_id)
 
-        db = get_vectordb()
+    if include_ancestors:
+        tasks.extend(fetch_ancestors(partition, file_id) for partition, file_id in file_infos if partition and file_id)
 
-        # Track what we already have to avoid duplicates
-        seen_ids = {doc.metadata.get("_id") for doc in chunks}
-        expanded_results = list(chunks)
+    # Execute all tasks in parallel
+    if tasks:
+        all_results = await asyncio.gather(*tasks)
+        for chunk in chain.from_iterable(all_results):
+            chunk_id = chunk.metadata.get("_id")
+            if chunk_id and chunk_id not in seen_ids:
+                seen_ids.add(chunk_id)
+                expanded_results.append(chunk)
 
-        # Collect unique relationship_ids and file_ids from results
-        relationship_ids = set()
-        file_infos = []  # List of (partition, file_id) tuples
-
-        for doc in chunks:
-            metadata = doc.metadata
-            if self.include_related and metadata.get("relationship_id"):
-                relationship_ids.add((metadata.get("partition"), metadata.get("relationship_id")))
-            if self.include_ancestors:
-                file_infos.append((metadata.get("partition"), metadata.get("file_id")))
-
-        # Fetch related chunks by relationship_id
-        if self.include_related:
-            for partition, rel_id in relationship_ids:
-                if partition and rel_id:
-                    try:
-                        related_chunks = await db.get_related_chunks.remote(
-                            partition=partition,
-                            relationship_id=rel_id,
-                            limit=self.related_limit,
-                        )
-                        for chunk in related_chunks:
-                            chunk_id = chunk.metadata.get("_id")
-                            if chunk_id and chunk_id not in seen_ids:
-                                seen_ids.add(chunk_id)
-                                expanded_results.append(chunk)
-                    except Exception as e:
-                        logger.warning(
-                            "Failed to fetch related chunks",
-                            relationship_id=rel_id,
-                            error=str(e),
-                        )
-
-        # Fetch ancestor chunks
-        if self.include_ancestors:
-            for partition, file_id in file_infos:
-                if partition and file_id:
-                    try:
-                        ancestor_chunks = await db.get_ancestor_chunks.remote(
-                            partition=partition,
-                            file_id=file_id,
-                            limit=self.related_limit,
-                        )
-                        for chunk in ancestor_chunks:
-                            chunk_id = chunk.metadata.get("_id")
-                            if chunk_id and chunk_id not in seen_ids:
-                                seen_ids.add(chunk_id)
-                                expanded_results.append(chunk)
-                    except Exception as e:
-                        logger.warning(
-                            "Failed to fetch ancestor chunks",
-                            file_id=file_id,
-                            error=str(e),
-                        )
-
-        logger.debug(
-            "Expanded results with related/ancestor chunks",
-            original_count=len(chunks),
-            expanded_count=len(expanded_results),
-        )
-        return expanded_results
+    logger.debug(
+        "Expanded results with related/ancestor chunks",
+        original_count=len(results),
+        expanded_count=len(expanded_results),
+    )
+    return expanded_results
 
 
 class RetrieverFactory:
@@ -259,7 +304,6 @@ class RetrieverFactory:
         "single": SingleRetriever,
         "multiQuery": MultiQueryRetriever,
         "hyde": HyDeRetriever,
-        "relationshipAware": RelationshipAwareRetriever,
     }
 
     @classmethod

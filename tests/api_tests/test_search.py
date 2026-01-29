@@ -136,16 +136,10 @@ class TestSemanticSearch:
             f"include_related should expand results. Got {expanded_count} vs {initial_count} without"
         )
 
-        # Verify all documents have the same relationship_id
         relationship_ids = {doc["metadata"].get("relationship_id") for doc in data_with["documents"]}
-        assert None not in relationship_ids, (
-            f"All documents should carry relationship_id metadata. Got: {relationship_ids}"
-        )
-
-        # verify that the relationship_id matches the expected one
-        expected_relationship_id = folder_files["file1.txt"][1]  # relationship_id used during indexing
-        assert relationship_ids.pop() == expected_relationship_id, (
-            f"Documents should have relationship_id {expected_relationship_id}"
+        expected_relationship_id = folder_files["file1.txt"][1]
+        assert relationship_ids == {expected_relationship_id}, (
+            f"Documents should have relationship_id {expected_relationship_id}, got {relationship_ids}"
         )
 
         # verify that we got all 3 files' chunks
@@ -443,3 +437,46 @@ class TestEmailThreadAncestors:
         relationship_ids = {a.get("relationship_id") for a in ancestors}
         assert len(relationship_ids) == 1, f"All ancestors should share same relationship_id, got {relationship_ids}"
         assert "thread_001" in relationship_ids, f"Expected relationship_id 'thread_001', got {relationship_ids}"
+
+    def test_max_ancestor_depth_limits_results(self, api_client, indexed_email_thread):
+        """Test that max_ancestor_depth limits the number of ancestors returned.
+
+        Chain: email_001 -> email_002 -> email_003 -> email_004 -> email_005 -> email_006
+
+        - Without max_ancestor_depth (None): should return all 6 emails
+        - With max_ancestor_depth=2: should return only email_004, email_005, email_006
+        """
+        # Test without max_ancestor_depth (None) - should return all ancestors
+        response_unlimited = api_client.get(
+            f"/partition/{indexed_email_thread}/file/email_006/ancestors",
+        )
+        assert response_unlimited.status_code == 200
+        data_unlimited = response_unlimited.json()
+        ancestors_unlimited = data_unlimited["ancestors"]
+
+        assert len(ancestors_unlimited) == 6, (
+            f"Without max_ancestor_depth, expected 6 ancestors, got {len(ancestors_unlimited)}"
+        )
+        expected_order_unlimited = ["email_001", "email_002", "email_003", "email_004", "email_005", "email_006"]
+        actual_order_unlimited = [a["file_id"] for a in ancestors_unlimited]
+        assert actual_order_unlimited == expected_order_unlimited, (
+            f"Expected {expected_order_unlimited}, got {actual_order_unlimited}"
+        )
+
+        # Test with max_ancestor_depth=2 - should return target + 2 ancestors
+        response_limited = api_client.get(
+            f"/partition/{indexed_email_thread}/file/email_006/ancestors",
+            params={"max_ancestor_depth": 2},
+        )
+        assert response_limited.status_code == 200
+        data_limited = response_limited.json()
+        ancestors_limited = data_limited["ancestors"]
+
+        assert len(ancestors_limited) == 3, (
+            f"With max_ancestor_depth=2, expected 3 ancestors (target + 2), got {len(ancestors_limited)}"
+        )
+        expected_order_limited = ["email_004", "email_005", "email_006"]
+        actual_order_limited = [a["file_id"] for a in ancestors_limited]
+        assert actual_order_limited == expected_order_limited, (
+            f"Expected {expected_order_limited}, got {actual_order_limited}"
+        )
