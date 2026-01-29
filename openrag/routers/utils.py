@@ -5,7 +5,7 @@ from typing import Any
 
 import consts
 from config import load_config
-from fastapi import Depends, Form, HTTPException, Request, UploadFile, status
+from fastapi import Depends, Form, HTTPException, Query, Request, UploadFile, status
 from openai import AsyncOpenAI
 from utils.dependencies import get_task_state_manager, get_vectordb
 from utils.logger import get_logger
@@ -166,6 +166,19 @@ async def require_task_owner(task_id=Depends(request_task_id), user=Depends(curr
             detail="You do not have permission to access this task",
         )
     return task_details
+
+
+async def validate_expansion_flags(
+    include_related: bool = Query(False, description="Include chunks from files with same relationship_id"),
+    include_ancestors: bool = Query(False, description="Include chunks from ancestor files in hierarchy"),
+):
+    """Validate that include_related and include_ancestors are mutually exclusive."""
+    if include_related and include_ancestors:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="include_related and include_ancestors cannot both be true. Please choose one expansion strategy.",
+        )
+    return {"include_related": include_related, "include_ancestors": include_ancestors}
 
 
 def require_admin(user=Depends(current_user)):

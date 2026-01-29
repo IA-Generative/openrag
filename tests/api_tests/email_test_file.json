@@ -1,0 +1,53 @@
+{
+  "thread_id": "thread_001",
+  "emails": [
+    {
+      "id": "email_001",
+      "parent_id": null,
+      "subject": "Request for Project Timeline Confirmation",
+      "from": "Jordan",
+      "to": "Alex",
+      "body": "Hello Alex,\n\nI hope you’re doing well.\n\nI wanted to follow up regarding the project timeline we discussed last week. Could you please confirm whether the proposed milestones are still achievable on your end?\n\nThis will help us finalize our internal planning and communicate accurate dates to stakeholders.\n\nThanks in advance, and looking forward to your feedback.\n\nBest regards,\nJordan"
+    },
+    {
+      "id": "email_002",
+      "parent_id": "email_001",
+      "subject": "Re: Request for Project Timeline Confirmation",
+      "from": "Alex",
+      "to": "Jordan",
+      "body": "Hi Jordan,\n\nThanks for reaching out.\n\nOverall, the timeline looks reasonable. However, we may need an additional few days for the second milestone due to some resource constraints this month.\n\nI’ll review the full plan again today and get back to you with a more precise update.\n\nBest,\nAlex"
+    },
+    {
+      "id": "email_003",
+      "parent_id": "email_002",
+      "subject": "Re: Request for Project Timeline Confirmation",
+      "from": "Jordan",
+      "to": "Alex",
+      "body": "Hi Alex,\n\nThanks for the quick response.\n\nAn extension on the second milestone could work, as long as it doesn’t impact the final delivery date. Please let me know how many extra days you anticipate needing so we can assess the downstream impact.\n\nAppreciate you taking another look.\n\nBest,\nJordan"
+    },
+    {
+      "id": "email_004",
+      "parent_id": "email_003",
+      "subject": "Re: Request for Project Timeline Confirmation",
+      "from": "Alex",
+      "to": "Jordan",
+      "body": "Hi Jordan,\n\nI’ve reviewed the schedule in more detail.\n\nWe would need a 3-day extension on the second milestone. The good news is that we can recover this time during the testing phase, so the final delivery date should remain unchanged.\n\nLet me know if that works for you.\n\nBest regards,\nAlex"
+    },
+    {
+      "id": "email_005",
+      "parent_id": "email_004",
+      "subject": "Re: Request for Project Timeline Confirmation",
+      "from": "Jordan",
+      "to": "Alex",
+      "body": "Hi Alex,\n\nThat sounds reasonable.\n\nIf the final delivery date is unaffected, we’re comfortable with a 3-day extension on the second milestone. Please proceed with the updated plan and share the revised timeline when ready.\n\nThanks for the clarification.\n\nBest,\nJordan"
+    },
+    {
+      "id": "email_006",
+      "parent_id": "email_005",
+      "subject": "Re: Request for Project Timeline Confirmation",
+      "from": "Alex",
+      "to": "Jordan",
+      "body": "Hi Jordan,\n\nPerfect, thanks for the confirmation.\n\nI’ll update the project timeline accordingly and send you the revised version by end of day. We’ll proceed based on the adjusted milestones.\n\nLooking forward to continuing the collaboration.\n\nBest regards,\nAlex"
+    }
+  ]
+}

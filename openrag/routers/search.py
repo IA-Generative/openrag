@@ -1,17 +1,103 @@
 from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import JSONResponse
-from utils.dependencies import get_indexer
+from utils.dependencies import get_indexer, get_vectordb
 from utils.logger import get_logger
 
 from .utils import (
     current_user_or_admin_partitions_list,
     require_partition_viewer,
     require_partitions_viewer,
+    validate_expansion_flags,
 )
 
 logger = get_logger()
 
 router = APIRouter()
+
+
+async def _expand_with_related_chunks(
+    results: list,
+    vectordb,
+    include_related: bool,
+    include_ancestors: bool,
+    related_limit: int = 20,
+) -> list:
+    """
+    Expand search results with related and/or ancestor chunks.
+
+    Args:
+        results: Initial search results (list of Documents)
+        vectordb: VectorDB actor reference
+        include_related: Include chunks from files with same relationship_id
+        include_ancestors: Include chunks from ancestor files (parent chain)
+        related_limit: Maximum number of additional chunks to fetch per expansion
+
+    Returns:
+        Expanded list of Documents (original + related/ancestor chunks)
+    """
+    if not results or (not include_related and not include_ancestors):
+        return results
+
+    # Track what we already have to avoid duplicates
+    seen_ids = {doc.metadata.get("_id") for doc in results}
+    expanded_results = list(results)
+
+    # Collect unique relationship_ids and file_ids from results
+    relationship_ids = set()
+    file_infos = []  # List of (partition, file_id) tuples
+
+    for doc in results:
+        metadata = doc.metadata
+        if include_related and metadata.get("relationship_id"):
+            relationship_ids.add((metadata.get("partition"), metadata.get("relationship_id")))
+        if include_ancestors:
+            file_infos.append((metadata.get("partition"), metadata.get("file_id")))
+
+    # Fetch related chunks by relationship_id
+    if include_related:
+        for partition, rel_id in relationship_ids:
+            if partition and rel_id:
+                try:
+                    related_chunks = await vectordb.get_related_chunks.remote(
+                        partition=partition,
+                        relationship_id=rel_id,
+                        limit=related_limit,
+                    )
+                    for chunk in related_chunks:
+                        chunk_id = chunk.metadata.get("_id")
+                        if chunk_id and chunk_id not in seen_ids:
+                            seen_ids.add(chunk_id)
+                            expanded_results.append(chunk)
+                except Exception as e:
+                    logger.warning(
+                        "Failed to fetch related chunks",
+                        relationship_id=rel_id,
+                        error=str(e),
+                    )
+
+    # Fetch ancestor chunks
+    if include_ancestors:
+        for partition, file_id in file_infos:
+            if partition and file_id:
+                try:
+                    ancestor_chunks = await vectordb.get_ancestor_chunks.remote(
+                        partition=partition,
+                        file_id=file_id,
+                        limit=related_limit,
+                    )
+                    for chunk in ancestor_chunks:
+                        chunk_id = chunk.metadata.get("_id")
+                        if chunk_id and chunk_id not in seen_ids:
+                            seen_ids.add(chunk_id)
+                            expanded_results.append(chunk)
+                except Exception as e:
+                    logger.warning(
+                        "Failed to fetch ancestor chunks",
+                        file_id=file_id,
+                        error=str(e),
+                    )
+
+    return expanded_results
 
 
 @router.get(
@@ -22,11 +108,17 @@ router = APIRouter()
 - `partitions`: List of partition names (default: ["all"])
 - `text`: Search query text (required)
 - `top_k`: Number of results to return (default: 5)
+- `include_related`: Include chunks from files with same relationship_id (default: false)
+- `include_ancestors`: Include chunks from ancestor files in hierarchy (default: false)
 
 **Behavior:**
 - `partitions=["all"]`: Search all accessible partitions
 - Specific partitions: Search only those partitions
 - Uses vector similarity for semantic search
+- When `include_related=true`: Expands results to include all chunks from files
+  that share the same relationship_id (e.g., email thread, folder contents)
+- When `include_ancestors=true`: Expands results to include chunks from parent
+  files in the document hierarchy (e.g., parent emails in thread)
 
 **Permissions:**
 - Requires viewer role on specified partitions
@@ -41,6 +133,7 @@ Returns matching documents with:
 
 **Use Case:**
 Find relevant information across your entire document collection.
+Use relationship expansion for context-aware retrieval in email threads or folder structures.
 """,
 )
 async def search_multiple_partitions(
@@ -49,20 +142,44 @@ async def search_multiple_partitions(
     text: str = Query(..., description="Text to search semantically"),
     top_k: int = Query(5, description="Number of top results to return"),
     indexer=Depends(get_indexer),
+    vectordb=Depends(get_vectordb),
     partition_viewer=Depends(require_partitions_viewer),
     user_partitions=Depends(current_user_or_admin_partitions_list),
+    expansion_flags: dict = Depends(validate_expansion_flags),
 ):
+    include_related = expansion_flags["include_related"]
+    include_ancestors = expansion_flags["include_ancestors"]
+
     # Fetch user partitions if "all" is specified, or all partitions if super admin
     if partitions == ["all"]:
         partitions = user_partitions
 
-    log = logger.bind(partitions=partitions, query=text, top_k=top_k)
+    log = logger.bind(
+        partitions=partitions,
+        query=text,
+        top_k=top_k,
+        include_related=include_related,
+        include_ancestors=include_ancestors,
+    )
 
     results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partitions)
     log.info(
         "Semantic search on multiple partitions completed.",
         result_count=len(results),
     )
+
+    # Expand with related/ancestor chunks if requested
+    if include_related or include_ancestors:
+        results = await _expand_with_related_chunks(
+            results=results,
+            vectordb=vectordb,
+            include_related=include_related,
+            include_ancestors=include_ancestors,
+        )
+        log.info(
+            "Expanded results with related/ancestor chunks.",
+            expanded_count=len(results),
+        )
 
     documents = [
         {
@@ -86,6 +203,8 @@ async def search_multiple_partitions(
 **Query Parameters:**
 - `text`: Search query text (required)
 - `top_k`: Number of results to return (default: 5)
+- `include_related`: Include chunks from files with same relationship_id (default: false)
+- `include_ancestors`: Include chunks from ancestor files in hierarchy (default: false)
 
 **Permissions:**
 - Requires viewer role on the partition
@@ -98,6 +217,7 @@ Returns matching documents with:
 
 **Use Case:**
 Search within a specific document collection or project partition.
+Use relationship expansion for context-aware retrieval in email threads or folder structures.
 """,
 )
 async def search_one_partition(
@@ -106,11 +226,36 @@ async def search_one_partition(
     text: str = Query(..., description="Text to search semantically"),
     top_k: int = Query(5, description="Number of top results to return"),
     indexer=Depends(get_indexer),
+    vectordb=Depends(get_vectordb),
     partition_viewer=Depends(require_partition_viewer),
+    expansion_flags: dict = Depends(validate_expansion_flags),
 ):
-    log = logger.bind(partition=partition, query=text, top_k=top_k)
+    include_related = expansion_flags["include_related"]
+    include_ancestors = expansion_flags["include_ancestors"]
+
+    log = logger.bind(
+        partition=partition,
+        query=text,
+        top_k=top_k,
+        include_related=include_related,
+        include_ancestors=include_ancestors,
+    )
     results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partition)
     log.info("Semantic search on single partition completed.", result_count=len(results))
+
+    # Expand with related/ancestor chunks if requested
+    if include_related or include_ancestors:
+        results = await _expand_with_related_chunks(
+            results=results,
+            vectordb=vectordb,
+            include_related=include_related,
+            include_ancestors=include_ancestors,
+        )
+        log.info(
+            "Expanded results with related/ancestor chunks.",
+            expanded_count=len(results),
+        )
+
     documents = [
         {
             "link": str(request.url_for("get_extract", extract_id=doc.metadata["_id"])),
@@ -155,11 +300,32 @@ async def search_file(
     text: str = Query(..., description="Text to search semantically"),
     top_k: int = Query(5, description="Number of top results to return"),
     indexer=Depends(get_indexer),
+    vectordb=Depends(get_vectordb),
     partition_viewer=Depends(require_partition_viewer),
 ):
-    log = logger.bind(partition=partition, file_id=file_id, query=text, top_k=top_k)
+    log = logger.bind(
+        partition=partition,
+        file_id=file_id,
+        query=text,
+        top_k=top_k,
+        include_related=False,
+        include_ancestors=False,
+    )
     results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partition, filter={"file_id": file_id})
     log.info("Semantic search on specific file completed.", result_count=len(results))
+
+    # Expand with related/ancestor chunks if requested
+    results = await _expand_with_related_chunks(
+        results=results,
+        vectordb=vectordb,
+        include_related=False,
+        include_ancestors=False,
+    )
+
+    log.info(
+        "Expanded results with related/ancestor chunks.",
+        results=len(results),
+    )
 
     documents = [
         {

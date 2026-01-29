@@ -2,8 +2,11 @@
 Pytest fixtures for OpenRAG API tests.
 """
 
+import json
 import os
+import time
 import uuid
+from pathlib import Path
 
 import httpx
 import pytest
@@ -122,6 +125,45 @@ def created_partition(api_client, test_partition_name):
 
 
 @pytest.fixture
+def indexed_folder_partition(api_client, created_partition, folder_files):
+    """Create partition and index multiple related files with same relationship_id."""
+
+    for filename, (file_path, relationship_id) in folder_files.items():
+        file_id = filename.replace(".", "-")
+
+        with open(file_path, "rb") as f:
+            response = api_client.post(
+                f"/indexer/partition/{created_partition}/file/{file_id}",
+                files={"file": (filename, f, "text/plain")},
+                data={"metadata": f'{{"relationship_id": "{relationship_id}"}}'},
+            )
+
+        data = response.json()
+
+        # Wait for each file to be indexed
+        if "task_status_url" in data:
+            task_url = data["task_status_url"]
+            task_path = "/" + "/".join(task_url.split("/")[3:])
+        elif "task_id" in data:
+            task_path = f"/indexer/task/{data['task_id']}"
+        else:
+            time.sleep(3)
+            continue
+
+        for _ in range(30):
+            task_response = api_client.get(task_path)
+            task_data = task_response.json()
+            state = task_data.get("task_state", "")
+            if state in ["SUCCESS", "COMPLETED", "success", "completed"]:
+                break
+            elif state in ["FAILED", "failed", "FAILURE", "failure"]:
+                pytest.skip(f"Indexing failed for {filename}: {task_data}")
+            time.sleep(2)
+
+    return created_partition
+
+
+@pytest.fixture
 def sample_markdown_with_image(tmp_path):
     """Create markdown file with embedded data URI image."""
     # Small 1x1 red PNG as data URI
@@ -130,3 +172,105 @@ def sample_markdown_with_image(tmp_path):
     file_path = tmp_path / "test_with_image.md"
     file_path.write_text(content)
     return file_path
+
+
+query = """Project Alpha Overview
+
+This document describes the main objectives of Project Alpha.
+The project aims to develop a new AI-powered analytics platform.
+Key stakeholders include the engineering and product teams.
+"""
+
+
+@pytest.fixture
+def folder_files(tmp_path):
+    """Create multiple files simulating a folder with related documents."""
+    # Create unique content for each file that will be chunked
+    relationship_id_1 = "folder1"
+    relationship_id_2 = "folder2"
+    files = {
+        "file1.txt": (query, relationship_id_1),
+        "file2.txt": (
+            """Project Alpha Technical Specifications
+
+The system will use machine learning models for predictive analytics.
+Backend infrastructure includes microservices architecture.
+Database: PostgreSQL with vector extensions for embeddings.
+""",
+            relationship_id_1,
+        ),
+        "file3.txt": (
+            """Project Alpha Timeline
+
+Phase 1: Requirements gathering (Q1 2026)
+Phase 2: Development and testing (Q2-Q3 2026)
+Phase 3: Deployment and monitoring (Q4 2026)
+Expected completion: December 2026.
+""",
+            relationship_id_1,
+        ),
+        "file4.txt": ("""Project Beta Overview""", relationship_id_2),
+    }
+
+    file_paths = {}
+    for filename, (content, relationship_id) in files.items():
+        file_path = tmp_path / filename
+        file_path.write_text(content)
+        file_paths[filename] = (file_path, relationship_id)
+
+    return file_paths
+
+
+@pytest.fixture
+def exact_match_query():
+    """Return a query that should exactly match a chunk from folder_files.
+
+    Since embeddings are deterministic (MD5-based) and files are small enough
+    to be single chunks, searching with the complete file content should return
+    a perfect match.
+    """
+    # This should exactly match file1.txt as a complete chunk
+    return query
+
+
+@pytest.fixture
+def email_thread_files(tmp_path):
+    """Load email thread data from JSON and create text files for each email.
+
+    Returns a dict mapping email_id to (file_path, parent_id, relationship_id, subject).
+    """
+    # Load the email thread JSON
+    email_json_path = Path(__file__).parent / "email_test_file.json"
+    with open(email_json_path) as f:
+        email_data = json.load(f)
+
+    thread_id = email_data["thread_id"]
+    emails = email_data["emails"]
+
+    email_files = {}
+    for email in emails:
+        email_id = email["id"]
+        parent_id = email.get("parent_id")
+        subject = email["subject"]
+
+        # Create email content
+        content = f"""Subject: {subject}
+From: {email["from"]}
+To: {email["to"]}
+
+{email["body"]}
+"""
+
+        # Write to file
+        file_path = tmp_path / f"{email_id}.txt"
+        file_path.write_text(content)
+
+        email_files[email_id] = {
+            "path": file_path,
+            "parent_id": parent_id,
+            "relationship_id": thread_id,
+            "subject": subject,
+            "filename": f"{email_id}.txt",
+        }
+
+    return email_files
