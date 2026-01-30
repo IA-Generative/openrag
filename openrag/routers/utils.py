@@ -302,7 +302,7 @@ def get_app_state(request: Request):
 async def get_openai_models(base_url: str, api_key: str):
     async with AsyncOpenAI(base_url=base_url, api_key=api_key) as client:
         models_response = await client.models.list()
-        return models_response
+        return models_response.data
 
 
 async def check_llm_model_availability(request: Request):
