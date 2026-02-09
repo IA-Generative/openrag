@@ -68,7 +68,8 @@ async def delete_partition(
     vectordb=Depends(get_vectordb),
     partition_owner=Depends(require_partition_owner),
 ):
-    await vectordb.delete_partition.remote(partition)
+    user_id = partition_owner.get("id")
+    await vectordb.delete_partition.remote(partition, user_id=user_id)
     logger.debug("Partition successfully deleted.")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
