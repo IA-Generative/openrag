@@ -618,4 +618,5 @@ class TestUserQuotaEnforcement:
             )
 
         finally:
+            self._cleanup_partition(api_client, partition_name)
             self._cleanup_user(api_client, user_id)
