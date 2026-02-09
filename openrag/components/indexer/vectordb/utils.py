@@ -586,6 +586,7 @@ class PartitionFileManager:
             user.file_quota = file_quota
             s.commit()
             self.logger.info(f"Updated file_quota for user {user_id} to {file_quota}")
+            s.refresh(user)
 
             return {
                 "id": user.id,

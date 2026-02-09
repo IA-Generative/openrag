@@ -6,7 +6,6 @@ from utils.logger import get_logger
 from .utils import DEFAULT_FILE_QUOTA, current_user, require_admin
 
 logger = get_logger()
-task_state_manager = get_task_state_manager()
 router = APIRouter()
 
 
@@ -57,7 +56,10 @@ Returns current user details including:
 **Note:** No special permissions required - returns info for the authenticated user.
 """,
 )
-async def get_current_user_info(user=Depends(current_user), vectordb=Depends(get_vectordb)):
+async def get_current_user_info(
+    user=Depends(current_user),
+    task_state_manager=Depends(get_task_state_manager),
+):
     """Get current authenticated user info"""
 
     user_id = user.get("id")
