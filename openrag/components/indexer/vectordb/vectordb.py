@@ -578,7 +578,7 @@ class MilvusDB(BaseVectorDB):
 
         return output_docs
 
-    async def delete_file(self, file_id: str, partition: str):
+    async def delete_file(self, file_id: str, partition: str, user_id: int):
         log = self.logger.bind(file_id=file_id, partition=partition)
         try:
             res = await self._async_client.delete(
@@ -586,7 +586,9 @@ class MilvusDB(BaseVectorDB):
                 filter=f"partition == '{partition}' and file_id == '{file_id}'",
             )
 
-            self.partition_file_manager.remove_file_from_partition(file_id=file_id, partition=partition)
+            self.partition_file_manager.remove_file_from_partition(
+                file_id=file_id, partition=partition, user_id=user_id
+            )
             log.info("Deleted file chunks from partition.", count=res.get("delete_count", 0))
 
         except MilvusException as e:
@@ -755,7 +757,7 @@ class MilvusDB(BaseVectorDB):
         """
         return self._client.has_collection(collection_name=collection_name)
 
-    async def delete_partition(self, partition: str):
+    async def delete_partition(self, partition: str, user_id: int):
         self._check_partition_exists(partition)
         log = self.logger.bind(partition=partition)
 
@@ -765,7 +767,7 @@ class MilvusDB(BaseVectorDB):
                 filter=f"partition == '{partition}'",
             )
 
-            self.partition_file_manager.delete_partition(partition)
+            self.partition_file_manager.delete_partition(partition, user_id=user_id)
             log.info("Deleted points from partition", count=count.get("delete_count"))
 
         except MilvusException as e:
@@ -873,8 +875,9 @@ class MilvusDB(BaseVectorDB):
         display_name: str | None = None,
         external_user_id: str | None = None,
         is_admin: bool = False,
+        file_quota: int | None = None,
     ):
-        return self.partition_file_manager.create_user(display_name, external_user_id, is_admin)
+        return self.partition_file_manager.create_user(display_name, external_user_id, is_admin, file_quota)
 
     async def get_user(self, user_id: int):
         self._check_user_exists(user_id)
@@ -898,6 +901,10 @@ class MilvusDB(BaseVectorDB):
     async def regenerate_user_token(self, user_id: int):
         self._check_user_exists(user_id)
         return self.partition_file_manager.regenerate_user_token(user_id)
+
+    def update_user_quota(self, user_id: int, file_quota: int | None):
+        self._check_user_exists(user_id)
+        return self.partition_file_manager.update_user_quota(user_id, file_quota)
 
     async def list_user_partitions(self, user_id: int):
         self._check_user_exists(user_id)
