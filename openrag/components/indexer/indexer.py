@@ -146,7 +146,7 @@ class Indexer:
         await vectordb.async_add_documents.remote(chunks, user)
 
     @ray.method(concurrency_group="delete")
-    async def delete_file(self, file_id: str, partition: str, user: dict) -> bool:
+    async def delete_file(self, file_id: str, partition: str) -> bool:
         log = self.logger.bind(file_id=file_id, partition=partition)
         vectordb = ray.get_actor("Vectordb", namespace="openrag")
         if not self.enable_insertion:
@@ -154,7 +154,7 @@ class Indexer:
             return False
 
         try:
-            await vectordb.delete_file.remote(file_id, partition, user_id=user.get("id"))
+            await vectordb.delete_file.remote(file_id, partition)
             log.info("Deleted file from partition.", file_id=file_id, partition=partition)
 
         except Exception as e:
@@ -180,7 +180,7 @@ class Indexer:
             for doc in docs:
                 doc.metadata.update(metadata)
 
-            await self.delete_file(file_id, partition, user=user)
+            await self.delete_file(file_id, partition)
             await vectordb.async_add_documents.remote(docs, user=user)
 
             log.info("Metadata updated for file.")

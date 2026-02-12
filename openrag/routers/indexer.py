@@ -198,7 +198,7 @@ async def delete_file(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"'{file_id}' not found in partition '{partition}'",
         )
-    await indexer.delete_file.remote(file_id, partition, user=user)
+    await indexer.delete_file.remote(file_id, partition)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -251,7 +251,7 @@ async def put_file(
         )
 
     # Delete the existing file from the vector database
-    await indexer.delete_file.remote(file_id, partition, user=user)
+    await indexer.delete_file.remote(file_id, partition)
 
     save_dir = Path(DATA_DIR)
     try:

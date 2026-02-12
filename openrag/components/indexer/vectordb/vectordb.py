@@ -578,7 +578,7 @@ class MilvusDB(BaseVectorDB):
 
         return output_docs
 
-    async def delete_file(self, file_id: str, partition: str, user_id: int):
+    async def delete_file(self, file_id: str, partition: str):
         log = self.logger.bind(file_id=file_id, partition=partition)
         try:
             res = await self._async_client.delete(
@@ -586,9 +586,7 @@ class MilvusDB(BaseVectorDB):
                 filter=f"partition == '{partition}' and file_id == '{file_id}'",
             )
 
-            self.partition_file_manager.remove_file_from_partition(
-                file_id=file_id, partition=partition, user_id=user_id
-            )
+            self.partition_file_manager.remove_file_from_partition(file_id=file_id, partition=partition)
             log.info("Deleted file chunks from partition.", count=res.get("delete_count", 0))
 
         except MilvusException as e:
@@ -757,7 +755,7 @@ class MilvusDB(BaseVectorDB):
         """
         return self._client.has_collection(collection_name=collection_name)
 
-    async def delete_partition(self, partition: str, user_id: int):
+    async def delete_partition(self, partition: str):
         self._check_partition_exists(partition)
         log = self.logger.bind(partition=partition)
 
@@ -767,7 +765,7 @@ class MilvusDB(BaseVectorDB):
                 filter=f"partition == '{partition}'",
             )
 
-            self.partition_file_manager.delete_partition(partition, user_id=user_id)
+            self.partition_file_manager.delete_partition(partition)
             log.info("Deleted points from partition", count=count.get("delete_count"))
 
         except MilvusException as e:
@@ -889,7 +887,7 @@ class MilvusDB(BaseVectorDB):
             p["partition"] for p in self.partition_file_manager.list_user_partitions(user_id) if p["role"] == "owner"
         ]
         for partition in user_partitions:
-            self.partition_file_manager.delete_partition(partition)
+            await self.delete_partition(partition)
         self.partition_file_manager.delete_user(user_id)
 
     async def list_users(self):

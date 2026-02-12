@@ -48,6 +48,8 @@ class File(Base):
     partition_name = Column(String, ForeignKey("partitions.partition"), nullable=False, index=True)  # Added index
     file_metadata = Column(JSON, nullable=True, default={})
 
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+
     # Document relationship fields
     relationship_id = Column(
         String, nullable=True, index=True
@@ -257,15 +259,15 @@ class PartitionFileManager:
                     file_metadata=file_metadata,
                     relationship_id=relationship_id,
                     parent_id=parent_id,
+                    created_by=user_id,
                 )
 
                 session.add(file)
-
-                # Increment the file_count for the user
-                user = session.query(User).filter(User.id == user_id).first()
-                if user:
-                    user.file_count = User.file_count + 1
-
+                # Increment uploader's file_count
+                if user_id:
+                    session.query(User).filter(User.id == user_id).update(
+                        {User.file_count: User.file_count + 1}, synchronize_session=False
+                    )
                 session.commit()
                 log.info("Added file successfully")
                 return True
@@ -274,7 +276,7 @@ class PartitionFileManager:
                 log.exception("Error adding file to partition")
                 raise
 
-    def remove_file_from_partition(self, file_id: str, partition: str, user_id: int):
+    def remove_file_from_partition(self, file_id: str, partition: str):
         """Remove a file from its partition - Optimized without join"""
         log = self.logger.bind(file_id=file_id, partition=partition)
         with self.Session() as session:
@@ -282,13 +284,13 @@ class PartitionFileManager:
                 # Direct filter without join (uses composite index)
                 file = session.query(File).filter(File.file_id == file_id, File.partition_name == partition).first()
                 if file:
+                    uploader_id = file.created_by
                     session.delete(file)
-
-                    # Decrement file_count for the user
-                    user = session.query(User).filter(User.id == user_id).first()
-                    if user and user.file_count > 0:
-                        user.file_count = func.greatest(0, User.file_count - 1)
-
+                    if uploader_id:
+                        session.query(User).filter(User.id == uploader_id).update(
+                            {User.file_count: func.greatest(User.file_count - 1, 0)},
+                            synchronize_session=False,
+                        )
                     session.commit()
                     log.info(f"Removed file {file_id} from partition {partition}")
                     return True
@@ -299,21 +301,24 @@ class PartitionFileManager:
                 log.error(f"Error removing file: {e}")
                 raise e
 
-    def delete_partition(self, partition: str, user_id: int):
+    def delete_partition(self, partition: str):
         """Delete a partition and all its files"""
         with self.Session() as session:
             partition_obj = session.query(Partition).filter_by(partition=partition).first()
             if partition_obj:
-                # Count files in the partition before deletion
-                file_count = session.query(File).filter(File.partition_name == partition).count()
-
-                # Decrement file_count for the user
-                if file_count > 0:
-                    user = session.query(User).filter(User.id == user_id).first()
-                    if user:
-                        user.file_count = func.greatest(0, User.file_count - file_count)
-
-                session.delete(partition_obj)  # Will delete all files due to cascade
+                # Count files per uploader before cascade deletes them
+                uploader_counts = (
+                    session.query(File.created_by, func.count(File.id))
+                    .filter(File.partition_name == partition, File.created_by.isnot(None))
+                    .group_by(File.created_by)
+                    .all()
+                )
+                session.delete(partition_obj)  # Cascades to files and memberships
+                for uploader_id, count in uploader_counts:
+                    session.query(User).filter(User.id == uploader_id).update(
+                        {User.file_count: func.greatest(User.file_count - count, 0)},
+                        synchronize_session=False,
+                    )
                 session.commit()
                 self.logger.info("Deleted partition", partition=partition)
                 return True
