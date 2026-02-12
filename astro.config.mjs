@@ -4,12 +4,14 @@ import starlight from '@astrojs/starlight';
 import tailwindcss from '@tailwindcss/vite';
 import mermaid from 'astro-mermaid';
 
-
 // https://astro.build/config
 export default defineConfig({
   srcDir: './docs',
   base: '/openrag/',
   integrations: [
+      mermaid({
+        autoTheme: true
+    }),
       starlight({
           title: 'Docs',
           customCss:[
@@ -55,10 +57,6 @@ export default defineConfig({
               }
           ],
       }),
-      mermaid({
-        theme: 'default',
-        autoTheme: true
-      })
   ],
 
   vite: {

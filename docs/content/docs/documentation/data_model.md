@@ -97,6 +97,12 @@ Represents an indexed file belonging to a partition.
 | `file_id`        | String (indexed) | External file identifier (e.g., hash or ID) |
 | `partition_name` | String (FK → `partitions.partition`) | Partition that owns the file |
 | `file_metadata`  | JSON | Additional metadata (format, size, etc.) |
+| `relationship_id` | String (nullable, indexed) | Groups related documents (e.g., email thread ID, folder path) |
+| `parent_id`       | String (nullable, indexed) | Points to hierarchical parent (e.g., parent email) |
+
+**Indexes:**
+- `ix_relationship_partition (relationship_id, partition_name)` — enables efficient relationship queries
+- `ix_parent_partition (parent_id, partition_name)` — enables efficient ancestor traversal
 
 **Constraints:**
 - `UniqueConstraint(file_id, partition_name)` → a file can appear only once per partition

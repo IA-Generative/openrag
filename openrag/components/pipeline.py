@@ -6,6 +6,7 @@ from components.prompts import (
     SPOKEN_STYLE_ANSWER_PROMPT,
     SYS_PROMPT_TMPLT,
 )
+from config import load_config
 from langchain_core.documents.base import Document
 from openai import AsyncOpenAI
 from utils.logger import get_logger
@@ -13,10 +14,11 @@ from utils.logger import get_logger
 from .llm import LLM
 from .map_reduce import RAGMapReduce
 from .reranker import Reranker
-from .retriever import ABCRetriever, RetrieverFactory
+from .retriever import BaseRetriever, RetrieverFactory
 from .utils import format_context
 
 logger = get_logger()
+config = load_config()
 
 
 class RAGMODE(Enum):
@@ -25,45 +27,55 @@ class RAGMODE(Enum):
 
 
 class RetrieverPipeline:
-    def __init__(self, config) -> None:
-        self.config = config
-
+    def __init__(self) -> None:
         # retriever
-        self.retriever: ABCRetriever = RetrieverFactory.create_retriever(config=config)
+        self.retriever: BaseRetriever = RetrieverFactory.create_retriever(config=config)
 
         # reranker
-        self.reranker = None
         self.reranker_enabled = config.reranker["enable"]
+        self.reranker = Reranker(logger, config)
         logger.debug("Reranker", enabled=self.reranker_enabled)
-        self.reranker_top_k = int(config.reranker["top_k"])
+        self.reranker_top_k = config.reranker["top_k"]
 
-        # map & reduce
-        self.retriever_top_k = int(config.retriever["top_k"])
-        self.map_reduce_max_docs = self.config.map_reduce["max_total_documents"]
-
-        if self.reranker_enabled:
-            self.reranker = Reranker(logger, config)
-
-    async def retrieve_docs(self, partition: list[str], query: str, use_map_reduce: bool = False) -> list[Document]:
+    async def retrieve_docs(self, partition: list[str], query: str, top_k: int | None = None) -> list[Document]:
         docs = await self.retriever.retrieve(partition=partition, query=query)
-        top_k = max(self.map_reduce_max_docs, self.reranker_top_k) if use_map_reduce else self.reranker_top_k
         logger.debug("Documents retreived", document_count=len(docs))
+
         if docs:
-            # rerank documents
+            # 1. rerank all the docs
             if self.reranker_enabled:
-                docs = await self.reranker.rerank(query, documents=docs, top_k=top_k)
-                logger.debug("Documents after reranking", document_count=len(docs))
-            else:
-                docs = docs[:top_k]
+                docs = await self.reranker.rerank(query, documents=docs, top_k=None)
+                logger.debug("Documents reranked", document_count=len(docs))
+
+            # 2. expand the docs with related documents
+            if self.retriever.expansion_enabled:
+                # Limit the number of docs to expand
+                top_k = max(self.reranker_top_k, top_k) if top_k else self.reranker_top_k
+                docs2expand = copy.deepcopy(docs[:top_k])
+
+                logger.debug("Documents to expand", document_count=len(docs2expand))
+
+                expanded_docs = await self.retriever.expand_search_results(results=docs2expand)
+
+                logger.debug("Documents expanded", document_count=len(expanded_docs))
+
+                if len(docs2expand) == len(expanded_docs):  # no expansion found, keep the original docs
+                    return docs
+
+                docs = expanded_docs
+
+                # rerank again after expansion if reranker is enabled
+                if self.reranker_enabled:
+                    docs = await self.reranker.rerank(query, documents=docs, top_k=None)
+                    logger.debug("Documents after expansion and reranking", document_count=len(docs))
+
         return docs
 
 
 class RagPipeline:
-    def __init__(self, config) -> None:
-        self.config = config
-
+    def __init__(self) -> None:
         # retriever pipeline
-        self.retriever_pipeline = RetrieverPipeline(config=config)
+        self.retriever_pipeline = RetrieverPipeline()
 
         # RAG
         self.rag_mode = config.rag["mode"]
@@ -90,13 +102,13 @@ class RagPipeline:
                 for m in messages:
                     chat_history += f"{m['role']}: {m['content']}\n"
 
-                params = dict(self.config.llm_params)
+                params = dict(config.llm_params)
                 params.pop("max_retries")
                 params["max_completion_tokens"] = self.max_contextualized_query_len
                 params["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
 
                 response = await self.contextualizer.chat.completions.create(
-                    model=self.config.llm["model"],
+                    model=config.llm["model"],
                     messages=[
                         {"role": "system", "content": QUERY_CONTEXTUALIZER_PROMPT},
                         {
@@ -129,15 +141,14 @@ class RagPipeline:
         )
 
         # 2. get docs
-        docs = await self.retriever_pipeline.retrieve_docs(
-            partition=partition, query=query, use_map_reduce=use_map_reduce
-        )
+        top_k = config.map_reduce["max_total_documents"] if use_map_reduce else None
+        docs = await self.retriever_pipeline.retrieve_docs(partition=partition, query=query, top_k=top_k)
 
         if use_map_reduce and docs:
             docs = await self.map_reduce.map(query=query, chunks=docs)
 
         # 3. Format the retrieved docs
-        context = format_context(docs, max_context_tokens=self.max_context_tokens)
+        context, n_docs = format_context(docs, max_context_tokens=self.max_context_tokens)
 
         # 4. prepare the output
         messages: list = copy.deepcopy(messages)
@@ -153,7 +164,7 @@ class RagPipeline:
             },
         )
         payload["messages"] = messages
-        return payload, docs
+        return payload, docs[:n_docs]
 
     async def _prepare_for_completions(self, partition: list[str], payload: dict):
         prompt = payload["prompt"]
@@ -164,7 +175,7 @@ class RagPipeline:
         docs = await self.retriever_pipeline.retrieve_docs(partition=partition, query=query)
 
         # 3. Format the retrieved docs
-        context = format_context(docs, max_context_tokens=self.max_context_tokens)
+        context, n_docs = format_context(docs, max_context_tokens=self.max_context_tokens)
 
         # 4. prepare the output
         if docs:
@@ -175,7 +186,7 @@ class RagPipeline:
 
         payload["prompt"] = prompt
 
-        return payload, docs
+        return payload, docs[:n_docs]
 
     async def completions(self, partition: list[str], payload: dict):
         try:
