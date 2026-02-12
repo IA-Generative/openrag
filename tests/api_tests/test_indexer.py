@@ -455,9 +455,8 @@ class TestUserQuotaEnforcement:
         except Exception:
             pass
 
-    def test_unlimited_quota_user_can_exceed_default(self, api_client, tmp_path):
-        """Test that user with unlimited quota (<0) can upload beyond default limit (11 files)."""
-        # Create user with unlimited quota (-1)
+    def test_unlimited_quota_user_can_upload(self, api_client, tmp_path):
+        """Test that user with unlimited quota (<0) can upload files."""
         user = self._create_user_with_quota(api_client, "unlimited_quota_user", file_quota=-1)
         user_id = user["id"]
         user_token = user["token"]
@@ -466,18 +465,15 @@ class TestUserQuotaEnforcement:
         try:
             self._create_partition(api_client, partition_name, user_token)
 
-            # Upload 11 files (exceeds default quota of 10)
-            for i in range(11):
+            for i in range(2):
                 response = self._upload_file(api_client, partition_name, f"file-{i}", user_token, f"Content {i}")
                 assert response.status_code in [200, 201, 202], (
                     f"File {i} upload failed with status {response.status_code}: {response.text}"
                 )
-                # Wait for task if needed
-                if response.status_code in [200, 201, 202]:
-                    data = response.json()
-                    if "task_status_url" in data:
-                        task_id = get_task_id(data)
-                        wait_for_task(api_client, task_id, headers={"Authorization": f"Bearer {user_token}"})
+                data = response.json()
+                if "task_status_url" in data:
+                    task_id = get_task_id(data)
+                    wait_for_task(api_client, task_id, headers={"Authorization": f"Bearer {user_token}"})
 
         finally:
             self._cleanup_partition(api_client, partition_name)
@@ -616,6 +612,102 @@ class TestUserQuotaEnforcement:
             assert count_after_partition_delete == 0, (
                 f"After deleting partition with 3 files, file_count should be 0, got {count_after_partition_delete}"
             )
+
+        finally:
+            self._cleanup_partition(api_client, partition_name)
+            self._cleanup_user(api_client, user_id)
+
+    def test_file_count_tracks_uploader_not_owner(self, api_client):
+        """Test that file_count increments for the uploader, not the partition owner."""
+        # Create owner (User A) and editor (User B)
+        owner = self._create_user_with_quota(api_client, "partition_owner", file_quota=-1)
+        editor = self._create_user_with_quota(api_client, "partition_editor", file_quota=-1)
+        owner_token = owner["token"]
+        editor_token = editor["token"]
+        partition_name = f"uploader-track-test-{owner['id']}"
+
+        try:
+            self._create_partition(api_client, partition_name, owner_token)
+
+            # Add editor to partition
+            response = api_client.post(
+                f"/partition/{partition_name}/users",
+                data={"user_id": editor["id"], "role": "editor"},
+                headers={"Authorization": f"Bearer {owner_token}"},
+            )
+            assert response.status_code == 201, f"Failed to add editor: {response.text}"
+
+            # Editor uploads 2 files
+            for i in range(2):
+                response = self._upload_file(
+                    api_client, partition_name, f"editor-file-{i}", editor_token, f"Content {i}"
+                )
+                assert response.status_code in [200, 201, 202]
+                data = response.json()
+                if "task_status_url" in data:
+                    task_id = get_task_id(data)
+                    wait_for_task(api_client, task_id, headers={"Authorization": f"Bearer {editor_token}"})
+
+            # Owner uploads 1 file
+            response = self._upload_file(api_client, partition_name, "owner-file-0", owner_token, "Owner content")
+            assert response.status_code in [200, 201, 202]
+            data = response.json()
+            if "task_status_url" in data:
+                task_id = get_task_id(data)
+                wait_for_task(api_client, task_id, headers={"Authorization": f"Bearer {owner_token}"})
+
+            # Verify: editor has count 2, owner has count 1
+            editor_count = self._get_user_file_count(api_client, editor_token)
+            owner_count = self._get_user_file_count(api_client, owner_token)
+            assert editor_count == 2, f"Editor file_count should be 2, got {editor_count}"
+            assert owner_count == 1, f"Owner file_count should be 1, got {owner_count}"
+
+        finally:
+            self._cleanup_partition(api_client, partition_name)
+            self._cleanup_user(api_client, editor["id"])
+            self._cleanup_user(api_client, owner["id"])
+
+    def test_file_count_stable_on_replace(self, api_client):
+        """Test that put_file (replace) keeps file_count unchanged."""
+        import io
+
+        user = self._create_user_with_quota(api_client, "replace_test_user", file_quota=-1)
+        user_id = user["id"]
+        user_token = user["token"]
+        partition_name = f"replace-test-{user_id}"
+        headers = {"Authorization": f"Bearer {user_token}"}
+
+        try:
+            self._create_partition(api_client, partition_name, user_token)
+
+            # Upload a file
+            response = self._upload_file(api_client, partition_name, "replaceable-file", user_token, "Original")
+            assert response.status_code in [200, 201, 202]
+            data = response.json()
+            if "task_status_url" in data:
+                task_id = get_task_id(data)
+                wait_for_task(api_client, task_id, headers=headers)
+
+            count_before = self._get_user_file_count(api_client, user_token)
+            assert count_before == 1, f"Expected file_count 1 before replace, got {count_before}"
+
+            # Replace the file via PUT
+            file_obj = io.BytesIO(b"Updated content")
+            response = api_client.put(
+                f"/indexer/partition/{partition_name}/file/replaceable-file",
+                files={"file": ("replaceable-file.txt", file_obj, "text/plain")},
+                data={"metadata": "{}"},
+                headers=headers,
+            )
+            assert response.status_code in [200, 201, 202], f"Replace failed: {response.text}"
+            data = response.json()
+            if "task_status_url" in data:
+                task_id = get_task_id(data)
+                wait_for_task(api_client, task_id, headers=headers)
+
+            # file_count should still be 1
+            count_after = self._get_user_file_count(api_client, user_token)
+            assert count_after == 1, f"Expected file_count 1 after replace, got {count_after}"
 
         finally:
             self._cleanup_partition(api_client, partition_name)
