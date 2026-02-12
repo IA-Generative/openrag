@@ -3,6 +3,7 @@ import os
 import secrets
 from datetime import datetime
 
+from config import load_config
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     create_engine,
+    func,
     text,
 )
 from sqlalchemy.orm import (
@@ -30,6 +32,9 @@ from utils.exceptions.vectordb import *
 from utils.logger import get_logger
 
 logger = get_logger()
+config = load_config()
+
+DEFAULT_FILE_QUOTA = config.rdb.get("default_file_quota", -1)
 
 Base = declarative_base()
 
@@ -111,7 +116,8 @@ class User(Base):
     token = Column(String, unique=True, nullable=True, index=True)
     is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
-
+    file_quota = Column(Integer, nullable=True, default=None)
+    file_count = Column(Integer, nullable=False, default=0)
     memberships = relationship("PartitionMembership", back_populates="user", cascade="all, delete-orphan")
 
 
@@ -151,6 +157,7 @@ class PartitionFileManager:
             self.Session = sessionmaker(bind=self.engine)
             AUTH_TOKEN = os.getenv("AUTH_TOKEN")
             self._ensure_admin_user(AUTH_TOKEN)
+            self.file_quota_per_user = DEFAULT_FILE_QUOTA
 
         except Exception as e:
             raise VDBConnectionError(
@@ -253,6 +260,12 @@ class PartitionFileManager:
                 )
 
                 session.add(file)
+
+                # Increment file_count for the user
+                user = session.query(User).filter(User.id == user_id).first()
+                if user:
+                    user.file_count = User.file_count + 1
+
                 session.commit()
                 log.info("Added file successfully")
                 return True
@@ -261,7 +274,7 @@ class PartitionFileManager:
                 log.exception("Error adding file to partition")
                 raise
 
-    def remove_file_from_partition(self, file_id: str, partition: str):
+    def remove_file_from_partition(self, file_id: str, partition: str, user_id: int):
         """Remove a file from its partition - Optimized without join"""
         log = self.logger.bind(file_id=file_id, partition=partition)
         with self.Session() as session:
@@ -270,6 +283,12 @@ class PartitionFileManager:
                 file = session.query(File).filter(File.file_id == file_id, File.partition_name == partition).first()
                 if file:
                     session.delete(file)
+
+                    # Decrement file_count for the user
+                    user = session.query(User).filter(User.id == user_id).first()
+                    if user and user.file_count > 0:
+                        user.file_count = func.greatest(0, User.file_count - 1)
+
                     session.commit()
                     log.info(f"Removed file {file_id} from partition {partition}")
                     return True
@@ -280,11 +299,20 @@ class PartitionFileManager:
                 log.error(f"Error removing file: {e}")
                 raise e
 
-    def delete_partition(self, partition: str):
+    def delete_partition(self, partition: str, user_id: int):
         """Delete a partition and all its files"""
         with self.Session() as session:
             partition_obj = session.query(Partition).filter_by(partition=partition).first()
             if partition_obj:
+                # Count files in the partition before deletion
+                file_count = session.query(File).filter(File.partition_name == partition).count()
+
+                # Decrement file_count for the user
+                if file_count > 0:
+                    user = session.query(User).filter(User.id == user_id).first()
+                    if user:
+                        user.file_count = func.greatest(0, User.file_count - file_count)
+
                 session.delete(partition_obj)  # Will delete all files due to cascade
                 session.commit()
                 self.logger.info("Deleted partition", partition=partition)
@@ -331,17 +359,22 @@ class PartitionFileManager:
         display_name: str | None = None,
         external_user_id: str | None = None,
         is_admin: bool = False,
+        file_quota: int | None = None,
     ) -> dict:
         """Create a user and generate an API token for them."""
         with self.Session() as s:
             token = f"or-{secrets.token_hex(16)}"
             hashed_token = self.hash_token(token)
 
+            if self.file_quota_per_user > 0 and file_quota is None:
+                file_quota = self.file_quota_per_user  # default to default quota
+
             user = User(
                 display_name=display_name,
                 external_user_id=external_user_id,
                 token=hashed_token,
                 is_admin=is_admin,
+                file_quota=file_quota,
             )
             s.add(user)
             s.commit()
@@ -353,6 +386,8 @@ class PartitionFileManager:
                 "external_user_id": user.external_user_id,
                 "token": token,
                 "is_admin": user.is_admin,
+                "file_quota": user.file_quota,
+                "file_count": user.file_count,
             }
 
     def list_users(self) -> list[dict]:
@@ -364,6 +399,8 @@ class PartitionFileManager:
                     "display_name": u.display_name,
                     "external_user_id": u.external_user_id,
                     "is_admin": u.is_admin,
+                    "file_quota": u.file_quota,
+                    "file_count": u.file_count,
                     "created_at": u.created_at.isoformat(),
                 }
                 for u in users
@@ -390,6 +427,8 @@ class PartitionFileManager:
                 "display_name": user.display_name,
                 "external_user_id": user.external_user_id,
                 "is_admin": user.is_admin,
+                "file_quota": user.file_quota,
+                "file_count": user.file_count,
                 "memberships": memberships,
             }
 
@@ -413,6 +452,8 @@ class PartitionFileManager:
                 "display_name": user.display_name,
                 "external_user_id": user.external_user_id,
                 "is_admin": user.is_admin,
+                "file_quota": user.file_quota,
+                "file_count": user.file_count,
                 "memberships": memberships,
             }
 
@@ -440,6 +481,8 @@ class PartitionFileManager:
                 "external_user_id": user.external_user_id,
                 "token": new_token,
                 "is_admin": user.is_admin,
+                "file_quota": user.file_quota,
+                "file_count": user.file_count,
             }
 
     # Memberships
@@ -530,6 +573,29 @@ class PartitionFileManager:
     def user_is_partition_member(self, user_id: int, partition: str) -> bool:
         with self.Session() as s:
             return s.query(PartitionMembership).filter_by(user_id=user_id, partition_name=partition).first() is not None
+
+    def update_user_quota(self, user_id: int, file_quota: int | None) -> dict:
+        """
+        Update a user's file quota.
+        - None: Use global default (DEFAULT_FILE_QUOTA env var)
+        - <0: Unlimited
+        - >=0: Specific limit
+        """
+        with self.Session() as s:
+            user = s.query(User).filter(User.id == user_id).first()
+            user.file_quota = file_quota
+            s.commit()
+            self.logger.info(f"Updated file_quota for user {user_id} to {file_quota}")
+            s.refresh(user)
+
+            return {
+                "id": user.id,
+                "display_name": user.display_name,
+                "external_user_id": user.external_user_id,
+                "is_admin": user.is_admin,
+                "file_quota": user.file_quota,
+                "file_count": user.file_count,
+            }
 
     def hash_token(self, token: str) -> str:
         """Return a SHA-256 hash of a token string."""
