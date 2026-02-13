@@ -667,6 +667,52 @@ class TestUserQuotaEnforcement:
             self._cleanup_user(api_client, editor["id"])
             self._cleanup_user(api_client, owner["id"])
 
+    def test_partition_delete_only_decrements_its_files(self, api_client):
+        """Test that deleting a partition only decrements file_count for files in that partition."""
+        user = self._create_user_with_quota(api_client, "partition_del_user", file_quota=-1)
+        user_id = user["id"]
+        user_token = user["token"]
+        partition_a = f"partition-del-a-{user_id}"
+        partition_b = f"partition-del-b-{user_id}"
+
+        try:
+            self._create_partition(api_client, partition_a, user_token)
+            self._create_partition(api_client, partition_b, user_token)
+            headers = {"Authorization": f"Bearer {user_token}"}
+
+            # Upload 2 files to partition A
+            for i in range(2):
+                response = self._upload_file(api_client, partition_a, f"file-a-{i}", user_token, f"Content A{i}")
+                assert response.status_code in [200, 201, 202]
+                data = response.json()
+                if "task_status_url" in data:
+                    wait_for_task(api_client, get_task_id(data), headers=headers)
+
+            # Upload 3 files to partition B
+            for i in range(3):
+                response = self._upload_file(api_client, partition_b, f"file-b-{i}", user_token, f"Content B{i}")
+                assert response.status_code in [200, 201, 202]
+                data = response.json()
+                if "task_status_url" in data:
+                    wait_for_task(api_client, get_task_id(data), headers=headers)
+
+            # Verify total count is 5
+            count = self._get_user_file_count(api_client, user_token)
+            assert count == 5, f"Expected 5 files total, got {count}"
+
+            # Delete partition A (2 files)
+            response = api_client.delete(f"/partition/{partition_a}")
+            assert response.status_code in [200, 204], f"Failed to delete partition: {response.text}"
+
+            # Count should drop to 3 (only partition B files remain)
+            count = self._get_user_file_count(api_client, user_token)
+            assert count == 3, f"Expected 3 files after deleting partition A, got {count}"
+
+        finally:
+            self._cleanup_partition(api_client, partition_a)
+            self._cleanup_partition(api_client, partition_b)
+            self._cleanup_user(api_client, user_id)
+
     def test_file_count_stable_on_replace(self, api_client):
         """Test that put_file (replace) keeps file_count unchanged."""
         import io
