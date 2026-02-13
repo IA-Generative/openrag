@@ -5,7 +5,7 @@ import argparse
 import os
 import sys
 
-from sqlalchemy import create_engine, func, text
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
 # Add parent dirs so we can import the models
@@ -73,9 +73,7 @@ def check_file_counts(database_url, fix=False):
             if fix:
                 for uid, _, stored, actual, ok in rows:
                     if not ok:
-                        session.query(User).filter(User.id == uid).update(
-                            {User.file_count: actual}
-                        )
+                        session.query(User).filter(User.id == uid).update({User.file_count: actual})
                         print(f"  Fixed user {uid}: {stored} -> {actual}")
                 session.commit()
                 print(f"{green}All counts have been fixed.{reset}")
@@ -86,9 +84,7 @@ def check_file_counts(database_url, fix=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Verify user file_count against actual files in the database."
-    )
+    parser = argparse.ArgumentParser(description="Verify user file_count against actual files in the database.")
     parser.add_argument("--host", help="PostgreSQL host (default: $POSTGRES_HOST or localhost)")
     parser.add_argument("--port", help="PostgreSQL port (default: $POSTGRES_PORT or 5432)")
     parser.add_argument("--user", help="PostgreSQL user (default: $POSTGRES_USER or root)")

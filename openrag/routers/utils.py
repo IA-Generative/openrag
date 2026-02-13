@@ -183,7 +183,6 @@ def require_admin(user=Depends(current_user)):
 
 async def check_user_file_quota(
     user=Depends(current_user),
-    vectordb=Depends(get_vectordb),
 ):
     """
     Check if user has reached their file quota.
