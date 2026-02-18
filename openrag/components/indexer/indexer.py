@@ -380,3 +380,16 @@ class TaskStateManager:
             "max_tasks_per_worker": MAX_TASKS_PER_WORKER,
             "total_capacity": POOL_SIZE * MAX_TASKS_PER_WORKER,
         }
+
+    @ray.method(concurrency_group="queue_info")
+    async def get_user_pending_task_count(self, user_id: int) -> int:
+        """Count tasks for a user that are not yet COMPLETED or FAILED."""
+        async with self.lock:
+            task_ids = self.user_index.get(user_id, set())
+            pending_states = {"QUEUED", "SERIALIZING", "CHUNKING", "INSERTING"}
+            count = 0
+            for tid in task_ids:
+                info = self.tasks.get(tid)
+                if info and info.state in pending_states:
+                    count += 1
+            return count

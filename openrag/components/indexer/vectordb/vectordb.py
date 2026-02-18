@@ -873,8 +873,9 @@ class MilvusDB(BaseVectorDB):
         display_name: str | None = None,
         external_user_id: str | None = None,
         is_admin: bool = False,
+        file_quota: int | None = None,
     ):
-        return self.partition_file_manager.create_user(display_name, external_user_id, is_admin)
+        return self.partition_file_manager.create_user(display_name, external_user_id, is_admin, file_quota)
 
     async def get_user(self, user_id: int):
         self._check_user_exists(user_id)
@@ -886,7 +887,7 @@ class MilvusDB(BaseVectorDB):
             p["partition"] for p in self.partition_file_manager.list_user_partitions(user_id) if p["role"] == "owner"
         ]
         for partition in user_partitions:
-            self.partition_file_manager.delete_partition(partition)
+            await self.delete_partition(partition)
         self.partition_file_manager.delete_user(user_id)
 
     async def list_users(self):
@@ -898,6 +899,10 @@ class MilvusDB(BaseVectorDB):
     async def regenerate_user_token(self, user_id: int):
         self._check_user_exists(user_id)
         return self.partition_file_manager.regenerate_user_token(user_id)
+
+    def update_user_quota(self, user_id: int, file_quota: int | None):
+        self._check_user_exists(user_id)
+        return self.partition_file_manager.update_user_quota(user_id, file_quota)
 
     async def list_user_partitions(self, user_id: int):
         self._check_user_exists(user_id)

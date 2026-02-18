@@ -58,6 +58,42 @@ This upgrades your database schema to the latest revision.
 When you pull the latest changes to your local code, check if a new migration script has been added. If so, make sure to apply the migration before restarting the service.
 :::
 
+
+
+---
+
+
+## Troubleshooting: Multiple Alembic Heads
+
+If you encounter an error like:
+
+```bash
+ERROR [alembic.util.messaging] Multiple head revisions are present for given argument 'head'; please specify a specific target revision, '<branchname>@head' to narrow to a specific head, or 'heads' for all heads
+```
+
+This usually happens when two or more migration scripts are created independently from the same base revision (for example, when working on separate features that both modify the RDB schema). Alembic then detects multiple "heads" in the migration history.
+
+**How to resolve:**
+
+1. **Create a merge migration** to join the two heads. Replace the revision IDs below with your actual head revisions:
+
+     ```bash title="Merge Alembic heads"
+     docker compose up -d rdb
+     docker compose run --no-deps --build --rm \
+         --entrypoint "uv run alembic -c /app/openrag/scripts/migrations/alembic/alembic.ini merge -m 'merge heads' <head1> <head2>" \
+         openrag
+     ```
+     This will generate a new migration script that merges the two branches.
+
+2. **Apply the migrations as usual:**
+
+     ```bash title="Apply migrations after merge"
+     docker compose up -d rdb
+     docker compose run --no-deps --build --rm \
+         --entrypoint "uv run alembic -c /app/openrag/scripts/migrations/alembic/alembic.ini upgrade head" \
+         openrag; docker compose down
+     ```
+
 ---
 
 ## Best Practices

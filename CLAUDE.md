@@ -113,9 +113,10 @@ Each file type has a dedicated loader that converts to markdown:
 The system uses token-based authentication with role-based access control (RBAC) for multi-tenant partition access.
 
 **Database Schema** (PostgreSQL with SQLAlchemy, in `openrag/components/indexer/vectordb/utils.py`):
-- `users` - User accounts with `id`, `external_user_id`, `display_name`, `token` (SHA-256 hashed), `is_admin`
+- `users` - User accounts with `id`, `external_user_id`, `display_name`, `token` (SHA-256 hashed), `is_admin`, `file_quota`, `file_count`
+- `files` - File records with `file_id`, `partition_name`, `file_metadata`, `created_by` (FK to users), `relationship_id`, `parent_id`
 - `partition_memberships` - Join table linking users to partitions with roles (`owner`, `editor`, `viewer`)
-- `partitions` - Document collections with cascade delete to memberships
+- `partitions` - Document collections with cascade delete to files and memberships
 
 **Authentication Flow** (`openrag/api.py` - `AuthMiddleware`):
 1. Token extracted from `Authorization: Bearer <token>` header (or `?token=` query param for `/static` routes)
@@ -142,6 +143,7 @@ ROLE_HIERARCHY = {"viewer": 1, "editor": 2, "owner": 3}
 | `/users/` | POST | Admin | Create user (returns token once) |
 | `/users/{user_id}` | DELETE | Admin | Delete user (cannot delete id=1) |
 | `/users/{user_id}/regenerate_token` | POST | Admin/self | Regenerate API token |
+| `/users/{user_id}/quota` | PATCH | Admin | Update user file quota |
 
 **Partition Membership Endpoints** (`/partition/{partition}/users`):
 | Endpoint | Method | Auth | Description |
@@ -174,6 +176,30 @@ await vectordb.list_partition_members.remote(partition)
 - For regular users, `all` resolves to their partition memberships only
 - For admins with `SUPER_ADMIN_MODE=true`, `all` resolves to all system partitions
 - Model prefix is `openrag-` (legacy: `ragondin-`)
+
+### File Quota System
+
+Per-user file quota enforcement tracked via the `file_count` and `file_quota` columns on `users`, and `created_by` on `files`.
+
+**How it works:**
+- `files.created_by` records which user uploaded each file (nullable for pre-migration files)
+- `users.file_count` is incremented/decremented in application code (in `PartitionFileManager`) — no SQL triggers
+- Decrements use `func.greatest(file_count - N, 0)` to prevent negative values from race conditions
+- `delete_partition` queries per-uploader counts before cascade delete, then bulk decrements
+- Quota check (`check_user_file_quota` in `openrag/routers/utils.py`) runs on upload, considering both indexed files and pending tasks
+
+**Quota logic (`file_quota` column):**
+- `None` → use global default (`DEFAULT_FILE_QUOTA` env var, default `-1`)
+- `< 0` → unlimited
+- `>= 0` → specific limit
+- Admins always bypass quota checks
+
+**Key design decisions:**
+- Counts are tracked per **uploader** (whoever calls the upload API), not per partition owner
+- `created_by` uses `ondelete="SET NULL"` so deleting a user doesn't cascade-delete their files
+- `Indexer.delete_file` and `MilvusDB.delete_file/delete_partition` don't need a `user_id` parameter — the uploader is looked up from `files.created_by`
+
+**Migration:** `openrag/scripts/migrations/alembic/versions/c224d4befe71_add_file_count_and_file_quota.py`
 
 ### Configuration
 
