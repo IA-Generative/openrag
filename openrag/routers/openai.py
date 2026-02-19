@@ -172,7 +172,8 @@ def validate_tokens_limit(
 
         if isinstance(request, OpenAIChatCompletionRequest):
             message_tokens = sum(_length_function(m.content or "") + 4 for m in request.messages)
-            requested_tokens = request.max_tokens or 1024
+            default_output_tokens = int(config.llm_context.get("max_output_tokens", 1024))
+            requested_tokens = request.max_tokens or default_output_tokens
             total_tokens_needed = message_tokens + requested_tokens
 
             logger.debug(
@@ -194,7 +195,8 @@ def validate_tokens_limit(
 
         elif isinstance(request, OpenAICompletionRequest):
             prompt_tokens = _length_function(request.prompt)
-            requested_tokens = request.max_tokens or 512
+            default_output_tokens = int(config.llm_context.get("max_output_tokens", 1024))
+            requested_tokens = request.max_tokens or default_output_tokens
             total_tokens_needed = prompt_tokens + requested_tokens
 
             logger.debug(

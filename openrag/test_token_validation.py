@@ -111,12 +111,12 @@ class TestValidateTokensLimit:
         assert is_valid is False
 
     def test_completion_default_max_tokens(self):
-        """When max_tokens is not set, the default (512) is used."""
+        """When max_tokens is not set, the default (1024) is used."""
         req = OpenAICompletionRequest(prompt="hello")
-        # 1 word + 512 default = 513
-        is_valid, _ = validate_tokens_limit(req, max_tokens_allowed=513)
+        # 1 word + 1024 default = 1025
+        is_valid, _ = validate_tokens_limit(req, max_tokens_allowed=1025)
         assert is_valid is True
-        is_valid, _ = validate_tokens_limit(req, max_tokens_allowed=512)
+        is_valid, _ = validate_tokens_limit(req, max_tokens_allowed=1024)
         assert is_valid is False
 
     def test_error_message_contains_token_counts(self):

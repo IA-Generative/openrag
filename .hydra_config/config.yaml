@@ -75,6 +75,7 @@ server:
 
 llm_context:
   max_llm_context_size: ${oc.decode:${oc.env:MAX_LLM_CONTEXT_SIZE, 8192}}
+  max_output_tokens: ${oc.decode:${oc.env:MAX_OUTPUT_TOKENS, 1024}}
 
 paths:
   prompts_dir: ${oc.env:PROMPTS_DIR, ../prompts/example1}
