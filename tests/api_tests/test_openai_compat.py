@@ -49,6 +49,35 @@ class TestOpenAICompatibleAPI:
         )
         assert response.status_code == 404
 
+    @pytest.mark.parametrize(
+        "endpoint, payload",
+        [
+            (
+                "/v1/chat/completions",
+                {
+                    "model": "",
+                    "messages": [{"role": "user", "content": "test " * 20000}],
+                    "max_tokens": 100000,
+                },
+            ),
+            (
+                "/v1/completions",
+                {
+                    "model": "",
+                    "prompt": "test " * 20000,
+                    "max_tokens": 100000,
+                },
+            ),
+        ],
+        ids=["chat_completions", "completions"],
+    )
+    def test_exceeds_token_limit(self, api_client, endpoint, payload):
+        """When requested tokens exceed model limit, expect HTTP 413."""
+        response = api_client.post(endpoint, json=payload)
+        assert response.status_code == 413
+        body = response.json()
+        assert "exceeds maximum token limit" in body["detail"].lower()
+
 
 class TestChatCompletionsMultiPartition:
     """Test chat completions with multi-partition access."""

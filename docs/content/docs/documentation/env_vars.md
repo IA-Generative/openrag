@@ -171,6 +171,7 @@ These are external services to provide !!!
 | `MODEL` | str | Model identifier for the LLM |
 | `API_KEY` | str | API key for authenticating with the LLM service |
 | `LLM_SEMAPHORE` | int | 10 | Maximum number of concurrent requests to allow for the LLM service |
+| `MAX_LLM_CONTEXT_SIZE` | `int` | `8192` | Fallback maximum token limit for chat/completion requests. At startup, the `/v1/models` endpoint is queried for the model's `max_model_len`; if that query fails this value is used instead. Requests whose total token count (prompt + `max_tokens`) exceeds the limit are rejected with a **413** error. |
 
 
 #### VLM Configuration

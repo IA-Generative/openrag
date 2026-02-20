@@ -31,7 +31,7 @@ jobs:
           pip install pytest httpx pytest-timeout
 
       - name: Build and start services
-        working-directory: .github/workflows/api_tests
+        working-directory: tests/api_tests/api_run
         run: |
           docker compose build
           docker compose up -d
@@ -71,11 +71,12 @@ jobs:
           OPENRAG_API_URL: http://localhost:8080
           AUTH_TOKEN: test-admin-token
         run: |
-          pytest tests/api_tests/ -v --timeout=120 --tb=short
+          cd tests/api_tests
+          OPENRAG_API_URL=http://localhost:8080 python3 -m pytest . -v --timeout=120 --tb=short
 
       - name: Show logs on failure
         if: failure()
-        working-directory: .github/workflows/api_tests
+        working-directory: tests/api_tests/api_run
         run: |
           echo "=== OpenRAG Logs ==="
           docker compose logs openrag --tail=100
@@ -86,6 +87,6 @@ jobs:
 
       - name: Cleanup
         if: always()
-        working-directory: .github/workflows/api_tests
+        working-directory: tests/api_tests/api_run
         run: |
           docker compose down -v
