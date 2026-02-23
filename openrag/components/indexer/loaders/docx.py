@@ -64,7 +64,12 @@ class DocxLoader(BaseLoader):
         return doc
 
     def get_images_from_zip(self, input_file):
-        with zipfile.ZipFile(input_file, "r") as docx:
+        try:
+            docx = zipfile.ZipFile(input_file, "r")
+        except zipfile.BadZipFile:
+            logger.warning("File is not a valid zip archive; skipping image extraction.", path=str(input_file))
+            return []
+        with docx:
             file_names = docx.namelist()
             # word/media/ may also contain non-image files (e.g. oleObject, hdphoto, ink)
             image_files = [f for f in file_names if f.startswith("word/media/")]
