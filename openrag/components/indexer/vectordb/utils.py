@@ -719,4 +719,4 @@ class PartitionFileManager:
             List of file_id strings ordered from root to the specified file
         """
         ancestors = self.get_file_ancestors(partition, file_id, max_ancestor_depth)
-        return [a["file_id"] for a in ancestors]
+        return [a["file_id"] for a in ancestors if a["file_id"] != file_id]
