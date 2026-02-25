@@ -55,6 +55,7 @@ vectordb:
   collection_name: vdb_test
   hybrid_search: true
   enable: true
+  schema_version: 1 # Increment when the collection schema changes and a migration is required
 
 # --- Relational Database (PostgreSQL) ---
 # Env: POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD, DEFAULT_FILE_QUOTA

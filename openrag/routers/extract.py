@@ -31,9 +31,6 @@ Returns chunk details including:
   - `filename`: Original filename
   - `partition`: Partition name
   - `page`: Page number in source document
-  - `datetime`: Document date (if set)
-  - `modified_at`: File modification timestamp
-  - `created_at`: File creation timestamp
   - `indexed_at`: Chunk indexing timestamp
   - Additional custom metadata
 
