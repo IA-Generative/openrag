@@ -65,14 +65,40 @@ The parameters below configure how the OCR loader communicates with the model se
 This feature is currently experimental. Docker server configurations are available in [extern/ocr_vlm_servers](https://github.com/linagora/openrag/tree/main/extern/ocr_vlm_servers) and can be deployed using standard Docker Compose commands.
 :::
 
-
 #### Audio Loader
+OpenRAG provides two deployment options for audio transcription, configurable via the `AUDIOLOADER` environment variable:
 
-The transcriber is an OpenAI-compatible audio transcription service powered by Whisper models deployed via VLLM. It processes audio input by automatically segmenting it into chunks using silence detection, then transcribes these chunks in parallel for optimal speed and accuracy. This loader includes a bundled VLLM service for users who prefer to run Whisper locally.
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `AUDIOLOADER` | `str` | `LocalWhisperLoader` | Specifies the audio loader implementation. Options: `LocalWhisperLoader` (bundled Whisper service) or `OpenAIAudioLoader` (external OpenAI API) |
 
-To enable this service, set the `TRANSCRIBER_COMPOSE` variable to `extern/transcriber.yaml`. By default, it's disabled !!!
+##### Local Whisper Loader ( `LocalWhisperLoader` )
+For local whisper loader, here are the options to use
 
-The following environment variables configure its behavior, performance, and connectivity:
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `WHISPER_MODEL` | `str` | `base` | The whisper multilingual model to use depending on [available resources](https://github.com/openai/whisper?tab=readme-ov-file#available-models-and-languages). Other options: `base`, `small`, `large`, `large-v3`, etc. |
+|`WHISPER_N_WORKERS`| `int` | 3 | Number of whisper workers|
+| `WHISPER_CONCURRENCY_PER_WORKER` | `int` | 2 | Maximum number of audio transcription tasks processed concurrently by each Whisper worker. |
+
+##### OpenAI-compatible audio Loader ( `OpenAIAudioLoader` )
+The `OpenAIAudioLoader` option, allows to use openai-compatible audio endpoint/service to transcribe audio endpoint by providing the following variables: **`TRANSCRIBER_BASE_URL`, `TRANSCRIBER_API_KEY` and `TRANSCRIBER_MODEL`**
+
+The audio is automatically segmented into chunks using silence detection, then transcribes these chunks in parallel for optimal speed and accuracy.
+
+:::tip[Whisper deployment as vLLM server]
+
+Using this option, one can also deploy whisper locally as an openai-compatible service using **`vLLM`**. For that, set the `TRANSCRIBER_COMPOSE` variable as follows.
+
+```bash
+# .env
+
+## To deploy whisper as an external openai-compatible service
+TRANSCRIBER_COMPOSE=extern/transcriber.yaml
+```
+:::
+
+Here are some other variables related to openai-compatible endpoint.
 
 <div style="overflow-x: auto; max-height: 500px; overflow-y: auto;">
 
@@ -80,18 +106,17 @@ The following environment variables configure its behavior, performance, and con
 |----------|------|---------|-------------|
 | `TRANSCRIBER_BASE_URL` | `str` | `http://transcriber:8000/v1` | Base URL for the transcriber API (OpenAI-compatible endpoint). |
 | `TRANSCRIBER_API_KEY` | `str` | `EMPTY` | Authentication key for transcriber service requests. |
-| `TRANSCRIBER_MODEL` | `str` | `openai/whisper-large-v3-turbo` | Whisper model identifier served by VLLM for speech-to-text conversion. |
-| `TRANSCRIBER_MAX_CHUNK_MS` | `int` | `30000` | Maximum duration (milliseconds) for each processed audio segment. Defines the upper limit for chunk length. |
-| `TRANSCRIBER_SILENCE_THRESH_DB` | `int` | `-40` | Silence detection threshold (decibels) for voice activity detection. Audio below this level is classified as silence. |
-| `TRANSCRIBER_MIN_SILENCE_LEN_MS` | `int` | `500` | Minimum silence duration (milliseconds) needed to trigger audio splitting. Shorter pauses are disregarded. |
+| `TRANSCRIBER_MODEL` | `str` | `openai/whisper-large-v3-turbo` | Whisper model identifier served by VLLM for speech-to-text conversion. Other options: `openai/whisper-small`, `openai/whisper-large-v3-turbo`, etc.|
 | `TRANSCRIBER_MAX_CONCURRENT_CHUNKS` | `int` | `20` | Maximum number of audio chunks processed simultaneously. Increasing this value improves throughput when sufficient GPU resources are available. |
+| `TRANSCRIBER_TIMEOUT` | `int` | `3600` | Maximum duration in seconds allowed for a single transcription request. |
+| `USE_WHISPER_LANG_DETECTOR` | `bool` | `true` | When enabled, uses a local Whisper-based language detector to identify the source audio language before transcription. |
 
 </div>
 
-:::danger[Information]
-This feature was recently introduced to externalize the audio loader for improved scalability and to resolve a queue blocking issue that occurred when running the audio loader internally.
+:::danger[About whisper with vLLM]
+As noted in [this PR](https://github.com/linagora/openrag/pull/134), the current vLLM implementation of Whisper can mis-detect the language and output English regardless of the source audio. For details, see [this vLLM issue](https://github.com/vllm-project/vllm/issues/14174).
 
-As noted in [this PR](https://github.com/linagora/openrag/pull/134), the current VLLM implementation of Whisper has known limitations, including language mismatches between the source audio and the generated transcription. This issue is related to VLLM ([See this issue](https://github.com/vllm-project/vllm/issues/14174))
+To improve accuracy, we use a local Whisper-based language detector that is activated by default with the default setting (`USE_WHISPER_LANG_DETECTOR=true`). 
 :::
 
 ### Chunking

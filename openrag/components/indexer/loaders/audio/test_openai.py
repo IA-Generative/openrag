@@ -1,7 +1,7 @@
 """
-Unit tests for media_loader audio processing functionality.
+Unit tests for openai audio processing functionality (./openai.py).
 
-These tests validate the pydub operations used in media_loader.py without
+These tests validate the pydub operations used in openai.py without
 importing the full module (which has complex dependencies).
 """
 
@@ -20,7 +20,7 @@ from pydub.generators import Sine  # noqa: E402
 
 
 class TestAudioSegmentOperations:
-    """Test pydub AudioSegment operations used in media_loader."""
+    """Test pydub AudioSegment operations used in openai."""
 
     def test_create_audio_segment(self):
         """Test creating an audio segment."""
@@ -105,7 +105,7 @@ class TestAudioSegmentOperations:
 
 
 class TestSilenceDetection:
-    """Test pydub silence detection used in media_loader."""
+    """Test pydub silence detection used in openai."""
 
     def test_detect_silence_all_silent(self):
         """Test detection when entire audio is silent."""
@@ -180,7 +180,7 @@ class TestSilenceDetection:
 
 
 class TestAudioChunking:
-    """Test chunking logic similar to media_loader._get_audio_chunks."""
+    """Test chunking logic similar to openai._get_audio_chunks."""
 
     def get_audio_chunks(
         self,
@@ -190,7 +190,7 @@ class TestAudioChunking:
         silence_thresh_db: int,
     ) -> list:
         """
-        Reproduce chunking logic from media_loader.
+        Reproduce chunking logic from openai.
         """
         from pydub import silence
 

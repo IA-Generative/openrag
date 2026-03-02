@@ -1,5 +1,5 @@
 import ray
-from components.utils import get_llm_semaphore, get_vlm_semaphore
+from components.utils import get_audio_semaphore, get_llm_semaphore, get_vlm_semaphore
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from ray.util.state import list_actors
@@ -27,6 +27,7 @@ actor_creation_map = {
     "Vectordb": get_vectordb,
     "llmSemaphore": get_llm_semaphore,
     "vlmSemaphore": get_vlm_semaphore,
+    "audioSemaphore": get_audio_semaphore,
 }
 
 
