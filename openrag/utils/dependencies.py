@@ -1,28 +1,40 @@
+from functools import wraps
+
 import ray
-import ray.actor
 from components.indexer.indexer import Indexer, TaskStateManager
 from components.indexer.loaders.audio import WhisperActor, WhisperPool
 from components.indexer.loaders.pdf_loaders.docling2 import DoclingPool
 from components.indexer.loaders.pdf_loaders.marker import MarkerPool
 from components.indexer.loaders.serializer import DocSerializer
 from components.indexer.vectordb.vectordb import ConnectorFactory
+from components.utils import DistributedSemaphoreActor
 from config import load_config
 from utils.logger import get_logger
 
+# load config
+config = load_config()
+logger = get_logger()
 
-def get_or_create_actor(name, cls, namespace="openrag", **options):
+actor_creation_map: dict[str, callable] = {}
+
+
+def _track_actor(func):
+    @wraps(func)
+    def wrapper(name, cls, namespace="openrag", remote_args=(), **options):
+        actor_creation_map[name] = lambda: func(name, cls, namespace=namespace, remote_args=remote_args, **options)
+        return func(name, cls, namespace=namespace, remote_args=remote_args, **options)
+
+    return wrapper
+
+
+@_track_actor
+def get_or_create_actor(name, cls, namespace="openrag", remote_args=(), **options):
     try:
         return ray.get_actor(name, namespace=namespace)
     except ValueError:
-        return cls.options(name=name, namespace=namespace, **options).remote()
+        return cls.options(name=name, namespace=namespace, **options).remote(*remote_args)
     except Exception:
         raise
-
-
-# load config
-config = load_config()
-
-logger = get_logger()
 
 
 def get_task_state_manager():
@@ -63,9 +75,40 @@ def init_audio_actor():
         return get_or_create_actor("WhisperActor", WhisperActor, lifetime="detached")
 
 
+def init_llm_semaphore():
+    return get_or_create_actor(
+        "llmSemaphore",
+        DistributedSemaphoreActor,
+        lifetime="detached",
+        remote_args=(config.semaphore.llm_semaphore,),
+    )
+
+
+def init_vlm_semaphore():
+    return get_or_create_actor(
+        "vlmSemaphore",
+        DistributedSemaphoreActor,
+        lifetime="detached",
+        remote_args=(config.semaphore.vlm_semaphore,),
+    )
+
+
+def init_audio_semaphore():
+    return get_or_create_actor(
+        "audioSemaphore",
+        DistributedSemaphoreActor,
+        lifetime="detached",
+        remote_args=(config.loader.transcriber.max_concurrent_chunks,),
+    )
+
+
+init_llm_semaphore()
+init_vlm_semaphore()
+init_audio_semaphore()
+init_audio_actor()
+get_marker_pool()
+
 task_state_manager = get_task_state_manager()
 serializer = get_serializer()
 vectordb = get_vectordb()
 indexer = get_indexer()
-marker_pool = get_marker_pool()
-audio_actor = init_audio_actor()

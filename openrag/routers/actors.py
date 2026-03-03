@@ -1,14 +1,9 @@
 import ray
-from components.utils import get_audio_semaphore, get_llm_semaphore, get_vlm_semaphore
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from ray.util.state import list_actors
 from utils.dependencies import (
-    get_indexer,
-    get_marker_pool,
-    get_serializer,
-    get_task_state_manager,
-    get_vectordb,
+    actor_creation_map,
 )
 from utils.logger import get_logger
 
@@ -18,17 +13,6 @@ logger = get_logger()
 
 
 router = APIRouter(dependencies=[Depends(require_admin)])
-
-actor_creation_map = {
-    "TaskStateManager": get_task_state_manager,
-    "MarkerPool": get_marker_pool,
-    "DocSerializer": get_serializer,
-    "Indexer": get_indexer,
-    "Vectordb": get_vectordb,
-    "llmSemaphore": get_llm_semaphore,
-    "vlmSemaphore": get_vlm_semaphore,
-    "audioSemaphore": get_audio_semaphore,
-}
 
 
 @router.get(
@@ -112,8 +96,6 @@ async def restart_actor(
         logger.warning("Actor not found. Creating new instance.", actor=actor_name)
 
     new_actor = actor_creation_map[actor_name]()
-    if "Semaphore" in actor_name:
-        new_actor = new_actor._actor
     logger.info(f"Restarted actor: {actor_name}")
     return JSONResponse(
         status_code=status.HTTP_200_OK,
