@@ -1,8 +1,4 @@
-# Minimal compose for API testing without VLLM
-# Uses mock embedding server instead
-
 services:
-  # Mock VLLM embedding server
   mock-vllm:
     build:
       context: .
@@ -20,7 +16,6 @@ services:
       retries: 10
       start_period: 5s
 
-  # PostgreSQL for user/partition management
   rdb:
     image: postgres:15
     environment:
@@ -32,7 +27,6 @@ services:
       timeout: 5s
       retries: 10
 
-  # Milvus dependencies
   etcd:
     image: quay.io/coreos/etcd:v3.5.16
     environment:
@@ -78,10 +72,9 @@ services:
       retries: 10
       start_period: 30s
 
-  # OpenRAG API (build from repo root)
   openrag:
     build:
-      context: ../../../
+      context: ../../..
       dockerfile: Dockerfile
     environment:
       - EMBEDDER_MODEL_NAME=mock-embedding-model
@@ -107,6 +100,9 @@ services:
       - RAY_ENABLE_UV_RUN_RUNTIME_ENV=0
       - RAY_memory_monitor_refresh_ms=0
       - PROMPTS_DIR=../prompts/example1
+      - DEFAULT_FILE_QUOTA=10
+      - AUTH_TOKEN=${AUTH_TOKEN:-test-admin-token}
+      - SUPER_ADMIN_MODE=${SUPER_ADMIN_MODE:-true}
     ports:
       - "8080:8080"
     volumes:

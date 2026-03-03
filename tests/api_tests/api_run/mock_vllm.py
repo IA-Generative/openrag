@@ -1,23 +1,22 @@
 """
-Lightweight mock VLLM server for CI testing.
+Lightweight mock VLLM server for testing.
 Provides fake embeddings and chat completions without loading actual models.
 """
 
 import hashlib
+import json
 import time
 import uuid
 from typing import Any
 
 from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, ConfigDict
 
 app = FastAPI()
 
 # Matches ibm-granite/granite-embedding-small-english-r2 dimension
 EMBEDDING_DIM = 384
-
-
-# ============== Embedding Models ==============
 
 
 class EmbeddingRequest(BaseModel):
@@ -39,15 +38,14 @@ class EmbeddingResponse(BaseModel):
     usage: dict
 
 
-# ============== Chat Completion Models ==============
-
-
 class ChatMessage(BaseModel):
     role: str
-    content: Any  # Can be string or list (for vision models)
+    content: Any
 
 
 class ChatCompletionRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     model: str
     messages: list[ChatMessage]
     temperature: float | None = 0.7
@@ -79,9 +77,6 @@ class ChatCompletionResponse(BaseModel):
     usage: ChatCompletionUsage
 
 
-# ============== Text Completion Models ==============
-
-
 class TextCompletionRequest(BaseModel):
     model: str
     prompt: str | list[str]
@@ -105,10 +100,7 @@ class TextCompletionResponse(BaseModel):
     created: int
     model: str
     choices: list[TextCompletionChoice]
-    usage: ChatCompletionUsage  # Same structure as chat
-
-
-# ============== Helper Functions ==============
+    usage: ChatCompletionUsage
 
 
 def generate_fake_embedding(text: str, dim: int = EMBEDDING_DIM) -> list[float]:
@@ -125,38 +117,39 @@ def count_tokens(text: str) -> int:
     """Approximate token count (roughly 4 chars per token)."""
     if isinstance(text, str):
         return max(1, len(text) // 4)
-    return 10  # Default for non-string content
+    return 10
 
 
 def generate_mock_response(messages: list[ChatMessage]) -> str:
-    """Generate a mock response based on the input messages."""
     last_message = messages[-1] if messages else None
     if not last_message:
         return "Mock response"
 
+    # Check if system prompt contains numbered sources (RAG context)
+    system_msg = next((m for m in messages if m.role == "system"), None)
+    has_numbered_sources = system_msg and isinstance(system_msg.content, str) and "[Source 1]" in system_msg.content
+
     content = last_message.content
     if isinstance(content, list):
-        # Vision model request - extract text parts
         text_parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
         content = " ".join(text_parts) if text_parts else "image analysis request"
 
-    # Generate contextual mock responses
     content_lower = str(content).lower()
 
     if "contextualize" in content_lower or "context" in content_lower:
-        return "This chunk discusses the main topic of the document and provides relevant context for understanding the content."
+        response = "This chunk discusses the main topic of the document and provides relevant context for understanding the content."
+    elif "describe" in content_lower or "image" in content_lower:
+        response = "This is an image showing relevant content from the document."
+    elif "summarize" in content_lower:
+        response = "This is a summary of the provided content."
+    else:
+        response = f"Mock response to: {str(content)[:100]}"
 
-    if "describe" in content_lower or "image" in content_lower:
-        return "This is an image showing relevant content from the document."
+    # Append source citations when RAG context has numbered sources
+    if has_numbered_sources:
+        response += "\n[Sources: 1]"
 
-    if "summarize" in content_lower:
-        return "This is a summary of the provided content."
-
-    # Default response
-    return f"Mock response to: {str(content)[:100]}"
-
-
-# ============== Endpoints ==============
+    return response
 
 
 @app.get("/health")
@@ -179,9 +172,7 @@ async def list_models():
 @app.post("/v1/embeddings")
 async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     inputs = request.input if isinstance(request.input, list) else [request.input]
-
     data = [EmbeddingData(embedding=generate_fake_embedding(text), index=i) for i, text in enumerate(inputs)]
-
     return EmbeddingResponse(
         data=data,
         model=request.model,
@@ -189,16 +180,61 @@ async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     )
 
 
+async def stream_chat_completion(request: ChatCompletionRequest):
+    """Generate SSE stream for chat completion."""
+    response_text = generate_mock_response(request.messages)
+    chunk_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
+    created = int(time.time())
+
+    # Role chunk
+    role_chunk = {
+        "id": chunk_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": request.model,
+        "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
+    }
+    yield f"data: {json.dumps(role_chunk)}\n\n"
+
+    # Content chunks — split into words for realistic streaming
+    words = response_text.split(" ")
+    for i, word in enumerate(words):
+        token = word + (" " if i < len(words) - 1 else "")
+        content_chunk = {
+            "id": chunk_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": request.model,
+            "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": None}],
+        }
+        yield f"data: {json.dumps(content_chunk)}\n\n"
+
+    # Finish chunk
+    finish_chunk = {
+        "id": chunk_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": request.model,
+        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+    }
+    yield f"data: {json.dumps(finish_chunk)}\n\n"
+
+    yield "data: [DONE]\n\n"
+
+
 @app.post("/v1/chat/completions")
-async def create_chat_completion(request: ChatCompletionRequest) -> ChatCompletionResponse:
+async def create_chat_completion(request: ChatCompletionRequest):
     """Mock chat completion endpoint for LLM/VLM requests."""
+    if request.stream:
+        return StreamingResponse(
+            stream_chat_completion(request),
+            media_type="text/event-stream",
+        )
+
     # Calculate token counts
     prompt_tokens = sum(count_tokens(str(msg.content)) for msg in request.messages)
-
-    # Generate mock response
     response_text = generate_mock_response(request.messages)
     completion_tokens = count_tokens(response_text)
-
     return ChatCompletionResponse(
         id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
         created=int(time.time()),
@@ -220,25 +256,15 @@ async def create_chat_completion(request: ChatCompletionRequest) -> ChatCompleti
 
 @app.post("/v1/completions")
 async def create_text_completion(request: TextCompletionRequest) -> TextCompletionResponse:
-    """Mock text completion endpoint (non-chat)."""
     prompts = request.prompt if isinstance(request.prompt, list) else [request.prompt]
     prompt_tokens = sum(count_tokens(p) for p in prompts)
-
-    # Generate simple mock response
     response_text = f"Mock completion for: {prompts[0][:50]}..."
     completion_tokens = count_tokens(response_text)
-
     return TextCompletionResponse(
         id=f"cmpl-{uuid.uuid4().hex[:8]}",
         created=int(time.time()),
         model=request.model,
-        choices=[
-            TextCompletionChoice(
-                index=0,
-                text=response_text,
-                finish_reason="stop",
-            )
-        ],
+        choices=[TextCompletionChoice(index=0, text=response_text, finish_reason="stop")],
         usage=ChatCompletionUsage(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,

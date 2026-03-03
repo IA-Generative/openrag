@@ -12,14 +12,15 @@ title: ✨ Key Features
 
 All files are intelligently converted to **Markdown format** with images replaced by AI-generated captions, ensuring consistent processing across all document types.
 
-### 🎵 Audio File Processing
-Audio files are processed using Whisper deployed with vLLM for reliable transcription. To enable audio file indexing, configure the transcriber service:
+### 🎵 Audio & Video File Processing
+Audio and video files are transcribed via local Whisper or OpenAI-compatible transcription endpoints, with flexible deployment options:
 
-```bash
-# .env
-TRANSCRIBER_COMPOSE=extern/transcriber.yaml
-```
+* **Supported formats**: `wav`, `mp3`, `flac`, `ogg`, `aac`, `flv`, `wma`, `mp4`
+* **Local deployment** (default) - Whisper runs locally via Ray for immediate transcription
+* **External deployment** - Deploy Whisper as an OpenAI-compatible service using vLLM for enhanced scalability
+* **OpenAI drop-in** - Use any OpenAI transcription API as an alternative
 
+For configuration details, refer to the [Audio Loader documentation](/openrag/documentation/env_vars/#audio-loader).
 
 
 ### 🎛️ Native Web-Based Indexer UI

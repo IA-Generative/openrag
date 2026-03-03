@@ -46,6 +46,7 @@ rdb:
   port: ${oc.env:POSTGRES_PORT, 5432}
   user: ${oc.env:POSTGRES_USER, root}
   password: ${oc.env:POSTGRES_PASSWORD, root_password}
+  default_file_quota: ${oc.decode:${oc.env:DEFAULT_FILE_QUOTA, -1}}
 
 reranker:
   enable: ${oc.decode:${oc.env:RERANKER_ENABLED, true}}
@@ -71,6 +72,10 @@ verbose:
 
 server:
   preferred_url_scheme: ${oc.env:PREFERRED_URL_SCHEME, null}
+
+llm_context:
+  max_llm_context_size: ${oc.decode:${oc.env:MAX_LLM_CONTEXT_SIZE, 8192}}
+  max_output_tokens: ${oc.decode:${oc.env:MAX_OUTPUT_TOKENS, 1024}}
 
 paths:
   prompts_dir: ${oc.env:PROMPTS_DIR, ../prompts/example1}
@@ -103,8 +108,19 @@ loader:
     application/msword: .doc
     image/png: .png
     image/jpeg: .jpeg
-    audio/vnd.wav: .wav
+    audio/wav: .wav
     audio/mpeg: .mp3
+    audio/flac: .flac
+    audio/ogg: .ogg
+    audio/aac: .aac
+    video/x-flv: .flv
+    audio/x-ms-wma: .wma
+    video/mp4: .mp4
+  local_whisper:
+    model: ${oc.env:WHISPER_MODEL, base} # large-v3-turbo, base, small, medium, large
+    whisper_n_workers: ${oc.decode:${oc.env:WHISPER_N_WORKERS, 3}} # Number of parallel whisper workers / actors to launch
+    whisper_num_gpus: ${oc.decode:${oc.env:WHISPER_NUM_GPUS, 0.01}}
+    whisper_concurency_per_worker : ${oc.decode:${oc.env:WHISPER_CONCURRENCY_PER_WORKER, 2}} # Number of concurrent transcriptions per whisper worker / actor. Increase if you have many small files and enough CPU/GPU resources.
   file_loaders:
     txt: TextLoader
     pdf: ${oc.env:PDFLoader, MarkerLoader} # DoclingLoader # MarkerLoader # PyMuPDFLoader # Custompymupdf4llm
@@ -116,13 +132,16 @@ loader:
     jpeg: ImageLoader
     jpg: ImageLoader
     svg: ImageLoader
-    wav: VideoAudioLoader
-    mp3: VideoAudioLoader
-    mp4: VideoAudioLoader
-    ogg: VideoAudioLoader
-    flv: VideoAudioLoader
-    wma: VideoAudioLoader
-    aac: VideoAudioLoader
+    # Audio formats
+    wav: ${oc.env:AUDIOLOADER, LocalWhisperLoader} # LocalWhisperLoader # OpenAIAUDIOLOADER
+    mp3: ${oc.env:AUDIOLOADER, LocalWhisperLoader}
+    flac: ${oc.env:AUDIOLOADER, LocalWhisperLoader}
+    ogg: ${oc.env:AUDIOLOADER, LocalWhisperLoader}
+    aac: ${oc.env:AUDIOLOADER, LocalWhisperLoader}
+    flv: ${oc.env:AUDIOLOADER, LocalWhisperLoader}
+    wma: ${oc.env:AUDIOLOADER, LocalWhisperLoader}
+    # Video formats
+    mp4: ${oc.env:AUDIOLOADER, LocalWhisperLoader} 
     md: MarkdownLoader
   marker_max_tasks_per_child: ${oc.decode:${oc.env:MARKER_MAX_TASKS_PER_CHILD, 10}}
   marker_pool_size: ${oc.decode:${oc.env:MARKER_POOL_SIZE, 1}} # Value au increment if you have a cluster of machines
@@ -130,15 +149,15 @@ loader:
   marker_min_processes: ${oc.decode:${oc.env:MARKER_MIN_PROCESSES, 1}}
   marker_num_gpus: ${oc.decode:${oc.env:MARKER_NUM_GPUS, 0.01}} # See https://docs.ray.io/en/latest/cluster/kubernetes/user-guides/gpu.html
   marker_timeout: ${oc.decode:${oc.env:MARKER_TIMEOUT, 3600}}
+  marker_pdftext_workers: ${oc.decode:${oc.env:MARKER_PDFTEXT_WORKERS, 2}}
+  
   transcriber:
     base_url: ${oc.env:TRANSCRIBER_BASE_URL, http://transcriber:8000/v1}
     api_key: ${oc.env:TRANSCRIBER_API_KEY, EMPTY}
     model_name: ${oc.env:TRANSCRIBER_MODEL, openai/whisper-large-v3-turbo}
-    max_chunk_ms: ${oc.decode:${oc.env:TRANSCRIBER_MAX_CHUNK_MS, 30000}}
-    silence_thresh_db: ${oc.decode:${oc.env:TRANSCRIBER_SILENCE_THRESH_DB, -40}}
-    min_silence_len_ms: ${oc.decode:${oc.env:TRANSCRIBER_MIN_SILENCE_LEN_MS, 500}}
+    timeout: ${oc.decode:${oc.env:TRANSCRIBER_TIMEOUT, 3600}}
     max_concurrent_chunks: ${oc.decode:${oc.env:TRANSCRIBER_MAX_CONCURRENT_CHUNKS, 20}}
-    timeout: ${oc.decode:${oc.env:TRANSCRIBER_TIMEOUT, 60}} # Timeout per chunk transcription in seconds
+    use_whisper_lang_detector: ${oc.decode:${oc.env:USE_WHISPER_LANG_DETECTOR, true}}
   openai:
     base_url: ${oc.env:OPENAI_LOADER_BASE_URL, http://openai:8000/v1}
     api_key: ${oc.env:OPENAI_LOADER_API_KEY, EMPTY}

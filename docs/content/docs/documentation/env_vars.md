@@ -39,6 +39,7 @@ The `MarkerLoader` is the default PDF parsing engine. It can be configured using
 | `MARKER_MAX_TASKS_PER_CHILD` | int | 10 | Number of tasks a child (PDF worker) has to process before it gets restarted to clean up memory leaks |
 | `MARKER_MIN_PROCESSES` | int | 1 | Minimum number of subprocesses available before triggering a process pool reset |
 | `MARKER_TIMEOUT` | int | 3600 | Timeout in seconds for marker processes |
+| `MARKER_PDFTEXT_WORKERS` | int | 2 | Number of PDF text extractor workers inside marker. |
 
 
 
@@ -64,14 +65,40 @@ The parameters below configure how the OCR loader communicates with the model se
 This feature is currently experimental. Docker server configurations are available in [extern/ocr_vlm_servers](https://github.com/linagora/openrag/tree/main/extern/ocr_vlm_servers) and can be deployed using standard Docker Compose commands.
 :::
 
-
 #### Audio Loader
+OpenRAG provides two deployment options for audio transcription, configurable via the `AUDIOLOADER` environment variable:
 
-The transcriber is an OpenAI-compatible audio transcription service powered by Whisper models deployed via VLLM. It processes audio input by automatically segmenting it into chunks using silence detection, then transcribes these chunks in parallel for optimal speed and accuracy. This loader includes a bundled VLLM service for users who prefer to run Whisper locally.
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `AUDIOLOADER` | `str` | `LocalWhisperLoader` | Specifies the audio loader implementation. Options: `LocalWhisperLoader` (bundled Whisper service) or `OpenAIAudioLoader` (external OpenAI API) |
 
-To enable this service, set the `TRANSCRIBER_COMPOSE` variable to `extern/transcriber.yaml`. By default, it's disabled !!!
+##### Local Whisper Loader ( `LocalWhisperLoader` )
+For local whisper loader, here are the options to use
 
-The following environment variables configure its behavior, performance, and connectivity:
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `WHISPER_MODEL` | `str` | `base` | The whisper multilingual model to use depending on [available resources](https://github.com/openai/whisper?tab=readme-ov-file#available-models-and-languages). Other options: `base`, `small`, `large`, `large-v3`, etc. |
+|`WHISPER_N_WORKERS`| `int` | 3 | Number of whisper workers|
+| `WHISPER_CONCURRENCY_PER_WORKER` | `int` | 2 | Maximum number of audio transcription tasks processed concurrently by each Whisper worker. |
+
+##### OpenAI-compatible audio Loader ( `OpenAIAudioLoader` )
+The `OpenAIAudioLoader` option, allows to use openai-compatible audio endpoint/service to transcribe audio endpoint by providing the following variables: **`TRANSCRIBER_BASE_URL`, `TRANSCRIBER_API_KEY` and `TRANSCRIBER_MODEL`**
+
+The audio is automatically segmented into chunks using silence detection, then transcribes these chunks in parallel for optimal speed and accuracy.
+
+:::tip[Whisper deployment as vLLM server]
+
+Using this option, one can also deploy whisper locally as an openai-compatible service using **`vLLM`**. For that, set the `TRANSCRIBER_COMPOSE` variable as follows.
+
+```bash
+# .env
+
+## To deploy whisper as an external openai-compatible service
+TRANSCRIBER_COMPOSE=extern/transcriber.yaml
+```
+:::
+
+Here are some other variables related to openai-compatible endpoint.
 
 <div style="overflow-x: auto; max-height: 500px; overflow-y: auto;">
 
@@ -79,18 +106,17 @@ The following environment variables configure its behavior, performance, and con
 |----------|------|---------|-------------|
 | `TRANSCRIBER_BASE_URL` | `str` | `http://transcriber:8000/v1` | Base URL for the transcriber API (OpenAI-compatible endpoint). |
 | `TRANSCRIBER_API_KEY` | `str` | `EMPTY` | Authentication key for transcriber service requests. |
-| `TRANSCRIBER_MODEL` | `str` | `openai/whisper-large-v3-turbo` | Whisper model identifier served by VLLM for speech-to-text conversion. |
-| `TRANSCRIBER_MAX_CHUNK_MS` | `int` | `30000` | Maximum duration (milliseconds) for each processed audio segment. Defines the upper limit for chunk length. |
-| `TRANSCRIBER_SILENCE_THRESH_DB` | `int` | `-40` | Silence detection threshold (decibels) for voice activity detection. Audio below this level is classified as silence. |
-| `TRANSCRIBER_MIN_SILENCE_LEN_MS` | `int` | `500` | Minimum silence duration (milliseconds) needed to trigger audio splitting. Shorter pauses are disregarded. |
+| `TRANSCRIBER_MODEL` | `str` | `openai/whisper-large-v3-turbo` | Whisper model identifier served by VLLM for speech-to-text conversion. Other options: `openai/whisper-small`, `openai/whisper-large-v3-turbo`, etc.|
 | `TRANSCRIBER_MAX_CONCURRENT_CHUNKS` | `int` | `20` | Maximum number of audio chunks processed simultaneously. Increasing this value improves throughput when sufficient GPU resources are available. |
+| `TRANSCRIBER_TIMEOUT` | `int` | `3600` | Maximum duration in seconds allowed for a single transcription request. |
+| `USE_WHISPER_LANG_DETECTOR` | `bool` | `true` | When enabled, uses a local Whisper-based language detector to identify the source audio language before transcription. |
 
 </div>
 
-:::danger[Information]
-This feature was recently introduced to externalize the audio loader for improved scalability and to resolve a queue blocking issue that occurred when running the audio loader internally.
+:::danger[About whisper with vLLM]
+As noted in [this PR](https://github.com/linagora/openrag/pull/134), the current vLLM implementation of Whisper can mis-detect the language and output English regardless of the source audio. For details, see [this vLLM issue](https://github.com/vllm-project/vllm/issues/14174).
 
-As noted in [this PR](https://github.com/linagora/openrag/pull/134), the current VLLM implementation of Whisper has known limitations, including language mismatches between the source audio and the generated transcription. This issue is related to VLLM ([See this issue](https://github.com/vllm-project/vllm/issues/14174))
+To improve accuracy, we use a local Whisper-based language detector that is activated by default with the default setting (`USE_WHISPER_LANG_DETECTOR=true`). 
 :::
 
 ### Chunking
@@ -155,7 +181,6 @@ The PostgreSQL database is configured using the following environment variables:
 | `POSTGRES_USER` | str | root | Username for database authentication |
 | `POSTGRES_PASSWORD` | str | root_password | Password for database authentication |
 
-
 ## Chat Pipeline
 ### LLM & VLM Configuration
 The system uses two types of language models:
@@ -172,6 +197,7 @@ These are external services to provide !!!
 | `MODEL` | str | Model identifier for the LLM |
 | `API_KEY` | str | API key for authenticating with the LLM service |
 | `LLM_SEMAPHORE` | int | 10 | Maximum number of concurrent requests to allow for the LLM service |
+| `MAX_LLM_CONTEXT_SIZE` | `int` | `8192` | Fallback maximum token limit for chat/completion requests. At startup, the `/v1/models` endpoint is queried for the model's `max_model_len`; if that query fails this value is used instead. Requests whose total token count (prompt + `max_tokens`) exceeds the limit are rejected with a **413** error. |
 
 
 #### VLM Configuration
@@ -419,9 +445,9 @@ The following environment variables configure the FastAPI server and control acc
 | `APP_PORT` | `number` | `8000` | Port number on which the FastAPI application listens for incoming requests. |
 | `AUTH_TOKEN` | `string` | `EMPTY` | An authentication token is required to access protected API endpoints. By default, this token corresponds to the API key of the created admin (see [Admin Bootstrapping](/openrag/documentation/user_auth/#2-admin-bootstrapping)). If left empty, authentication is disabled. |
 | `SUPER_ADMIN_MODE` | `boolean` | `false` | Enables super admin privileges when set to `true`, [granting unrestricted access](/openrag/documentation/data_model/#access-control) to all operations and bypassing standard access controls. This is for debugging |
+| `DEFAULT_FILE_QUOTA` | `int` | `-1` | Default per-user file quota. `<0` disables quotas globally; `>=0` sets the default limit when a user has no explicit quota. |
 |`API_NUM_WORKERS`|`int`|1|Number of uvicorn workers|
 | `PREFERRED_URL_SCHEME` | `string` | `null` | URL scheme (`http` or `https`) used when generating URLs in API responses (e.g., `task_status_url`). When running behind a reverse proxy that terminates SSL, set this to `https` to ensure generated URLs use the correct scheme. If unset, the scheme from the incoming request is used. |
-
 
 
 :::caution[Security Notice]

@@ -1,8 +1,10 @@
 import os
+import re
 import warnings
 from enum import Enum
 from importlib.metadata import version as get_package_version
 from pathlib import Path
+from urllib.parse import parse_qs
 
 import ray
 import uvicorn
@@ -19,6 +21,7 @@ ray.init(dashboard_host="0.0.0.0")
 # Apply noqa: E402 to ignore "module level import not at top of file" cause ray.init has to be called first
 
 # flake8: noqa: E402
+
 
 from routers.actors import router as actors_router
 from routers.extract import router as extract_router
@@ -103,6 +106,29 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 
+class TokenRedactingMiddleware(BaseHTTPMiddleware):
+    """Middleware to redact sensitive tokens from access logs while preserving original for auth."""
+
+    TOKEN_PATTERN = re.compile(r"(token=)[^&\s]+", re.IGNORECASE)
+
+    async def dispatch(self, request: Request, call_next):
+        # Store original query string before redacting
+        original_query_string = request.scope.get("query_string", b"").decode()
+
+        # Preserve original token in request.state for AuthMiddleware to use
+        if "token=" in original_query_string.lower():
+            # Extract and store the original token
+            params = parse_qs(original_query_string)
+            request.state.original_token = params.get("token", [None])[0]
+
+            # Redact token from query string for logging purposes
+            redacted_query = self.TOKEN_PATTERN.sub(r"\1[REDACTED]", original_query_string)
+            request.scope["query_string"] = redacted_query.encode()
+
+        response = await call_next(request)
+        return response
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         vectordb = get_vectordb()
@@ -130,7 +156,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # For /static routes, allow token via query parameter (this easy file viewing with a link without a bearer)
         # usage http://localhost:8080/static?token=api_key
         if request.url.path.startswith("/static"):
-            token = request.query_params.get("token", "")
+            # Use preserved original token (before redaction) if available
+            token = getattr(request.state, "original_token", None)
         else:
             # For all other routes, require Bearer header
             # # Extract Bearer token
@@ -155,8 +182,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-# Register once
+# Register middlewares (order matters - last added runs first)
 app.add_middleware(AuthMiddleware)
+app.add_middleware(TokenRedactingMiddleware)
 
 
 # Exception handlers
@@ -165,6 +193,16 @@ async def openrag_exception_handler(request: Request, exc: OpenRAGError):
     logger = get_logger()
     logger.error("OpenRAGError occurred", error=str(exc))
     return JSONResponse(status_code=exc.status_code, content=exc.to_dict())
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger = get_logger()
+    logger.exception("Unhandled exception", error=str(exc))
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "[UNEXPECTED_ERROR]: An unexpected error occurred", "extra": {}},
+    )
 
 
 # Add CORS middleware
@@ -214,8 +252,8 @@ app.include_router(users_router, prefix="/users", tags=[Tags.USERS])
 
 app.include_router(tools_router, prefix="/v1", tags=[Tags.TOOLS])
 
-if WITH_OPENAI_API:
-    # Mount the openai router
+# Mount openai router if either OpenAI API or Chainlit UI is enabled (chainlit uses openai api endpoints)
+if WITH_OPENAI_API or WITH_CHAINLIT_UI:
     app.include_router(openai_router, prefix="/v1", tags=[Tags.OPENAI])
 
 if WITH_CHAINLIT_UI:
@@ -223,7 +261,6 @@ if WITH_CHAINLIT_UI:
     from chainlit.utils import mount_chainlit
 
     mount_chainlit(app, "./app_front.py", path="/chainlit")
-    app.include_router(openai_router, prefix="/v1", tags=[Tags.OPENAI])  # cause chainlit uses openai api endpoints
 
 if __name__ == "__main__":
     if config.ray.serve.enable:

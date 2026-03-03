@@ -16,6 +16,7 @@ from pymilvus import (
     MilvusException,
     RRFRanker,
 )
+from sqlalchemy import URL
 from utils.exceptions.base import EmbeddingError
 from utils.exceptions.vectordb import *
 from utils.logger import get_logger
@@ -225,8 +226,16 @@ class MilvusDB(BaseVectorDB):
                         operation="load_collection",
                     )
 
+                database_url = URL.create(
+                    drivername="postgresql",
+                    username=self.rdb_user,
+                    password=self.rdb_password,
+                    host=self.rdb_host,
+                    port=self.rdb_port,
+                    database=f"partitions_for_collection_{self.collection_name}",
+                )
                 self.partition_file_manager = PartitionFileManager(
-                    database_url=f"postgresql://{self.rdb_user}:{self.rdb_password}@{self.rdb_host}:{self.rdb_port}/partitions_for_collection_{self.collection_name}",
+                    database_url=database_url.render_as_string(hide_password=False),
                     logger=self.logger,
                 )
                 self.logger.info("Milvus collection loaded.")
@@ -327,6 +336,7 @@ class MilvusDB(BaseVectorDB):
                 "bm25_b": 0.75,
             },
         )
+
         return index_params
 
     async def list_collections(self) -> list[str]:
@@ -342,6 +352,11 @@ class MilvusDB(BaseVectorDB):
                 file_metadata.get("file_id"),
                 file_metadata.get("partition"),
             )
+
+            # Extract relationship fields (will be stored in both Milvus and PostgreSQL)
+            relationship_id = file_metadata.get("relationship_id")
+            parent_id = file_metadata.get("parent_id")
+
             self.logger.bind(
                 partition=partition,
                 file_id=file_id,
@@ -385,6 +400,8 @@ class MilvusDB(BaseVectorDB):
                 partition=partition,
                 file_metadata=file_metadata,
                 user_id=user.get("id"),
+                relationship_id=relationship_id,
+                parent_id=parent_id,
             )
             self.logger.info(f"File '{file_id}' added to partition '{partition}'")
         except EmbeddingError as e:
@@ -865,8 +882,9 @@ class MilvusDB(BaseVectorDB):
         display_name: str | None = None,
         external_user_id: str | None = None,
         is_admin: bool = False,
+        file_quota: int | None = None,
     ):
-        return self.partition_file_manager.create_user(display_name, external_user_id, is_admin)
+        return self.partition_file_manager.create_user(display_name, external_user_id, is_admin, file_quota)
 
     async def get_user(self, user_id: int):
         self._check_user_exists(user_id)
@@ -878,7 +896,7 @@ class MilvusDB(BaseVectorDB):
             p["partition"] for p in self.partition_file_manager.list_user_partitions(user_id) if p["role"] == "owner"
         ]
         for partition in user_partitions:
-            self.partition_file_manager.delete_partition(partition)
+            await self.delete_partition(partition)
         self.partition_file_manager.delete_user(user_id)
 
     async def list_users(self):
@@ -890,6 +908,10 @@ class MilvusDB(BaseVectorDB):
     async def regenerate_user_token(self, user_id: int):
         self._check_user_exists(user_id)
         return self.partition_file_manager.regenerate_user_token(user_id)
+
+    def update_user_quota(self, user_id: int, file_quota: int | None):
+        self._check_user_exists(user_id)
+        return self.partition_file_manager.update_user_quota(user_id, file_quota)
 
     async def list_user_partitions(self, user_id: int):
         self._check_user_exists(user_id)
@@ -957,6 +979,112 @@ class MilvusDB(BaseVectorDB):
                 partition=partition,
                 file_id=file_id,
             )
+
+    # Document relationship methods
+
+    def get_files_by_relationship(self, partition: str, relationship_id: str) -> list[dict]:
+        """Get all files sharing a relationship_id within a partition.
+
+        Args:
+            partition: Partition name
+            relationship_id: The relationship group identifier
+
+        Returns:
+            List of file dictionaries
+        """
+        return self.partition_file_manager.get_files_by_relationship(
+            partition=partition, relationship_id=relationship_id
+        )
+
+    def get_file_ancestors(self, partition: str, file_id: str, max_ancestor_depth: int | None = None) -> list[dict]:
+        """Get all ancestors of a file (direct path from root to file).
+
+        Args:
+            partition: Partition name
+            file_id: The file identifier
+
+        Returns:
+            List of file dictionaries ordered from root to the specified file
+        """
+        return self.partition_file_manager.get_file_ancestors(
+            partition=partition, file_id=file_id, max_ancestor_depth=max_ancestor_depth
+        )
+
+    async def get_related_chunks(self, partition: str, relationship_id: str, limit: int = 100) -> list[Document]:
+        """Get all chunks for files in a relationship group.
+
+        Args:
+            partition: Partition name
+            relationship_id: The relationship group identifier
+            limit: Maximum number of chunks to return
+
+        Returns:
+            List of Document objects
+        """
+        file_ids = self.partition_file_manager.get_file_ids_by_relationship(
+            partition=partition, relationship_id=relationship_id
+        )
+
+        if not file_ids:
+            return []
+
+        # Build filter expression for Milvus query
+        file_id_list = ", ".join(f'"{fid}"' for fid in file_ids)
+        filter_expr = f'partition == "{partition}" and file_id in [{file_id_list}]'
+
+        results = await self._async_client.query(
+            collection_name=self.collection_name,
+            filter=filter_expr,
+            limit=limit,
+            output_fields=["*"],
+        )
+
+        return [
+            Document(
+                page_content=res["text"],
+                metadata={k: v for k, v in res.items() if k not in ["text", "vector"]},
+            )
+            for res in results
+        ]
+
+    async def get_ancestor_chunks(
+        self, partition: str, file_id: str, limit: int = 100, max_ancestor_depth: int | None = None
+    ) -> list[Document]:
+        """Get all chunks for ancestor files (direct path from root to file).
+
+        Args:
+            partition: Partition name
+            file_id: The file identifier
+            limit: Maximum number of chunks to return
+
+        Returns:
+            List of Document objects ordered by ancestry
+        """
+        ancestor_file_ids = self.partition_file_manager.get_ancestor_file_ids(
+            partition=partition, file_id=file_id, max_ancestor_depth=max_ancestor_depth
+        )
+
+        if not ancestor_file_ids:
+            return []
+
+        # Build filter expression for Milvus query
+        file_id_list = ", ".join(f'"{fid}"' for fid in ancestor_file_ids)
+        filter_expr = f'partition == "{partition}" and file_id in [{file_id_list}]'
+
+        results = await self._async_client.query(
+            collection_name=self.collection_name,
+            filter=filter_expr,
+            limit=limit,
+            output_fields=["*"],
+        )
+
+        return [
+            Document(
+                page_content=res["text"],
+                metadata={k: v for k, v in res.items() if k not in ["text", "vector"]},
+            )
+            for res in results
+        ]
 
 
 def _gen_chunk_order_metadata(n: int = 20) -> list[dict]:

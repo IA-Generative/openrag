@@ -19,10 +19,20 @@ logger = get_logger()
 config = load_config()
 
 
+def ensure_png_compatible_mode(image: Image.Image) -> Image.Image:
+    """Convert incompatible PIL image modes to PNG-saveable modes."""
+    if image.mode in ("CMYK", "YCbCr", "LAB"):
+        return image.convert("RGB")
+    if image.mode in ("P", "LA", "PA"):
+        return image.convert("RGBA")
+    return image
+
+
 class BaseLoader(ABC):
     # Class-level compiled regex patterns (shared across all instances)
     HTTP_IMAGE_PATTERN = re.compile(r"!\[(.*?)\]\((https?://[^)]+)\)")
     DATA_URI_IMAGE_PATTERN = re.compile(r"!\[(.*?)\]\((data:image/[^;]+;base64,[^)]+)\)")
+    MIN_IMAGE_PIXELS = 784  # Qwen2.5-VL min_pixels threshold
 
     def __init__(self, **kwargs) -> None:
         self.page_sep = "[PAGE_SEP]"
@@ -59,8 +69,12 @@ class BaseLoader(ABC):
     def _pil_image_to_base64(self, image: Image.Image) -> str:
         """Convert PIL Image to base64 string."""
         buffered = BytesIO()
-        # Determine format based on image mode or use PNG as default
-        image.save(buffered, format="PNG")
+        try:
+            image = ensure_png_compatible_mode(image)
+            image.save(buffered, format="PNG")
+        except Exception as e:
+            logger.warning("Failed to convert image to PNG", error=str(e), mode=getattr(image, "mode", "unknown"))
+            return ""
         return base64.b64encode(buffered.getvalue()).decode()
 
     def _is_http_url(self, data: str) -> bool:
@@ -83,19 +97,25 @@ class BaseLoader(ABC):
                 - PIL.Image object
                 - str: HTTP/HTTPS URL
                 - str: data URI (data:image/...;base64,...)
-            semaphore: Semaphore to control access to the LLM model
 
         Returns:
             str: Description of the image wrapped in XML tags
         """
+        # Early exit for small PIL images (below VLM min_pixels threshold)
+        if isinstance(image_data, Image.Image):
+            w, h = image_data.size
+            if w * h < self.MIN_IMAGE_PIXELS:
+                logger.debug("Skipping image below minimum size", size=f"{w}x{h}")
+                return "<image_description>\n\nImage too small for captioning\n\n</image_description>"
+
         async with get_vlm_semaphore():
             try:
                 # Determine the type of image data and create appropriate message content
                 if isinstance(image_data, Image.Image):
-                    # logger.info("Processing PIL Image", img_size=str(image_data.size))
-
                     # Convert PIL Image to base64
                     img_b64 = self._pil_image_to_base64(image_data)
+                    if not img_b64:
+                        return "<image_description>\n\nFailed to convert image\n\n</image_description>"
                     image_url = f"data:image/png;base64,{img_b64}"
 
                 elif self._is_http_url(image_data):

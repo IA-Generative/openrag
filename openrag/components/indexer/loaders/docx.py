@@ -7,13 +7,13 @@ from markitdown import MarkItDown
 from PIL import Image
 from utils.logger import get_logger
 
-from .base import BaseLoader
+from .base import BaseLoader, ensure_png_compatible_mode
 
 logger = get_logger()
 
 
 def convert_to_png_image(image: Image.Image) -> Image.Image:
-    # Save the image into a BytesIO buffer in PNG format
+    image = ensure_png_compatible_mode(image)
     with BytesIO() as buffer:
         image.save(buffer, format="PNG")
         buffer.seek(0)
@@ -32,12 +32,18 @@ class DocxLoader(BaseLoader):
 
         if self.image_captioning:
             # Handle embedded images (extracted from docx zip)
+            # images may contain None entries for unsupported formats (e.g. EMF, WMF)
             images = self.get_images_from_zip(file_path)
-            captions = await self.caption_images(images, desc="Captioning embedded images")
-            for caption in captions:
+            valid_images = [img for img in images if img is not None]
+            captions = await self.caption_images(valid_images, desc="Captioning embedded images")
+
+            # Rebuild caption list preserving positional alignment with markdown refs
+            caption_iter = iter(captions)
+            for img in images:
+                caption = next(caption_iter) if img is not None else ""
                 result = re.sub(
                     r"!\[.*?\]\(data:image/.*?\)",
-                    caption.replace("\\", "/"),
+                    caption.replace("\\", "/") if caption else "",
                     string=result,
                     count=1,
                 )
@@ -58,8 +64,14 @@ class DocxLoader(BaseLoader):
         return doc
 
     def get_images_from_zip(self, input_file):
-        with zipfile.ZipFile(input_file, "r") as docx:
+        try:
+            docx = zipfile.ZipFile(input_file, "r")
+        except zipfile.BadZipFile:
+            logger.warning("File is not a valid zip archive; skipping image extraction.", path=str(input_file))
+            return []
+        with docx:
             file_names = docx.namelist()
+            # word/media/ may also contain non-image files (e.g. oleObject, hdphoto, ink)
             image_files = [f for f in file_names if f.startswith("word/media/")]
             if not image_files:
                 return []
@@ -72,15 +84,23 @@ class DocxLoader(BaseLoader):
             for image_file in image_files:
                 image_data = docx.read(image_file)
                 image_extension = image_file.split(".")[-1].lower()
-                image = Image.open(BytesIO(image_data))
-
-                # Convert to PNG-compatible format
-                image = convert_to_png_image(image)
+                try:
+                    image = Image.open(BytesIO(image_data))
+                    image = convert_to_png_image(image)
+                    order_num = int(image_file.split("media/image")[1].split(f".{image_extension}")[0])
+                except Exception as e:
+                    logger.warning(f"Skipping unsupported media file {image_file}: {e}")
+                    continue
 
                 images_not_in_order.append(image)
-                order.append(image_file.split("media/image")[1].split(f".{image_extension}")[0])
+                order.append(order_num)
 
-            images = [None] * len(images_not_in_order)  # the images in the right order
-            for i in range(len(images_not_in_order)):
-                images[int(order[i]) - 1] = images_not_in_order[i]
+            if not images_not_in_order:
+                return []
+
+            # Reorder images by their original position in the document
+            max_order = max(order)
+            images = [None] * max_order
+            for i, pos in enumerate(order):
+                images[pos - 1] = images_not_in_order[i]
             return images

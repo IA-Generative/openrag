@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Any
 
 import consts
+import httpx
+import openai
 from config import load_config
 from fastapi import Depends, Form, HTTPException, Request, UploadFile, status
 from openai import AsyncOpenAI
@@ -30,6 +32,9 @@ ROLE_HIERARCHY = {
     "editor": 2,
     "owner": 3,
 }
+
+# File quota per user
+DEFAULT_FILE_QUOTA = config.rdb.get("default_file_quota", -1)
 
 
 def current_user(request: Request):
@@ -178,6 +183,65 @@ def require_admin(user=Depends(current_user)):
     return user
 
 
+async def check_user_file_quota(
+    user=Depends(current_user),
+):
+    """
+    Check if user has reached their file quota.
+    Quota = indexed files + pending indexing tasks.
+
+    Quota logic:
+    - Admins bypass this check
+    - DEFAULT_FILE_QUOTA < 0 → disabled quota checking
+    - user.file_quota = None → use global DEFAULT_FILE_QUOTA
+    - user.file_quota < 0 → unlimited
+    - user.file_quota >= 0 → specific limit
+    """
+
+    # Admins have unlimited quota
+    if user.get("is_admin"):
+        return user
+
+    if DEFAULT_FILE_QUOTA < 0:  # disabled quota checking
+        return user
+
+    # Determine quota
+    user_quota = user.get("file_quota")
+
+    if user_quota is None:
+        # Use global quota
+        user_quota = DEFAULT_FILE_QUOTA
+
+    if user_quota < 0:  # unlimited quota
+        return user
+
+    # Now user_quota >= 0
+
+    user_id = user.get("id")
+    indexed_count = user.get("file_count", 0)  # Get indexed file count from user info
+    pending_count = await task_state_manager.get_user_pending_task_count.remote(
+        user_id
+    )  # Get pending task count from task manager
+
+    total = indexed_count + pending_count
+
+    logger.debug(
+        "User file quota check",
+        user_id=user_id,
+        indexed_count=indexed_count,
+        pending_count=pending_count,
+        user_quota=user_quota,
+    )
+
+    if total >= user_quota:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"File quota exceeded. You have {indexed_count} indexed files and {pending_count} pending tasks. Limit: {user_quota}",
+        )
+
+    return user
+
+
 def is_file_id_valid(file_id: str) -> bool:
     return not any(c in file_id for c in FORBIDDEN_CHARS_IN_FILE_ID)
 
@@ -236,25 +300,51 @@ def get_app_state(request: Request):
     return request.app.state.app_state
 
 
+async def get_openai_models(base_url: str, api_key: str, timeout: int = 30):
+    async with AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=timeout) as client:
+        models_response = await client.models.list()
+        return models_response.data
+
+
 async def check_llm_model_availability(request: Request):
     models = {"LLM": config.llm, "VLM": config.vlm}
     for model_type, param in models.items():
+        log = logger.bind(base_url=param["base_url"], model=param["model"])
         try:
-            client = AsyncOpenAI(api_key=param["api_key"], base_url=param["base_url"])
-            openai_models = await client.models.list()
-            available_models = {m.id for m in openai_models.data}
+            log.debug("Validating model", model_type=model_type)
+            openai_models = await get_openai_models(base_url=param["base_url"], api_key=param["api_key"], timeout=30)
+            available_models = {m.id for m in openai_models}
             if param["model"] not in available_models:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Only these models ({available_models}) are available for your `{model_type}`. Please check your configuration file.",
                 )
+        except HTTPException:
+            raise
+        except httpx.TimeoutException:
+            log.warning("Model availability check timed out", model_type=model_type)
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=f"{model_type} service timed out",
+            )
+        except httpx.HTTPError as e:
+            log.warning("Model availability check failed", model_type=model_type, error=str(e))
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"{model_type} service is unavailable",
+            )
+        except openai.APIError as e:
+            log.error("API Endpoint error while validating model", model_type=model_type, error=str(e))
+            status_code = getattr(e, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR)
+            raise HTTPException(
+                status_code=status_code,
+                detail=f"OpenAI API Endpoint error: {str(e)}",
+            )
         except Exception as e:
-            logger.exception("Failed to validate model", model=model_type, error=str(e))
-            if isinstance(e, HTTPException):
-                raise
+            log.exception("Failed to check model availability", model_type=model_type, error=str(e))
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error while checking the `{model_type}` endpoint, it seems not available at this moment",
+                detail=f"Failed to check {model_type} model availability",
             )
 
 

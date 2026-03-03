@@ -122,8 +122,7 @@ class Indexer:
         except Exception as e:
             log.exception(f"Task {task_id} failed in add_file")
             tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-            await task_state_manager.set_state.remote(task_id, "FAILED")
-            await task_state_manager.set_error.remote(task_id, tb)
+            await task_state_manager.set_failed_if_not_cancelled.remote(task_id, tb)
             raise
 
         finally:
@@ -293,6 +292,18 @@ class TaskStateManager:
             info.error = tb_str
 
     @ray.method(concurrency_group="set")
+    async def set_failed_if_not_cancelled(self, task_id: str, tb_str: str) -> bool:
+        """Atomically set state to FAILED and record the traceback, unless the
+        task is already CANCELLED.  Returns True if the state was set to FAILED."""
+        async with self.lock:
+            info = self.tasks.get(task_id)
+            if info is None or info.state == "CANCELLED":
+                return False
+            info.state = "FAILED"
+            info.error = tb_str
+            return True
+
+    @ray.method(concurrency_group="set")
     async def set_details(
         self,
         task_id: str,
@@ -380,3 +391,16 @@ class TaskStateManager:
             "max_tasks_per_worker": MAX_TASKS_PER_WORKER,
             "total_capacity": POOL_SIZE * MAX_TASKS_PER_WORKER,
         }
+
+    @ray.method(concurrency_group="queue_info")
+    async def get_user_pending_task_count(self, user_id: int) -> int:
+        """Count tasks for a user that are not yet COMPLETED or FAILED."""
+        async with self.lock:
+            task_ids = self.user_index.get(user_id, set())
+            pending_states = {"QUEUED", "SERIALIZING", "CHUNKING", "INSERTING"}
+            count = 0
+            for tid in task_ids:
+                info = self.tasks.get(tid)
+                if info and info.state in pending_states:
+                    count += 1
+            return count

@@ -6,42 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from .conftest import TASK_TIMEOUT, wait_for_task
+
 # Check if image captioning is enabled (disabled in CI)
 IMAGE_CAPTIONING_ENABLED = os.environ.get("IMAGE_CAPTIONING", "").lower() not in ("false", "0", "")
 
 RESOURCES_DIR = Path(__file__).parent.parent / "resources"
 PDF_FILE = RESOURCES_DIR / "test_file.pdf"
-TASK_TIMEOUT = 180  # 3 minutes for file processing
-
-
-def wait_for_task(api_client, task_id: str, timeout: int = TASK_TIMEOUT) -> dict:
-    """Wait for task completion, polling status endpoint.
-
-    Handles 404 responses gracefully as task may not be registered yet.
-    """
-    start = time.time()
-    while time.time() - start < timeout:
-        response = api_client.get(f"/indexer/task/{task_id}")
-
-        # Task might not be registered yet, retry on 404
-        if response.status_code == 404:
-            time.sleep(0.5)
-            continue
-
-        if response.status_code != 200:
-            raise AssertionError(f"Task status failed: {response.text}")
-
-        status = response.json()
-        state = status.get("task_state")
-
-        if state == "COMPLETED":
-            return status
-        elif state == "FAILED":
-            raise AssertionError(f"Task failed: {status}")
-
-        time.sleep(1)
-
-    raise TimeoutError(f"Task {task_id} did not complete within {timeout}s")
 
 
 def get_task_id(response_data: dict) -> str:
@@ -399,3 +370,427 @@ class TestImageCaptioning:
             assert not url_preserved, "URL should not appear if it was captioned"
         if url_preserved:
             assert not url_was_captioned, "Caption should not appear if URL was preserved"
+
+
+class TestUserQuotaEnforcement:
+    """Test user file quota enforcement during file uploads."""
+
+    def _create_user_with_quota(self, api_client, display_name: str, file_quota: int | None = None):
+        """Helper to create a user with specific quota and return user data with token."""
+        data = {"display_name": display_name}
+        if file_quota is not None:
+            data["file_quota"] = file_quota
+        response = api_client.post("/users/", data=data)
+        assert response.status_code == 201, f"Failed to create user: {response.text}"
+        return response.json()
+
+    def _create_partition(self, api_client, partition_name: str, user_token: str):
+        """Helper to create a partition for user user given its token."""
+        # Create partition as the user
+        response = api_client.post(
+            f"/partition/{partition_name}",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        assert response.status_code in [200, 201], f"Failed to create partition: {response.text}"
+
+    def _upload_file(self, api_client, partition: str, file_id: str, user_token: str, content: str = "Test content"):
+        """Helper to upload a file as a specific user."""
+        import io
+
+        file_obj = io.BytesIO(content.encode())
+        headers = {"Authorization": f"Bearer {user_token}"}
+        response = api_client.post(
+            f"/indexer/partition/{partition}/file/{file_id}",
+            files={"file": (f"{file_id}.txt", file_obj, "text/plain")},
+            data={"metadata": "{}"},
+            headers=headers,
+        )
+        return response
+
+    def _cleanup_user(self, api_client, user_id: int):
+        """Helper to clean up a user."""
+        try:
+            api_client.delete(f"/users/{user_id}")
+        except Exception:
+            pass
+
+    def _cleanup_partition(self, api_client, partition_name: str):
+        """Helper to clean up a partition."""
+        try:
+            api_client.delete(f"/partition/{partition_name}")
+        except Exception:
+            pass
+
+    def test_unlimited_quota_user_can_upload(self, api_client, tmp_path):
+        """Test that user with unlimited quota (<0) can upload files."""
+        user = self._create_user_with_quota(api_client, "unlimited_quota_user", file_quota=-1)
+        user_id = user["id"]
+        user_token = user["token"]
+        partition_name = f"quota-test-unlimited-{user_id}"
+
+        try:
+            self._create_partition(api_client, partition_name, user_token)
+
+            for i in range(2):
+                response = self._upload_file(api_client, partition_name, f"file-{i}", user_token, f"Content {i}")
+                assert response.status_code in [200, 201, 202], (
+                    f"File {i} upload failed with status {response.status_code}: {response.text}"
+                )
+                data = response.json()
+                if "task_status_url" in data:
+                    task_id = get_task_id(data)
+                    wait_for_task(api_client, task_id, headers={"Authorization": f"Bearer {user_token}"})
+
+        finally:
+            self._cleanup_partition(api_client, partition_name)
+            self._cleanup_user(api_client, user_id)
+
+    def test_quota_limit_blocks_excess_uploads(self, api_client, tmp_path):
+        """Test that user with quota 5 cannot upload a 6th file."""
+        # Create user with quota of 5
+        user = self._create_user_with_quota(api_client, "limited_quota_user", file_quota=5)
+        user_id = user["id"]
+        user_token = user["token"]
+        partition_name = f"quota-test-limited-{user_id}"
+
+        try:
+            self._create_partition(api_client, partition_name, user_token)
+
+            # Upload 5 files successfully
+            for i in range(5):
+                response = self._upload_file(api_client, partition_name, f"file-{i}", user_token, f"Content {i}")
+                assert response.status_code in [200, 201, 202], (
+                    f"File {i} upload should succeed, got {response.status_code}: {response.text}"
+                )
+                # Wait for task to complete
+                if response.status_code in [200, 201, 202]:
+                    data = response.json()
+                    if "task_status_url" in data:
+                        task_id = get_task_id(data)
+                        wait_for_task(api_client, task_id, headers={"Authorization": f"Bearer {user_token}"})
+
+            # 6th file should be rejected due to quota
+            response = self._upload_file(api_client, partition_name, "file-5", user_token, "Content 5")
+            assert response.status_code == 403, (
+                f"6th file should be rejected with 403 Forbidden, got {response.status_code}: {response.text}"
+            )
+
+        finally:
+            self._cleanup_partition(api_client, partition_name)
+            self._cleanup_user(api_client, user_id)
+
+    def _get_user_file_count(self, api_client, user_token: str) -> int:
+        """Helper to get the file_count for a user."""
+        response = api_client.get(
+            "/users/info",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        assert response.status_code == 200, f"Failed to get user info: {response.text}"
+        return response.json().get("file_count", 0)
+
+    def test_file_count_increments_on_upload(self, api_client):
+        """Test that file_count increments when a user uploads files."""
+        user = self._create_user_with_quota(api_client, "file_count_test_user", file_quota=-1)
+        user_id = user["id"]
+        user_token = user["token"]
+        partition_name = f"file-count-test-{user_id}"
+
+        try:
+            # Initial file_count should be 0
+            initial_count = self._get_user_file_count(api_client, user_token)
+            assert initial_count == 0, f"Initial file_count should be 0, got {initial_count}"
+
+            self._create_partition(api_client, partition_name, user_token)
+
+            # Upload 3 files and verify count increments
+            for i in range(1, 4):
+                response = self._upload_file(api_client, partition_name, f"file-{i}", user_token, f"Content {i}")
+                assert response.status_code in [200, 201, 202], (
+                    f"File {i} upload failed with status {response.status_code}: {response.text}"
+                )
+                # Wait for task to complete
+                data = response.json()
+                if "task_status_url" in data:
+                    task_id = get_task_id(data)
+                    wait_for_task(api_client, task_id, headers={"Authorization": f"Bearer {user_token}"})
+
+                # Verify file_count incremented
+                current_count = self._get_user_file_count(api_client, user_token)
+                expected_count = i
+                assert current_count == expected_count, (
+                    f"After uploading file {i}, file_count should be {expected_count}, got {current_count}"
+                )
+
+        finally:
+            self._cleanup_partition(api_client, partition_name)
+            self._cleanup_user(api_client, user_id)
+
+    def test_file_count_decrements_on_delete(self, api_client):
+        """Test that file_count decrements when a user deletes files or a partition."""
+        user = self._create_user_with_quota(api_client, "file_count_delete_test_user", file_quota=-1)
+        user_id = user["id"]
+        user_token = user["token"]
+        partition_name = f"file-count-delete-test-{user_id}"
+
+        try:
+            self._create_partition(api_client, partition_name, user_token)
+
+            # Upload 5 files
+            for i in range(5):
+                response = self._upload_file(api_client, partition_name, f"file-{i}", user_token, f"Content {i}")
+                assert response.status_code in [200, 201, 202]
+                data = response.json()
+                if "task_status_url" in data:
+                    task_id = get_task_id(data)
+                    wait_for_task(api_client, task_id, headers={"Authorization": f"Bearer {user_token}"})
+
+            # Verify file_count is 5
+            count_after_upload = self._get_user_file_count(api_client, user_token)
+            assert count_after_upload == 5, f"After uploading 5 files, file_count should be 5, got {count_after_upload}"
+
+            headers = {"Authorization": f"Bearer {user_token}"}
+
+            # Delete one file
+            response = api_client.delete(f"/indexer/partition/{partition_name}/file/file-0", headers=headers)
+
+            assert response.status_code in [200, 204], f"Failed to delete file: {response.text}"
+
+            # Verify file_count decremented to 4
+            count_after_delete = self._get_user_file_count(api_client, user_token)
+            assert count_after_delete == 4, f"After deleting 1 file, file_count should be 4, got {count_after_delete}"
+
+            # Delete another file
+            response = api_client.delete(f"/indexer/partition/{partition_name}/file/file-1", headers=headers)
+            assert response.status_code in [200, 204], f"Failed to delete file: {response.text}"
+
+            # Verify file_count decremented to 3
+            count_after_second_delete = self._get_user_file_count(api_client, user_token)
+            assert count_after_second_delete == 3, (
+                f"After deleting 2 files, file_count should be 3, got {count_after_second_delete}"
+            )
+
+            # Delete the partition (with remaining 3 files)
+            response = api_client.delete(f"/partition/{partition_name}", headers=headers)
+            assert response.status_code in [200, 204], f"Failed to delete partition: {response.text}"
+
+            # Verify file_count decremented to 0
+            count_after_partition_delete = self._get_user_file_count(api_client, user_token)
+            assert count_after_partition_delete == 0, (
+                f"After deleting partition with 3 files, file_count should be 0, got {count_after_partition_delete}"
+            )
+
+        finally:
+            self._cleanup_partition(api_client, partition_name)
+            self._cleanup_user(api_client, user_id)
+
+    def test_file_count_tracks_uploader_not_owner(self, api_client):
+        """Test that file_count increments for the uploader, not the partition owner."""
+        # Create owner (User A) and editor (User B)
+        owner = self._create_user_with_quota(api_client, "partition_owner", file_quota=-1)
+        editor = self._create_user_with_quota(api_client, "partition_editor", file_quota=-1)
+        owner_token = owner["token"]
+        editor_token = editor["token"]
+        partition_name = f"uploader-track-test-{owner['id']}"
+
+        try:
+            self._create_partition(api_client, partition_name, owner_token)
+
+            # Add editor to partition
+            response = api_client.post(
+                f"/partition/{partition_name}/users",
+                data={"user_id": editor["id"], "role": "editor"},
+                headers={"Authorization": f"Bearer {owner_token}"},
+            )
+            assert response.status_code == 201, f"Failed to add editor: {response.text}"
+
+            # Editor uploads 2 files
+            for i in range(2):
+                response = self._upload_file(
+                    api_client, partition_name, f"editor-file-{i}", editor_token, f"Content {i}"
+                )
+                assert response.status_code in [200, 201, 202]
+                data = response.json()
+                if "task_status_url" in data:
+                    task_id = get_task_id(data)
+                    wait_for_task(api_client, task_id, headers={"Authorization": f"Bearer {editor_token}"})
+
+            # Owner uploads 1 file
+            response = self._upload_file(api_client, partition_name, "owner-file-0", owner_token, "Owner content")
+            assert response.status_code in [200, 201, 202]
+            data = response.json()
+            if "task_status_url" in data:
+                task_id = get_task_id(data)
+                wait_for_task(api_client, task_id, headers={"Authorization": f"Bearer {owner_token}"})
+
+            # Verify: editor has count 2, owner has count 1
+            editor_count = self._get_user_file_count(api_client, editor_token)
+            owner_count = self._get_user_file_count(api_client, owner_token)
+            assert editor_count == 2, f"Editor file_count should be 2, got {editor_count}"
+            assert owner_count == 1, f"Owner file_count should be 1, got {owner_count}"
+
+        finally:
+            self._cleanup_partition(api_client, partition_name)
+            self._cleanup_user(api_client, editor["id"])
+            self._cleanup_user(api_client, owner["id"])
+
+    def test_partition_delete_decrements_per_uploader(self, api_client):
+        """Test that deleting a partition decrements file_count for each uploader independently."""
+        user_a = self._create_user_with_quota(api_client, "partition_del_user_a", file_quota=-1)
+        user_b = self._create_user_with_quota(api_client, "partition_del_user_b", file_quota=-1)
+        token_a = user_a["token"]
+        token_b = user_b["token"]
+        partition_name = f"partition-del-multi-{user_a['id']}"
+
+        try:
+            self._create_partition(api_client, partition_name, token_a)
+
+            # Add user B as editor
+            response = api_client.post(
+                f"/partition/{partition_name}/users",
+                data={"user_id": user_b["id"], "role": "editor"},
+                headers={"Authorization": f"Bearer {token_a}"},
+            )
+            assert response.status_code == 201, f"Failed to add user B: {response.text}"
+
+            # User A uploads 2 files
+            for i in range(2):
+                response = self._upload_file(api_client, partition_name, f"a-file-{i}", token_a, f"A content {i}")
+                assert response.status_code in [200, 201, 202]
+                data = response.json()
+                if "task_status_url" in data:
+                    wait_for_task(api_client, get_task_id(data), headers={"Authorization": f"Bearer {token_a}"})
+
+            # User B uploads 2 files
+            for i in range(2):
+                response = self._upload_file(api_client, partition_name, f"b-file-{i}", token_b, f"B content {i}")
+                assert response.status_code in [200, 201, 202]
+                data = response.json()
+                if "task_status_url" in data:
+                    wait_for_task(api_client, get_task_id(data), headers={"Authorization": f"Bearer {token_b}"})
+
+            # Verify counts before deletion
+            count_a = self._get_user_file_count(api_client, token_a)
+            count_b = self._get_user_file_count(api_client, token_b)
+            assert count_a == 2, f"User A should have 2 files, got {count_a}"
+            assert count_b == 2, f"User B should have 2 files, got {count_b}"
+
+            # Delete partition — should decrement each uploader's count independently
+            response = api_client.delete(f"/partition/{partition_name}")
+            assert response.status_code in [200, 204], f"Failed to delete partition: {response.text}"
+
+            # Both users' counts should be 0
+            count_a = self._get_user_file_count(api_client, token_a)
+            count_b = self._get_user_file_count(api_client, token_b)
+            assert count_a == 0, f"User A file_count should be 0 after partition delete, got {count_a}"
+            assert count_b == 0, f"User B file_count should be 0 after partition delete, got {count_b}"
+
+        finally:
+            self._cleanup_partition(api_client, partition_name)
+            self._cleanup_user(api_client, user_b["id"])
+            self._cleanup_user(api_client, user_a["id"])
+
+    def test_file_count_stable_on_replace(self, api_client):
+        """Test that put_file (replace) keeps file_count unchanged."""
+        import io
+
+        user = self._create_user_with_quota(api_client, "replace_test_user", file_quota=-1)
+        user_id = user["id"]
+        user_token = user["token"]
+        partition_name = f"replace-test-{user_id}"
+        headers = {"Authorization": f"Bearer {user_token}"}
+
+        try:
+            self._create_partition(api_client, partition_name, user_token)
+
+            # Upload a file
+            response = self._upload_file(api_client, partition_name, "replaceable-file", user_token, "Original")
+            assert response.status_code in [200, 201, 202]
+            data = response.json()
+            if "task_status_url" in data:
+                task_id = get_task_id(data)
+                wait_for_task(api_client, task_id, headers=headers)
+
+            count_before = self._get_user_file_count(api_client, user_token)
+            assert count_before == 1, f"Expected file_count 1 before replace, got {count_before}"
+
+            # Replace the file via PUT
+            file_obj = io.BytesIO(b"Updated content")
+            response = api_client.put(
+                f"/indexer/partition/{partition_name}/file/replaceable-file",
+                files={"file": ("replaceable-file.txt", file_obj, "text/plain")},
+                data={"metadata": "{}"},
+                headers=headers,
+            )
+            assert response.status_code in [200, 201, 202], f"Replace failed: {response.text}"
+            data = response.json()
+            if "task_status_url" in data:
+                task_id = get_task_id(data)
+                wait_for_task(api_client, task_id, headers=headers)
+
+            # file_count should still be 1
+            count_after = self._get_user_file_count(api_client, user_token)
+            assert count_after == 1, f"Expected file_count 1 after replace, got {count_after}"
+
+        finally:
+            self._cleanup_partition(api_client, partition_name)
+            self._cleanup_user(api_client, user_id)
+
+
+class TestTaskCancellation:
+    """Test task cancellation state transitions and queue info counters."""
+
+    def test_cancel_task_sets_cancelled_state(self, api_client, created_partition, pdf_file_path):
+        """Cancelling a task immediately after upload must set its state to CANCELLED."""
+        file_id = "cancel-state-test-001"
+
+        with open(pdf_file_path, "rb") as f:
+            response = api_client.post(
+                f"/indexer/partition/{created_partition}/file/{file_id}",
+                files={"file": (pdf_file_path.name, f, "application/pdf")},
+                data={"metadata": "{}"},
+            )
+
+        assert response.status_code in [200, 201, 202]
+        task_id = get_task_id(response.json())
+
+        # Cancel while the task is most likely still QUEUED
+        cancel_response = api_client.delete(f"/indexer/task/{task_id}")
+        assert cancel_response.status_code == 200
+        assert "Cancellation signal sent" in cancel_response.json()["message"]
+
+        # State must be CANCELLED right after the cancel endpoint returns
+        status_response = api_client.get(f"/indexer/task/{task_id}")
+        assert status_response.status_code == 200
+        assert status_response.json()["task_state"] == "CANCELLED"
+
+    def test_cancel_increments_total_cancelled(self, api_client, created_partition, pdf_file_path):
+        """Cancelling a task must increment total_cancelled in /queue/info."""
+        info_before = api_client.get("/queue/info")
+        assert info_before.status_code == 200
+        cancelled_before = info_before.json()["tasks"]["total_cancelled"]
+
+        file_id = "cancel-count-test-001"
+
+        with open(pdf_file_path, "rb") as f:
+            response = api_client.post(
+                f"/indexer/partition/{created_partition}/file/{file_id}",
+                files={"file": (pdf_file_path.name, f, "application/pdf")},
+                data={"metadata": "{}"},
+            )
+
+        assert response.status_code in [200, 201, 202]
+        task_id = get_task_id(response.json())
+
+        cancel_response = api_client.delete(f"/indexer/task/{task_id}")
+        assert cancel_response.status_code == 200
+
+        info_after = api_client.get("/queue/info")
+        assert info_after.status_code == 200
+        cancelled_after = info_after.json()["tasks"]["total_cancelled"]
+
+        assert cancelled_after == cancelled_before + 1
+
+    def test_cancel_nonexistent_task_returns_404(self, api_client):
+        """Cancelling a task that does not exist must return 404."""
+        response = api_client.delete("/indexer/task/nonexistent-cancel-task-99999")
+        assert response.status_code == 404

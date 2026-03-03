@@ -55,7 +55,6 @@ Get openRAG version
 GET /version
 ```
 
-
 ---
 
 ### 📦 Document Indexing
@@ -78,6 +77,56 @@ Upload a new file to a specific partition for indexing.
 **Responses:**
 - `201 Created`: Returns task status URL
 - `409 Conflict`: File already exists in partition
+
+##### Upload files while modeling relations between them
+
+OpenRAG supports document relationships to enable context-aware retrieval.
+You can model relationships between files using the `metadata` field during upload. Different relationship types can be represented using the `relationship_id` and `parent_id` metadata fields, depending on the use case: folder-based relationships, email threads, etc. (see [Document Relationships documentation](/openrag/documentation/linked_files/#examples) for more details).
+
+* To represent native [simple folder-based relationships between files](/openrag/documentation/linked_files/#-folder-based-organization), rely exclusively on `relationship_id`:
+
+```http
+POST /indexer/partition/{partition}/file/{file_id}
+Authorization: Bearer YOUR_AUTH_TOKEN
+Content-Type: multipart/form-data
+
+file: <binary data>
+metadata: {
+  "relationship_id": "documents/projects/2024/q1",
+  ...
+}
+```
+
+* for email threads, one can rely on both `relationship_id` (to group emails in the same thread) and `parent_id` (to model reply hierarchies within the thread). See the [Document Relationships documentation](/openrag/documentation/linked_files/#-email-threads) for more details and examples.
+
+**Example: Original Email (Root)**
+```http
+POST /indexer/partition/emails/file/email_a_id
+Authorization: Bearer YOUR_AUTH_TOKEN
+Content-Type: multipart/form-data
+
+file: <email binary data>
+metadata: {
+  "relationship_id": "thread-123",
+  "parent_id": null,
+  ...
+}
+```
+
+**Example: Reply Email (Child)**
+```http
+POST /indexer/partition/emails/file/email_b_id
+Authorization: Bearer YOUR_AUTH_TOKEN
+Content-Type: multipart/form-data
+
+file: <email binary data>
+metadata: {
+  "relationship_id": "thread-123",
+  "parent_id": "email_a_id",
+  ...
+}
+```
+For context-aware search, see [search endpoints](#-semantic-search) and [relationship-based file fetching](#partitions--files-management). 
 
 #### Replace Existing File
 ```http
@@ -137,7 +186,7 @@ GET /indexer/task/{task_id}/error
 
 ### 🔍 Semantic Search
 
-#### Search Across Multiple Partitions
+* Search Across Multiple Partitions
 ```http
 GET /search/
 ```
@@ -145,15 +194,20 @@ GET /search/
 Perform semantic search across specified partitions.
 
 **Query Parameters:**
-- `partitions` (optional): List of partition names (default: `["all"]`)
-- `text` (required): Search query text
-- `top_k` (optional): Number of results to return (default: `5`)
+| Parameter           | Type    | Default | Description |
+|---------------------|---------|---------|-------------|
+| `partitions` (optional)        | array   | ["all"] | Partitions to search. (optional) |
+| `text`              | string  | required | Search query |
+| `top_k` (optional)             | integer | 5       | Number of initial results (optional) |
+| `include_related` (optional)   | boolean | `false`   | Include chunks from files with same `relationship_id` |
+| `include_ancestors` (optional) | boolean | `false`   | Include chunks from ancestor files (via `parent_id` chain) |
+| `related_limit` (optional)     | integer | 20      | Max related/ancestor chunks to fetch per result (used when `include_related` or `include_ancestors` is true) |
 
 **Responses:**
 - `200 OK`: JSON list of document links (HATEOAS format)
 - `400 Bad Request`: Invalid partitions parameter
 
-#### Search Within Single Partition
+* Search Within Single Partition
 ```http
 GET /search/partition/{partition}
 ```
@@ -161,12 +215,18 @@ GET /search/partition/{partition}
 Search within a specific partition only.
 
 **Query Parameters:**
-- `text` (required): Search query text
-- `top_k` (optional): Number of results (default: `5`)
+
+| Parameter           | Type    | Default | Description |
+|---------------------|---------|---------|-------------|
+| `text`              | string  | required | Search query |
+| `top_k` (optional)             | integer | 5       | Number of initial results (optional) |
+| `include_related` (optional)   | boolean | `false`   | Include chunks from files with same `relationship_id` |
+| `include_ancestors` (optional) | boolean | `false`   | Include chunks from ancestor files (via `parent_id` chain) |
+| `related_limit` (optional)     | integer | 20      | Max related/ancestor chunks to fetch per result (used when `include_related` or `include_ancestors` is true) |
 
 **Response:** Same as multi-partition search
 
-#### Search Within Specific File
+* Search Within Specific File
 ```http
 GET /search/partition/{partition}/file/{file_id}
 ```
@@ -188,6 +248,82 @@ GET /extract/{extract_id}
 Retrieve specific document extract (chunk) by ID.
 
 **Response:** JSON containing extract content and metadata
+
+---
+
+### Partitions & files Management
+
+* Get Files by Relationship
+
+```http
+GET /{partition}/relationships/{relationship_id}
+```
+
+Returns all files sharing the same `relationship_id` within a partition.
+
+**Parameters:**
+- `partition` — partition name
+- `relationship_id` — the relationship group identifier (client-defined)
+
+**Response:**
+```json
+{
+  "files": [
+    {
+      "file_id": "doc-a-id",
+      "filename": "Document A",
+      "relationship_id": "group-123",
+      "parent_id": null
+    },
+    {
+      "file_id": "doc-b-id",
+      "filename": "Document B",
+      "relationship_id": "group-123",
+      "parent_id": "doc-a-id"
+    }
+  ]
+}
+```
+
+* Get File Ancestors
+
+```http
+GET /{partition}/file/{file_id}/ancestors
+```
+
+Returns the complete ancestor path from root to the specified file.
+
+:::note
+Returns only the direct ancestor path, not sibling branches.
+:::
+
+**Parameters:**
+- `partition` — partition name
+- `file_id` — the file to trace ancestors for
+- `max_ancestor_depth` (optional) — limit on ancestor depth to return. None means unlimited.
+
+**Response:**
+```json
+{
+  "ancestors": [
+    {
+      "file_id": "email-a-id",
+      "filename": "Original Email",
+      "parent_id": null
+    },
+    {
+      "file_id": "email-b-id",
+      "filename": "First Reply",
+      "parent_id": "email-a-id"
+    },
+    {
+      "file_id": "email-c-id",
+      "filename": "Second Reply",
+      "parent_id": "email-b-id"
+    }
+  ]
+}
+```
 
 ---
 
@@ -267,6 +403,12 @@ OpenAI-compatible text completion endpoint.
 * When using the openai endpoint /v1/chat/completions, one can provide extra arguments in the request body to customize the RAG behavior:
 - `spoken_style_answer`: boolean (default: false) - If true, the model will generate a succint spoken style conversational answer based on the retrieved documents.
 - `use_map_reduce`: boolean (default: false) - If true, the model will use a map-reduce strategy to aggregate information from multiple documents. For more information see the [map-reduce documentation](/openrag/documentation/env_vars/#map--reduce-configuration).
+- `llm_override`: object (optional) - Route the request to a different LLM endpoint while still using OpenRAG's RAG pipeline (retrieval, reranking, prompt construction). Accepts the following fields:
+  - `base_url`: string - Base URL of the target LLM API (e.g. `https://api.openai.com/v1`)
+  - `api_key`: string - API key for the target LLM
+  - `model`: string - Model name to use on the target endpoint
+
+  Any field not provided falls back to the default OpenRAG LLM configuration.
 
 These arguments are supplied via the metadata field of the OpenAI request body. Example:
 
@@ -287,6 +429,30 @@ curl -X 'POST' 'http://localhost:8080/v1/chat/completions' \
   "stream": false,
   "metadata": {
     "spoken_style_answer": true
+  }
+}'
+```
+
+```bash title="Using a custom LLM endpoint with OpenRAG's RAG pipeline"
+curl -X 'POST' 'http://localhost:8080/v1/chat/completions' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer YOUR_AUTH_TOKEN' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "model": "openrag-{partition_name}",
+  "messages": [
+    {
+      "role": "user",
+      "content": "your_query"
+    }
+  ],
+  "stream": false,
+  "metadata": {
+    "llm_override": {
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "sk-your-openai-key",
+      "model": "gpt-4o"
+    }
   }
 }'
 ```
@@ -388,3 +554,63 @@ The API uses standard HTTP status codes:
 - `409 Conflict`: Resource already exists
 
 Error responses include detailed JSON messages to help with debugging and integration.
+
+
+## Sequence diagrams
+
+### External Indexing Flow
+
+An external indexer uses an admin token to create a user, then uses the returned user token for all subsequent operations.
+
+```mermaid
+sequenceDiagram
+    participant Indexer
+    participant OpenRAG
+
+    Note over Indexer, OpenRAG: 1. Create User (admin token)
+
+    Indexer->>OpenRAG: POST /users<br/>Authorization: Bearer {admin_token}<br/>{display_name: "alice"}
+    OpenRAG-->>Indexer: 201 {id: 2, token: "or-xxx..."}
+    Indexer->>Indexer: Store user token "or-xxx..."
+
+    Note over Indexer, OpenRAG: 2. Create Partition (user token). Automatically grants owner rights to the user
+
+    Indexer->>OpenRAG: POST /partition/{partition}<br/>Authorization: Bearer or-xxx...
+    OpenRAG-->>Indexer: 201 Created
+
+    Note over Indexer, OpenRAG: 3. Index a File (user token)
+
+    Indexer->>Indexer: New data
+
+    Indexer->>OpenRAG: POST /indexer/partition/{partition}/file/{file_id}<br/>Authorization: Bearer or-xxx...<br/>Body: multipart (file + metadata)
+    OpenRAG->>OpenRAG: Validate token, check file quota
+    OpenRAG-->>Indexer: 201 {task_status_url: "{task_url}"}
+
+    Note over OpenRAG: Background: serialize → chunk → embed → store
+
+```
+
+### Chat Completion Flow
+
+Query indexed documents via the OpenAI-compatible chat completions endpoint.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant OpenRAG
+    participant LLM
+
+    Client->>OpenRAG: POST /v1/chat/completions<br/>Authorization: Bearer or-xxx...<br/>{model: "openrag-{partition}",<br/>messages: [...], stream: true}
+
+    OpenRAG->>OpenRAG: Authenticate user
+    OpenRAG->>OpenRAG: Resolve partition from model name
+    OpenRAG->>OpenRAG: Check user has access to partition
+    OpenRAG->>OpenRAG: Retrieve relevant documents
+    OpenRAG->>OpenRAG: Build prompt with retrieved context
+    OpenRAG->>LLM: Query LLM
+
+    loop SSE Stream
+        OpenRAG-->>Client: data: {delta: {content: "..."},<br/>sources: [...]}
+    end
+    OpenRAG-->>Client: data: [DONE]
+```

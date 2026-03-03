@@ -14,10 +14,10 @@ class Reranker:
         self.semaphore = asyncio.Semaphore(5)  # Only allow 5 reranking operation at a time
         self.logger.debug("Reranker initialized", model_name=self.model_name)
 
-    async def rerank(self, query: str, documents: list[Document], top_k: int) -> list[Document]:
+    async def rerank(self, query: str, documents: list[Document], top_k: int | None = None) -> list[Document]:
         async with self.semaphore:
             self.logger.debug("Reranking documents", documents_count=len(documents), top_k=top_k)
-            top_k = min(top_k, len(documents))
+            top_k = min(top_k, len(documents)) if top_k is not None else len(documents)
             rerank_input = RerankInput.from_dict(
                 {
                     "model": self.model_name,
