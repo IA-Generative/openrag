@@ -497,4 +497,7 @@ async def cancel_task(
         raise HTTPException(404, f"No ObjectRef stored for task {task_id}")
 
     ray.cancel(obj_ref["ref"], recursive=True)
+    current_state = await task_state_manager.get_state.remote(task_id)
+    if current_state not in {"COMPLETED", "FAILED"}:
+        await task_state_manager.set_state.remote(task_id, "CANCELLED")
     return {"message": f"Cancellation signal sent for task {task_id}"}

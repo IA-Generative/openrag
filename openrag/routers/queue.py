@@ -44,6 +44,7 @@ Returns system status including:
 - `active`: Total active tasks
 - `active_statuses`: Breakdown by status (QUEUED, SERIALIZING, CHUNKING, INSERTING)
 - `total_completed`: Count of completed tasks
+- `total_cancelled`: Count of cancelled tasks
 - `total_failed`: Count of failed tasks
 
 **Use Case:**
@@ -60,6 +61,7 @@ async def get_queue_info(admin=Depends(require_admin), task_state_manager=Depend
     task_summary = {
         "active": sum(active.values()),
         "active_statuses": active,
+        "total_cancelled": status_counts.get("CANCELLED", 0),
         "total_completed": status_counts.get("COMPLETED", 0),
         "total_failed": status_counts.get("FAILED", 0),
     }
@@ -80,6 +82,7 @@ async def get_queue_info(admin=Depends(require_admin), task_state_manager=Depend
   - `active`: Show QUEUED, SERIALIZING, CHUNKING, or INSERTING tasks
   - `completed`: Show completed tasks
   - `failed`: Show failed tasks
+  - `cancelled`: Show cancelled tasks
   - Any exact status name (case-insensitive)
   - Omit to show all tasks
 
@@ -101,6 +104,7 @@ Returns list of tasks with:
 - `CHUNKING`: Splitting into chunks
 - `INSERTING`: Adding to vector database
 - `COMPLETED`: Successfully finished
+- `CANCELLED`: Cancelled by user/admin
 - `FAILED`: Error occurred
 """,
 )

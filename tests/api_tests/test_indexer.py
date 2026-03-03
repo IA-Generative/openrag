@@ -734,3 +734,63 @@ class TestUserQuotaEnforcement:
         finally:
             self._cleanup_partition(api_client, partition_name)
             self._cleanup_user(api_client, user_id)
+
+
+class TestTaskCancellation:
+    """Test task cancellation state transitions and queue info counters."""
+
+    def test_cancel_task_sets_cancelled_state(self, api_client, created_partition, pdf_file_path):
+        """Cancelling a task immediately after upload must set its state to CANCELLED."""
+        file_id = "cancel-state-test-001"
+
+        with open(pdf_file_path, "rb") as f:
+            response = api_client.post(
+                f"/indexer/partition/{created_partition}/file/{file_id}",
+                files={"file": (pdf_file_path.name, f, "application/pdf")},
+                data={"metadata": "{}"},
+            )
+
+        assert response.status_code in [200, 201, 202]
+        task_id = get_task_id(response.json())
+
+        # Cancel while the task is most likely still QUEUED
+        cancel_response = api_client.delete(f"/indexer/task/{task_id}")
+        assert cancel_response.status_code == 200
+        assert "Cancellation signal sent" in cancel_response.json()["message"]
+
+        # State must be CANCELLED right after the cancel endpoint returns
+        status_response = api_client.get(f"/indexer/task/{task_id}")
+        assert status_response.status_code == 200
+        assert status_response.json()["task_state"] == "CANCELLED"
+
+    def test_cancel_increments_total_cancelled(self, api_client, created_partition, pdf_file_path):
+        """Cancelling a task must increment total_cancelled in /queue/info."""
+        info_before = api_client.get("/queue/info")
+        assert info_before.status_code == 200
+        cancelled_before = info_before.json()["tasks"]["total_cancelled"]
+
+        file_id = "cancel-count-test-001"
+
+        with open(pdf_file_path, "rb") as f:
+            response = api_client.post(
+                f"/indexer/partition/{created_partition}/file/{file_id}",
+                files={"file": (pdf_file_path.name, f, "application/pdf")},
+                data={"metadata": "{}"},
+            )
+
+        assert response.status_code in [200, 201, 202]
+        task_id = get_task_id(response.json())
+
+        cancel_response = api_client.delete(f"/indexer/task/{task_id}")
+        assert cancel_response.status_code == 200
+
+        info_after = api_client.get("/queue/info")
+        assert info_after.status_code == 200
+        cancelled_after = info_after.json()["tasks"]["total_cancelled"]
+
+        assert cancelled_after == cancelled_before + 1
+
+    def test_cancel_nonexistent_task_returns_404(self, api_client):
+        """Cancelling a task that does not exist must return 404."""
+        response = api_client.delete("/indexer/task/nonexistent-cancel-task-99999")
+        assert response.status_code == 404

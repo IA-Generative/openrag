@@ -122,8 +122,7 @@ class Indexer:
         except Exception as e:
             log.exception(f"Task {task_id} failed in add_file")
             tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-            await task_state_manager.set_state.remote(task_id, "FAILED")
-            await task_state_manager.set_error.remote(task_id, tb)
+            await task_state_manager.set_failed_if_not_cancelled.remote(task_id, tb)
             raise
 
         finally:
@@ -291,6 +290,18 @@ class TaskStateManager:
         async with self.lock:
             info = await self._ensure_task(task_id)
             info.error = tb_str
+
+    @ray.method(concurrency_group="set")
+    async def set_failed_if_not_cancelled(self, task_id: str, tb_str: str) -> bool:
+        """Atomically set state to FAILED and record the traceback, unless the
+        task is already CANCELLED.  Returns True if the state was set to FAILED."""
+        async with self.lock:
+            info = self.tasks.get(task_id)
+            if info is None or info.state == "CANCELLED":
+                return False
+            info.state = "FAILED"
+            info.error = tb_str
+            return True
 
     @ray.method(concurrency_group="set")
     async def set_details(
