@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any
 
 import consts
-import httpx
 import openai
 from config import load_config
 from fastapi import Depends, Form, HTTPException, Request, UploadFile, status
@@ -307,45 +306,51 @@ async def get_openai_models(base_url: str, api_key: str, timeout: int = 30):
 
 
 async def check_llm_model_availability(request: Request):
-    models = {"LLM": config.llm, "VLM": config.vlm}
-    for model_type, param in models.items():
-        log = logger.bind(base_url=param["base_url"], model=param["model"])
-        try:
-            log.debug("Validating model", model_type=model_type)
-            openai_models = await get_openai_models(base_url=param["base_url"], api_key=param["api_key"], timeout=30)
-            available_models = {m.id for m in openai_models}
-            if param["model"] not in available_models:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Only these models ({available_models}) are available for your `{model_type}`. Please check your configuration file.",
-                )
-        except HTTPException:
-            raise
-        except httpx.TimeoutException:
-            log.warning("Model availability check timed out", model_type=model_type)
+    llm_param = config.llm
+    base_url = llm_param.get("base_url")
+    model = llm_param.get("model")
+    api_key = llm_param.get("api_key")
+
+    log = logger.bind(base_url=base_url, model=model)
+
+    try:
+        log.debug("Validating model")
+        openai_models = await get_openai_models(base_url=base_url, api_key=api_key, timeout=30)
+        available_models = {m.id for m in openai_models}
+        if model not in available_models:
             raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail=f"{model_type} service timed out",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"The underlying model '{model}' is not available via this endpoint. Available models: {', '.join(available_models)}",
             )
-        except httpx.HTTPError as e:
-            log.warning("Model availability check failed", model_type=model_type, error=str(e))
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"{model_type} service is unavailable",
-            )
-        except openai.APIError as e:
-            log.error("API Endpoint error while validating model", model_type=model_type, error=str(e))
-            status_code = getattr(e, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR)
-            raise HTTPException(
-                status_code=status_code,
-                detail=f"OpenAI API Endpoint error: {str(e)}",
-            )
-        except Exception as e:
-            log.exception("Failed to check model availability", model_type=model_type, error=str(e))
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to check {model_type} model availability",
-            )
+
+    except HTTPException:
+        raise
+
+    except openai.APITimeoutError as e:
+        log.warning("Model availability check timed out", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Service timed out",
+        )
+
+    except openai.APIConnectionError as e:
+        log.warning("Model availability check failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service is unavailable",
+        )
+
+    except openai.APIError as e:
+        log.error("API Endpoint error while validating model", error=str(e))
+        status_code = getattr(e, "status_code", None) or status.HTTP_500_INTERNAL_SERVER_ERROR
+        raise HTTPException(status_code=status_code, detail="Upstream LLM service error")
+
+    except Exception as e:
+        log.exception("Failed to validate model", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
 
 
 async def get_partition_name(model_name, user_partitions, is_admin=False):
