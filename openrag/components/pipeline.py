@@ -39,8 +39,10 @@ class RetrieverPipeline:
         logger.debug("Reranker", enabled=self.reranker_enabled)
         self.reranker_top_k = config.reranker["top_k"]
 
-    async def retrieve_docs(self, partition: list[str], query: str, top_k: int | None = None) -> list[Document]:
-        docs = await self.retriever.retrieve(partition=partition, query=query)
+    async def retrieve_docs(
+        self, partition: list[str], query: str, top_k: int | None = None, filter: dict | None = None
+    ) -> list[Document]:
+        docs = await self.retriever.retrieve(partition=partition, query=query, filter=filter)
         logger.debug("Documents retreived", document_count=len(docs))
 
         if docs:
@@ -143,23 +145,30 @@ class RagPipeline:
         use_map_reduce = metadata.get("use_map_reduce", False)
         spoken_style_answer = metadata.get("spoken_style_answer", False)
         use_websearch = metadata.get("websearch", False)
+        workspace = metadata.get("workspace")
 
         logger.debug(
             "Metadata parameters",
             use_map_reduce=use_map_reduce,
             spoken_style_answer=spoken_style_answer,
             use_websearch=use_websearch,
+            workspace=workspace,
         )
 
         # 2. get docs and/or web results concurrently
         top_k = config.map_reduce["max_total_documents"] if use_map_reduce else None
+        filter_dict = {"workspace_id": workspace} if workspace else None
         if partition is not None and use_websearch:
             docs, web_results = await asyncio.gather(
-                self.retriever_pipeline.retrieve_docs(partition=partition, query=query, top_k=top_k),
+                self.retriever_pipeline.retrieve_docs(
+                    partition=partition, query=query, top_k=top_k, filter=filter_dict
+                ),
                 self.web_search_service.search(query),
             )
         elif partition is not None:
-            docs = await self.retriever_pipeline.retrieve_docs(partition=partition, query=query, top_k=top_k)
+            docs = await self.retriever_pipeline.retrieve_docs(
+                partition=partition, query=query, top_k=top_k, filter=filter_dict
+            )
             web_results = []
         else:
             # Web-only mode (partition is None): no RAG retrieval

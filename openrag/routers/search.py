@@ -64,6 +64,7 @@ async def search_multiple_partitions(
     max_ancestor_depth: int | None = Query(
         None, description="Maximum depth of ancestor files to include. None means unlimited."
     ),
+    workspace: str | None = Query(None, description="Workspace ID to filter results"),
     indexer=Depends(get_indexer),
     vectordb=Depends(get_vectordb),
     partition_viewer=Depends(require_partitions_viewer),
@@ -81,7 +82,8 @@ async def search_multiple_partitions(
         include_ancestors=include_ancestors,
     )
 
-    results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partitions)
+    filter_dict = {"workspace_id": workspace} if workspace else None
+    results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partitions, filter=filter_dict)
     log.info(
         "Semantic search on multiple partitions completed.",
         result_count=len(results),
@@ -154,6 +156,7 @@ async def search_one_partition(
     max_ancestor_depth: int | None = Query(
         None, description="Maximum depth of ancestor files to include. None means unlimited."
     ),
+    workspace: str | None = Query(None, description="Workspace ID to filter results"),
     indexer=Depends(get_indexer),
     vectordb=Depends(get_vectordb),
     partition_viewer=Depends(require_partition_viewer),
@@ -165,7 +168,8 @@ async def search_one_partition(
         include_related=include_related,
         include_ancestors=include_ancestors,
     )
-    results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partition)
+    filter_dict = {"workspace_id": workspace} if workspace else None
+    results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partition, filter=filter_dict)
     log.info("Semantic search on single partition completed.", result_count=len(results))
 
     # Expand with related/ancestor chunks if requested
