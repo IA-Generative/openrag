@@ -42,9 +42,13 @@ It will create a new migration script in the `openrag/scripts/migrations/alembic
 
 ### Step 2: Apply the Migration
 
-Once you've reviewed the generated migration script and confirmed it looks correct, apply it to your database:
+Once you've reviewed the generated migration script and confirmed it looks correct, apply it to your database.
 
-```bash title="Apply migrations"
+#### Option A: Docker (production)
+
+Rebuilds the image to ensure the migration runs against the exact code being deployed:
+
+```bash title="Apply migrations (Docker)"
 docker compose up -d rdb
 docker compose \
     run --no-deps --build --rm \
@@ -52,7 +56,23 @@ docker compose \
     openrag; docker compose down
 ```
 
-This upgrades your database schema to the latest revision.
+#### Option B: Docker exec (stack already running)
+
+If the stack is already running, skip the rebuild:
+
+```bash title="Apply migrations (exec)"
+docker compose exec openrag \
+    uv run alembic -c /app/openrag/scripts/migrations/alembic/alembic.ini upgrade head
+```
+
+#### Option C: Local (development)
+
+Run alembic directly with your local venv — no Docker needed:
+
+```bash title="Apply migrations (local)"
+DATABASE_URL=postgresql://user:pass@localhost:5432/openrag \
+    uv run alembic -c openrag/scripts/migrations/alembic/alembic.ini upgrade head
+```
 
 :::tip[Automatic Migrations on Code Update]
 When you pull the latest changes to your local code, check if a new migration script has been added. If so, make sure to apply the migration before restarting the service.
