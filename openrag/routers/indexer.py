@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
@@ -120,6 +121,7 @@ async def add_file(
     file_id: str = Depends(validate_file_id),
     file: UploadFile = Depends(validate_file_format),
     metadata: dict = Depends(validate_metadata),
+    workspace_ids: str | None = Form(None, description="JSON array of workspace IDs to add the file to"),
     indexer=Depends(get_indexer),
     task_state_manager=Depends(get_task_state_manager),
     vectordb=Depends(get_vectordb),
@@ -158,10 +160,37 @@ async def add_file(
     metadata["created_at"] = datetime.fromtimestamp(file_stat.st_ctime).isoformat()
     metadata["file_id"] = file_id
 
+    # Validate and parse workspace_ids
+    parsed_workspace_ids = None
+    if workspace_ids:
+        try:
+            parsed_workspace_ids = json.loads(workspace_ids)
+            if not isinstance(parsed_workspace_ids, list):
+                raise ValueError
+        except (json.JSONDecodeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="workspace_ids must be a JSON array of strings",
+            )
+        for ws_id in parsed_workspace_ids:
+            ws = await vectordb.get_workspace.remote(ws_id)
+            if not ws or ws["partition_name"] != partition:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Workspace '{ws_id}' not found in partition '{partition}'",
+                )
+
     # Indexing the file
     task = indexer.add_file.remote(path=file_path, metadata=metadata, partition=partition, user=user)
     await task_state_manager.set_state.remote(task.task_id().hex(), "QUEUED")
     await task_state_manager.set_object_ref.remote(task.task_id().hex(), {"ref": task})
+
+    # Add file to workspaces
+    if parsed_workspace_ids:
+        await asyncio.gather(
+            *[vectordb.add_files_to_workspace.remote(ws_id, [file_id]) for ws_id in parsed_workspace_ids]
+        )
+
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
         content={"task_status_url": build_url(request, "get_task_status", task_id=task.task_id().hex())},
