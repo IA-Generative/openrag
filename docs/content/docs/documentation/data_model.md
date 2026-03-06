@@ -17,7 +17,10 @@ Implemented using **SQLAlchemy ORM** with PostgreSQL as the backend.
 erDiagram
     partitions ||--o{ files : contains
     partitions ||--o{ partition_memberships : has
+    partitions ||--o{ workspaces : has
     users ||--o{ partition_memberships : belongs_to
+    workspaces ||--o{ workspace_files : has
+    files ||--o{ workspace_files : referenced_by
 
     partitions {
         int id PK
@@ -49,6 +52,21 @@ erDiagram
         int user_id FK
         varchar role
         datetime added_at
+    }
+
+    workspaces {
+        int id PK
+        varchar workspace_id UK
+        varchar partition_name FK
+        varchar display_name
+        int created_by FK
+        datetime created_at
+    }
+
+    workspace_files {
+        int id PK
+        varchar workspace_id FK
+        varchar file_id FK
     }
 ```
 
@@ -133,6 +151,38 @@ Defines the many-to-many relationship between users and partitions with role-bas
 
 ---
 
+### `workspaces`
+
+Groups files within a partition into named subsets for scoped search and chat. See [Workspaces](/openrag/documentation/workspaces/) for full details.
+
+| Column          | Type | Description |
+|------------------|------|-------------|
+| `id`             | Integer (PK) | Internal identifier |
+| `workspace_id`   | String (unique) | Client-facing workspace identifier |
+| `partition_name` | String (FK → `partitions.partition`, CASCADE) | Owning partition |
+| `display_name`   | String (nullable) | Human-readable name |
+| `created_by`     | Integer (FK → `users.id`, SET NULL) | User who created the workspace |
+| `created_at`     | DateTime | Timestamp of creation |
+
+**Relationships:** `files` many-to-many → `File` (via `workspace_files`)
+
+---
+
+### `workspace_files`
+
+Join table linking workspaces to files.
+
+| Column          | Type | Description |
+|------------------|------|-------------|
+| `id`             | Integer (PK) | Internal identifier |
+| `workspace_id`   | String (FK → `workspaces.workspace_id`, CASCADE) | Workspace reference |
+| `file_id`        | String (FK → `files.file_id`, CASCADE) | File reference |
+
+**Constraints:**
+- `UniqueConstraint(workspace_id, file_id)` → a file appears at most once per workspace
+
+---
+
 ## Milvus Schema
 
 Milvus stores document chunks with their vector embeddings. The collection uses dynamic fields for flexible metadata.
@@ -193,6 +243,7 @@ flowchart LR
 |------|:----------:|:------:|-----------|
 | Partition metadata | ✓ | - | Referential integrity, access control |
 | File inventory | ✓ | - | Single source of truth for uploaded files |
+| Workspace membership | ✓ | - | File grouping resolved at query time |
 | User accounts & roles | ✓ | - | Authentication, ACID compliance |
 | Document chunks | - | ✓ | Optimized for vector operations |
 | Dense embeddings | - | ✓ | HNSW similarity search |
