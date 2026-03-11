@@ -823,15 +823,17 @@ class PartitionFileManager:
                 session.add(WorkspaceFile(workspace_id=workspace_id, file_id=fid))
             session.commit()
 
-    def remove_file_from_workspace(self, workspace_id: str, file_id: str):
+    def remove_file_from_workspace(self, workspace_id: str, file_id: str) -> bool:
+        """Remove a file from a workspace. Returns True if the association existed, False otherwise."""
         with self.Session() as session:
-            session.execute(
+            result = session.execute(
                 delete(WorkspaceFile).where(
                     WorkspaceFile.workspace_id == workspace_id,
                     WorkspaceFile.file_id == file_id,
                 )
             )
             session.commit()
+            return result.rowcount > 0
 
     def list_workspace_files(self, workspace_id: str) -> list[str]:
         with self.Session() as session:

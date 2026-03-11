@@ -109,5 +109,7 @@ async def list_workspace_files(
 async def remove_file_from_workspace(
     workspace_id: str, file_id: str, vectordb=Depends(get_vectordb), _ws=Depends(require_workspace_in_partition)
 ):
-    await vectordb.remove_file_from_workspace.remote(workspace_id, file_id)
+    removed = await vectordb.remove_file_from_workspace.remote(workspace_id, file_id)
+    if not removed:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found in workspace")
     return {"status": "removed"}

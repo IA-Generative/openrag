@@ -1115,8 +1115,8 @@ class MilvusDB(BaseVectorDB):
     def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]):
         self.partition_file_manager.add_files_to_workspace(workspace_id, file_ids)
 
-    def remove_file_from_workspace(self, workspace_id: str, file_id: str):
-        self.partition_file_manager.remove_file_from_workspace(workspace_id, file_id)
+    def remove_file_from_workspace(self, workspace_id: str, file_id: str) -> bool:
+        return self.partition_file_manager.remove_file_from_workspace(workspace_id, file_id)
 
     def list_workspace_files(self, workspace_id: str) -> list[str]:
         return self.partition_file_manager.list_workspace_files(workspace_id)
