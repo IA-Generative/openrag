@@ -1097,28 +1097,28 @@ class MilvusDB(BaseVectorDB):
 
     # --- Workspace methods ---
 
-    def create_workspace(
+    async def create_workspace(
         self, workspace_id: str, partition: str, user_id: int | None = None, display_name: str | None = None
     ):
         self.partition_file_manager.create_workspace(workspace_id, partition, user_id, display_name)
 
-    def list_workspaces(self, partition: str) -> list[dict]:
+    async def list_workspaces(self, partition: str) -> list[dict]:
         return self.partition_file_manager.list_workspaces(partition)
 
-    def get_workspace(self, workspace_id: str) -> dict | None:
+    async def get_workspace(self, workspace_id: str) -> dict | None:
         return self.partition_file_manager.get_workspace(workspace_id)
 
-    def delete_workspace(self, workspace_id: str) -> list[str]:
+    async def delete_workspace(self, workspace_id: str) -> list[str]:
         """Delete workspace and return orphaned file_ids. Caller must delete those files from Milvus."""
         return self.partition_file_manager.delete_workspace(workspace_id)
 
-    def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]):
+    async def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]):
         self.partition_file_manager.add_files_to_workspace(workspace_id, file_ids)
 
-    def remove_file_from_workspace(self, workspace_id: str, file_id: str) -> bool:
+    async def remove_file_from_workspace(self, workspace_id: str, file_id: str) -> bool:
         return self.partition_file_manager.remove_file_from_workspace(workspace_id, file_id)
 
-    def list_workspace_files(self, workspace_id: str) -> list[str]:
+    async def list_workspace_files(self, workspace_id: str) -> list[str]:
         return self.partition_file_manager.list_workspace_files(workspace_id)
 
 
