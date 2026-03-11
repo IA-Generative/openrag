@@ -5,10 +5,12 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from utils.dependencies import get_vectordb
+from utils.logger import get_logger
 
 from .utils import require_partition_editor, require_partition_owner, require_partition_viewer
 
 router = APIRouter()
+logger = get_logger()
 
 
 class CreateWorkspaceRequest(BaseModel):
@@ -73,7 +75,13 @@ async def delete_workspace(
 ):
     orphaned = await vectordb.delete_workspace.remote(workspace_id)
     if orphaned:
-        await asyncio.gather(*[vectordb.delete_file.remote(file_id, partition) for file_id in orphaned])
+        results = await asyncio.gather(
+            *[vectordb.delete_file.remote(file_id, partition) for file_id in orphaned],
+            return_exceptions=True,
+        )
+        for file_id, result in zip(orphaned, results):
+            if isinstance(result, Exception):
+                logger.warning("Failed to delete orphaned file from Milvus", file_id=file_id, error=str(result))
     return {"status": "deleted", "orphaned_files_deleted": len(orphaned)}
 
 
