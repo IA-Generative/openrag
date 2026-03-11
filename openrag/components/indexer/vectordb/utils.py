@@ -21,6 +21,7 @@ from sqlalchemy import (
     select,
     text,
 )
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import (
     declarative_base,
     relationship,
@@ -820,7 +821,9 @@ class PartitionFileManager:
     def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]):
         with self.Session() as session:
             for fid in file_ids:
-                session.add(WorkspaceFile(workspace_id=workspace_id, file_id=fid))
+                stmt = pg_insert(WorkspaceFile).values(workspace_id=workspace_id, file_id=fid)
+                stmt = stmt.on_conflict_do_nothing(constraint="uix_workspace_file")
+                session.execute(stmt)
             session.commit()
 
     def remove_file_from_workspace(self, workspace_id: str, file_id: str) -> bool:
