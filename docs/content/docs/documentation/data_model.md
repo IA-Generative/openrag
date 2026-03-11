@@ -176,7 +176,7 @@ Join table linking workspaces to files.
 |------------------|------|-------------|
 | `id`             | Integer (PK) | Internal identifier |
 | `workspace_id`   | String (FK → `workspaces.workspace_id`, CASCADE) | Workspace reference |
-| `file_id`        | String (FK → `files.file_id`, CASCADE) | File reference |
+| `file_id`        | String | File reference (no FK constraint — referential integrity enforced at application level) |
 
 **Constraints:**
 - `UniqueConstraint(workspace_id, file_id)` → a file appears at most once per workspace
