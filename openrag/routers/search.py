@@ -1,5 +1,5 @@
 from components.retriever import _expand_with_related_chunks
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from utils.dependencies import get_indexer, get_vectordb
 from utils.logger import get_logger
@@ -82,6 +82,10 @@ async def search_multiple_partitions(
         include_ancestors=include_ancestors,
     )
 
+    if workspace:
+        ws = await vectordb.get_workspace.remote(workspace)
+        if not ws or ws["partition_name"] not in partitions:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     filter_dict = {"workspace_id": workspace} if workspace else None
     results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partitions, filter=filter_dict)
     log.info(
@@ -168,6 +172,10 @@ async def search_one_partition(
         include_related=include_related,
         include_ancestors=include_ancestors,
     )
+    if workspace:
+        ws = await vectordb.get_workspace.remote(workspace)
+        if not ws or ws["partition_name"] != partition:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     filter_dict = {"workspace_id": workspace} if workspace else None
     results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partition, filter=filter_dict)
     log.info("Semantic search on single partition completed.", result_count=len(results))

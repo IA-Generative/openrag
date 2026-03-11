@@ -2,6 +2,7 @@ import asyncio
 import copy
 from enum import Enum
 
+import ray
 from components.prompts import (
     QUERY_CONTEXTUALIZER_PROMPT,
     SPOKEN_STYLE_ANSWER_PROMPT,
@@ -157,6 +158,16 @@ class RagPipeline:
 
         # 2. get docs and/or web results concurrently
         top_k = config.map_reduce["max_total_documents"] if use_map_reduce else None
+        if workspace:
+            vectordb = ray.get_actor("Vectordb", namespace="openrag")
+            ws = await vectordb.get_workspace.remote(workspace)
+            if not ws or ws["partition_name"] not in partition:
+                logger.warning(
+                    "Workspace not found in partition(s) — ignoring workspace filter",
+                    workspace=workspace,
+                    partition=partition,
+                )
+                workspace = None
         filter_dict = {"workspace_id": workspace} if workspace else None
         if partition is not None and use_websearch:
             docs, web_results = await asyncio.gather(
