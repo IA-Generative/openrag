@@ -40,6 +40,12 @@ async def create_workspace(
     user=Depends(require_partition_editor),
     vectordb=Depends(get_vectordb),
 ):
+    existing = await vectordb.get_workspace.remote(body.workspace_id)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Workspace '{body.workspace_id}' already exists.",
+        )
     await vectordb.create_workspace.remote(
         workspace_id=body.workspace_id,
         partition=partition,
