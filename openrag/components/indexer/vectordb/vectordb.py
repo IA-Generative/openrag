@@ -603,7 +603,7 @@ class MilvusDB(BaseVectorDB):
                 filter=f"partition == '{partition}' and file_id == '{file_id}'",
             )
 
-            self.partition_file_manager.remove_file_from_all_workspaces(file_id)
+            self.partition_file_manager.remove_file_from_all_workspaces(file_id, partition)
             self.partition_file_manager.remove_file_from_partition(file_id=file_id, partition=partition)
             log.info("Deleted file chunks from partition.", count=res.get("delete_count", 0))
 
