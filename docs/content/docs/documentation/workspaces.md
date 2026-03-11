@@ -50,7 +50,7 @@ erDiagram
 
 ## API Endpoints
 
-All workspace endpoints live under `/indexer/partition/{partition}/workspaces`.
+All workspace endpoints live under `/partition/{partition}/workspaces`.
 
 ### Workspace CRUD
 
@@ -74,7 +74,7 @@ All workspace endpoints live under `/indexer/partition/{partition}/workspaces`.
 ### Create a Workspace
 
 ```bash
-curl -X POST "$BASE_URL/indexer/partition/my-partition/workspaces" \
+curl -X POST "$BASE_URL/partition/my-partition/workspaces" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"workspace_id": "project-alpha", "display_name": "Project Alpha"}'
@@ -87,7 +87,7 @@ curl -X POST "$BASE_URL/indexer/partition/my-partition/workspaces" \
 ### List Workspaces
 
 ```bash
-curl "$BASE_URL/indexer/partition/my-partition/workspaces" \
+curl "$BASE_URL/partition/my-partition/workspaces" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -108,7 +108,7 @@ curl "$BASE_URL/indexer/partition/my-partition/workspaces" \
 ### Add Files to a Workspace
 
 ```bash
-curl -X POST "$BASE_URL/indexer/partition/my-partition/workspaces/project-alpha/files" \
+curl -X POST "$BASE_URL/partition/my-partition/workspaces/project-alpha/files" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"file_ids": ["report.pdf", "notes.md"]}'
@@ -121,7 +121,7 @@ curl -X POST "$BASE_URL/indexer/partition/my-partition/workspaces/project-alpha/
 ### Delete a Workspace
 
 ```bash
-curl -X DELETE "$BASE_URL/indexer/partition/my-partition/workspaces/project-alpha" \
+curl -X DELETE "$BASE_URL/partition/my-partition/workspaces/project-alpha" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
