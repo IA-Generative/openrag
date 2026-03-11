@@ -776,7 +776,13 @@ class PartitionFileManager:
         with self.Session() as session:
             result = session.execute(select(Workspace).where(Workspace.partition_name == partition))
             return [
-                {"workspace_id": w.workspace_id, "display_name": w.display_name, "created_at": str(w.created_at)}
+                {
+                    "workspace_id": w.workspace_id,
+                    "partition_name": w.partition_name,
+                    "display_name": w.display_name,
+                    "created_by": w.created_by,
+                    "created_at": str(w.created_at),
+                }
                 for w in result.scalars()
             ]
 
@@ -790,6 +796,7 @@ class PartitionFileManager:
                 "workspace_id": w.workspace_id,
                 "partition_name": w.partition_name,
                 "display_name": w.display_name,
+                "created_by": w.created_by,
                 "created_at": str(w.created_at),
             }
 
