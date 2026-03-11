@@ -31,7 +31,7 @@ class TestWorkspaceCRUD:
             f"/partition/{workspace_partition}/workspaces",
             json={"workspace_id": workspace_id, "display_name": "Test WS"},
         )
-        assert response.status_code == 200
+        assert response.status_code == 201
         assert response.json()["workspace_id"] == workspace_id
 
     def test_list_workspaces(self, api_client, workspace_partition):

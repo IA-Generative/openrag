@@ -2,7 +2,7 @@
 
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from utils.dependencies import get_vectordb
 
@@ -30,15 +30,18 @@ async def require_workspace_in_partition(partition: str, workspace_id: str, vect
 
 @router.post(
     "/partition/{partition}/workspaces",
-    dependencies=[Depends(require_partition_editor)],
+    status_code=status.HTTP_201_CREATED,
 )
 async def create_workspace(
-    partition: str, body: CreateWorkspaceRequest, request: Request, vectordb=Depends(get_vectordb)
+    partition: str,
+    body: CreateWorkspaceRequest,
+    user=Depends(require_partition_editor),
+    vectordb=Depends(get_vectordb),
 ):
     await vectordb.create_workspace.remote(
         workspace_id=body.workspace_id,
         partition=partition,
-        user_id=request.state.user["id"],
+        user_id=user["id"],
         display_name=body.display_name,
     )
     return {"status": "created", "workspace_id": body.workspace_id}
