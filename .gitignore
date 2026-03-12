@@ -80,7 +80,7 @@ node_modules/
 # AI
 .claude
 .planning
-docs/plans
+docs/plans/
 
 # Build artifacts
 *.egg-info/

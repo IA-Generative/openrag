@@ -16,9 +16,12 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     create_engine,
+    delete,
     func,
+    select,
     text,
 )
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import (
     declarative_base,
     relationship,
@@ -97,6 +100,13 @@ class Partition(Base):
     )  # Added index for time-based queries
     files = relationship("File", back_populates="partition", cascade="all, delete-orphan")
     memberships = relationship("PartitionMembership", back_populates="partition", cascade="all, delete-orphan")
+    workspaces = relationship(
+        "Workspace",
+        cascade="all, delete-orphan",
+        backref="partition_ref",
+        foreign_keys="Workspace.partition_name",
+        primaryjoin="Partition.partition == Workspace.partition_name",
+    )
 
     def to_dict(self):
         d = {
@@ -145,6 +155,38 @@ class PartitionMembership(Base):
 
     partition = relationship("Partition", back_populates="memberships")
     user = relationship("User", back_populates="memberships")
+
+
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id = Column(Integer, primary_key=True)
+    workspace_id = Column(String, unique=True, nullable=False, index=True)
+    partition_name = Column(
+        String,
+        ForeignKey("partitions.partition", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    display_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    files = relationship("WorkspaceFile", cascade="all, delete-orphan", backref="workspace")
+
+
+class WorkspaceFile(Base):
+    __tablename__ = "workspace_files"
+
+    id = Column(Integer, primary_key=True)
+    workspace_id = Column(
+        String,
+        ForeignKey("workspaces.workspace_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    file_id = Column(String, nullable=False, index=True)
+
+    __table_args__ = (UniqueConstraint("workspace_id", "file_id", name="uix_workspace_file"),)
 
 
 class PartitionFileManager:
@@ -720,3 +762,95 @@ class PartitionFileManager:
         """
         ancestors = self.get_file_ancestors(partition, file_id, max_ancestor_depth)
         return [a["file_id"] for a in ancestors if a["file_id"] != file_id]
+
+    # --- Workspace methods ---
+
+    def create_workspace(self, workspace_id: str, partition: str, user_id: int | None, display_name: str | None = None):
+        with self.Session() as session:
+            ws = Workspace(
+                workspace_id=workspace_id, partition_name=partition, created_by=user_id, display_name=display_name
+            )
+            session.add(ws)
+            session.commit()
+
+    def list_workspaces(self, partition: str) -> list[dict]:
+        with self.Session() as session:
+            result = session.execute(select(Workspace).where(Workspace.partition_name == partition))
+            return [
+                {
+                    "workspace_id": w.workspace_id,
+                    "partition_name": w.partition_name,
+                    "display_name": w.display_name,
+                    "created_by": w.created_by,
+                    "created_at": str(w.created_at),
+                }
+                for w in result.scalars()
+            ]
+
+    def get_workspace(self, workspace_id: str) -> dict | None:
+        with self.Session() as session:
+            result = session.execute(select(Workspace).where(Workspace.workspace_id == workspace_id))
+            w = result.scalar_one_or_none()
+            if not w:
+                return None
+            return {
+                "workspace_id": w.workspace_id,
+                "partition_name": w.partition_name,
+                "display_name": w.display_name,
+                "created_by": w.created_by,
+                "created_at": str(w.created_at),
+            }
+
+    def delete_workspace(self, workspace_id: str) -> list[str]:
+        """Delete workspace, return list of orphaned file_ids (files only in this workspace)."""
+        with self.Session() as session:
+            # Find files only in this workspace (not in any other)
+            subq = select(WorkspaceFile.file_id).where(WorkspaceFile.workspace_id != workspace_id).subquery()
+            result = session.execute(
+                select(WorkspaceFile.file_id)
+                .where(WorkspaceFile.workspace_id == workspace_id)
+                .where(WorkspaceFile.file_id.notin_(select(subq.c.file_id)))
+            )
+            orphaned_file_ids = [r[0] for r in result.all()]
+
+            # Delete workspace (cascades workspace_files)
+            session.execute(delete(Workspace).where(Workspace.workspace_id == workspace_id))
+            session.commit()
+            return orphaned_file_ids
+
+    def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]):
+        with self.Session() as session:
+            for fid in file_ids:
+                stmt = pg_insert(WorkspaceFile).values(workspace_id=workspace_id, file_id=fid)
+                stmt = stmt.on_conflict_do_nothing(constraint="uix_workspace_file")
+                session.execute(stmt)
+            session.commit()
+
+    def remove_file_from_workspace(self, workspace_id: str, file_id: str) -> bool:
+        """Remove a file from a workspace. Returns True if the association existed, False otherwise."""
+        with self.Session() as session:
+            result = session.execute(
+                delete(WorkspaceFile).where(
+                    WorkspaceFile.workspace_id == workspace_id,
+                    WorkspaceFile.file_id == file_id,
+                )
+            )
+            session.commit()
+            return result.rowcount > 0
+
+    def list_workspace_files(self, workspace_id: str) -> list[str]:
+        with self.Session() as session:
+            result = session.execute(select(WorkspaceFile.file_id).where(WorkspaceFile.workspace_id == workspace_id))
+            return [r[0] for r in result.all()]
+
+    def remove_file_from_all_workspaces(self, file_id: str, partition: str):
+        """Remove file from all workspaces in the given partition — called during file deletion."""
+        with self.Session() as session:
+            ws_ids = select(Workspace.workspace_id).where(Workspace.partition_name == partition)
+            session.execute(
+                delete(WorkspaceFile).where(
+                    WorkspaceFile.file_id == file_id,
+                    WorkspaceFile.workspace_id.in_(ws_ids),
+                )
+            )
+            session.commit()

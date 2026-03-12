@@ -2,11 +2,13 @@ import asyncio
 import copy
 from enum import Enum
 
+import ray
 from components.prompts import (
     QUERY_CONTEXTUALIZER_PROMPT,
     SPOKEN_STYLE_ANSWER_PROMPT,
     SYS_PROMPT_TMPLT,
 )
+from components.ray_utils import call_ray_actor_with_timeout
 from components.websearch import WebSearchFactory
 from config import load_config
 from langchain_core.documents.base import Document
@@ -21,6 +23,7 @@ from .utils import SOURCE_SEPARATOR, format_context, format_web_context
 
 logger = get_logger()
 config = load_config()
+VECTORDB_TIMEOUT = config.ray.indexer.get("vectordb_timeout", 30)
 
 
 class RAGMODE(Enum):
@@ -39,8 +42,10 @@ class RetrieverPipeline:
         logger.debug("Reranker", enabled=self.reranker_enabled)
         self.reranker_top_k = config.reranker["top_k"]
 
-    async def retrieve_docs(self, partition: list[str], query: str, top_k: int | None = None) -> list[Document]:
-        docs = await self.retriever.retrieve(partition=partition, query=query)
+    async def retrieve_docs(
+        self, partition: list[str], query: str, top_k: int | None = None, filter: dict | None = None
+    ) -> list[Document]:
+        docs = await self.retriever.retrieve(partition=partition, query=query, filter=filter)
         logger.debug("Documents retreived", document_count=len(docs))
 
         if docs:
@@ -143,23 +148,44 @@ class RagPipeline:
         use_map_reduce = metadata.get("use_map_reduce", False)
         spoken_style_answer = metadata.get("spoken_style_answer", False)
         use_websearch = metadata.get("websearch", False)
+        workspace = metadata.get("workspace")
 
         logger.debug(
             "Metadata parameters",
             use_map_reduce=use_map_reduce,
             spoken_style_answer=spoken_style_answer,
             use_websearch=use_websearch,
+            workspace=workspace,
         )
 
         # 2. get docs and/or web results concurrently
         top_k = config.map_reduce["max_total_documents"] if use_map_reduce else None
+        if workspace:
+            vectordb = ray.get_actor("Vectordb", namespace="openrag")
+            ws = await call_ray_actor_with_timeout(
+                vectordb.get_workspace.remote(workspace),
+                timeout=VECTORDB_TIMEOUT,
+                task_description=f"get_workspace({workspace})",
+            )
+            if not ws or ("all" not in partition and ws["partition_name"] not in partition):
+                logger.warning(
+                    "Workspace not found in partition(s) — ignoring workspace filter",
+                    workspace=workspace,
+                    partition=partition,
+                )
+                workspace = None
+        filter_dict = {"workspace_id": workspace} if workspace else None
         if partition is not None and use_websearch:
             docs, web_results = await asyncio.gather(
-                self.retriever_pipeline.retrieve_docs(partition=partition, query=query, top_k=top_k),
+                self.retriever_pipeline.retrieve_docs(
+                    partition=partition, query=query, top_k=top_k, filter=filter_dict
+                ),
                 self.web_search_service.search(query),
             )
         elif partition is not None:
-            docs = await self.retriever_pipeline.retrieve_docs(partition=partition, query=query, top_k=top_k)
+            docs = await self.retriever_pipeline.retrieve_docs(
+                partition=partition, query=query, top_k=top_k, filter=filter_dict
+            )
             web_results = []
         else:
             # Web-only mode (partition is None): no RAG retrieval

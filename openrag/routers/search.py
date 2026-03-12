@@ -1,5 +1,7 @@
+from components.ray_utils import call_ray_actor_with_timeout
 from components.retriever import _expand_with_related_chunks
-from fastapi import APIRouter, Depends, Query, Request, status
+from config import load_config
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from utils.dependencies import get_indexer, get_vectordb
 from utils.logger import get_logger
@@ -9,6 +11,9 @@ from .utils import (
     require_partition_viewer,
     require_partitions_viewer,
 )
+
+_config = load_config()
+VECTORDB_TIMEOUT = _config.ray.indexer.get("vectordb_timeout", 30)
 
 logger = get_logger()
 
@@ -64,6 +69,7 @@ async def search_multiple_partitions(
     max_ancestor_depth: int | None = Query(
         None, description="Maximum depth of ancestor files to include. None means unlimited."
     ),
+    workspace: str | None = Query(None, description="Workspace ID to filter results"),
     indexer=Depends(get_indexer),
     vectordb=Depends(get_vectordb),
     partition_viewer=Depends(require_partitions_viewer),
@@ -81,7 +87,16 @@ async def search_multiple_partitions(
         include_ancestors=include_ancestors,
     )
 
-    results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partitions)
+    if workspace:
+        ws = await call_ray_actor_with_timeout(
+            vectordb.get_workspace.remote(workspace),
+            timeout=VECTORDB_TIMEOUT,
+            task_description=f"get_workspace({workspace})",
+        )
+        if not ws or ws["partition_name"] not in partitions:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    filter_dict = {"workspace_id": workspace} if workspace else None
+    results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partitions, filter=filter_dict)
     log.info(
         "Semantic search on multiple partitions completed.",
         result_count=len(results),
@@ -154,6 +169,7 @@ async def search_one_partition(
     max_ancestor_depth: int | None = Query(
         None, description="Maximum depth of ancestor files to include. None means unlimited."
     ),
+    workspace: str | None = Query(None, description="Workspace ID to filter results"),
     indexer=Depends(get_indexer),
     vectordb=Depends(get_vectordb),
     partition_viewer=Depends(require_partition_viewer),
@@ -165,7 +181,16 @@ async def search_one_partition(
         include_related=include_related,
         include_ancestors=include_ancestors,
     )
-    results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partition)
+    if workspace:
+        ws = await call_ray_actor_with_timeout(
+            vectordb.get_workspace.remote(workspace),
+            timeout=VECTORDB_TIMEOUT,
+            task_description=f"get_workspace({workspace})",
+        )
+        if not ws or ws["partition_name"] != partition:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    filter_dict = {"workspace_id": workspace} if workspace else None
+    results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partition, filter=filter_dict)
     log.info("Semantic search on single partition completed.", result_count=len(results))
 
     # Expand with related/ancestor chunks if requested

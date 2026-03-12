@@ -462,6 +462,25 @@ class MilvusDB(BaseVectorDB):
             expr_parts.append(f"partition in {partition}")
 
         if filter:
+            filter = dict(filter)  # don't mutate caller's dict
+            if "workspace_id" in filter:
+                workspace_id = filter.pop("workspace_id")
+                ws = self.partition_file_manager.get_workspace(workspace_id)
+                if not ws:
+                    return []  # Workspace not found → no results
+                file_ids = self.partition_file_manager.list_workspace_files(workspace_id)
+                if not file_ids:
+                    return []  # Empty workspace → no results
+                # Pin to the workspace's own partition regardless of the requested
+                # partition set — file_id is only unique per (file_id, partition_name)
+                # so a cross-partition search could otherwise return chunks from a
+                # different partition that reuses the same file_id.
+                ws_partition = ws["partition_name"]
+                # Replace any outer partition filter with the workspace's partition
+                expr_parts = [p for p in expr_parts if not p.startswith("partition in ")]
+                expr_parts.append(f'partition == "{ws_partition}"')
+                id_list = ", ".join(f'"{fid}"' for fid in file_ids)
+                expr_parts.append(f"file_id in [{id_list}]")
             for key, value in filter.items():
                 expr_parts.append(f"{key} == '{value}'")
 
@@ -595,6 +614,7 @@ class MilvusDB(BaseVectorDB):
                 filter=f"partition == '{partition}' and file_id == '{file_id}'",
             )
 
+            self.partition_file_manager.remove_file_from_all_workspaces(file_id, partition)
             self.partition_file_manager.remove_file_from_partition(file_id=file_id, partition=partition)
             log.info("Deleted file chunks from partition.", count=res.get("delete_count", 0))
 
@@ -1085,6 +1105,32 @@ class MilvusDB(BaseVectorDB):
             )
             for res in results
         ]
+
+    # --- Workspace methods ---
+
+    async def create_workspace(
+        self, workspace_id: str, partition: str, user_id: int | None = None, display_name: str | None = None
+    ):
+        self.partition_file_manager.create_workspace(workspace_id, partition, user_id, display_name)
+
+    async def list_workspaces(self, partition: str) -> list[dict]:
+        return self.partition_file_manager.list_workspaces(partition)
+
+    async def get_workspace(self, workspace_id: str) -> dict | None:
+        return self.partition_file_manager.get_workspace(workspace_id)
+
+    async def delete_workspace(self, workspace_id: str) -> list[str]:
+        """Delete workspace and return orphaned file_ids. Caller must delete those files from Milvus."""
+        return self.partition_file_manager.delete_workspace(workspace_id)
+
+    async def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]):
+        self.partition_file_manager.add_files_to_workspace(workspace_id, file_ids)
+
+    async def remove_file_from_workspace(self, workspace_id: str, file_id: str) -> bool:
+        return self.partition_file_manager.remove_file_from_workspace(workspace_id, file_id)
+
+    async def list_workspace_files(self, workspace_id: str) -> list[str]:
+        return self.partition_file_manager.list_workspace_files(workspace_id)
 
 
 def _gen_chunk_order_metadata(n: int = 20) -> list[dict]:

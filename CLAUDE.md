@@ -118,6 +118,7 @@ The `extra` field in API responses is a JSON string: `{"sources": [filtered_sour
 - `partition.py` - Partition management (multi-tenant document collections)
 - `users.py` - User and membership management
 - `queue.py` - Task queue monitoring
+- `workspaces.py` - Workspace CRUD and file management
 - `tools.py` - Tools like `extractText` at `/v1/tools/execute` (tool param requires JSON: `{"name": "extractText"}`)
 
 ### User Management & Authentication
@@ -129,6 +130,8 @@ The system uses token-based authentication with role-based access control (RBAC)
 - `files` - File records with `file_id`, `partition_name`, `file_metadata`, `created_by` (FK to users), `relationship_id`, `parent_id`
 - `partition_memberships` - Join table linking users to partitions with roles (`owner`, `editor`, `viewer`)
 - `partitions` - Document collections with cascade delete to files and memberships
+- `workspaces` - Named file subsets within a partition for scoped search/chat
+- `workspace_files` - Join table linking workspaces to files
 
 **Authentication Flow** (`openrag/api.py` - `AuthMiddleware`):
 1. Token extracted from `Authorization: Bearer <token>` header (or `?token=` query param for `/static` routes)
