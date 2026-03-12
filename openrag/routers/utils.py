@@ -311,6 +311,14 @@ async def check_llm_model_availability(request: Request):
     model = llm_param.get("model")
     api_key = llm_param.get("api_key")
 
+    missing = [k for k, v in {"base_url": base_url, "model": model, "api_key": api_key}.items() if not v]
+    if missing:
+        logger.error("Incomplete LLM configuration", missing_fields=missing)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="LLM configuration is incomplete",
+        )
+
     log = logger.bind(base_url=base_url, model=model)
 
     try:
