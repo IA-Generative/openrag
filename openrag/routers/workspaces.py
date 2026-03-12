@@ -5,7 +5,7 @@ import asyncio
 from components.ray_utils import call_ray_actor_with_timeout
 from config import load_config
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from utils.dependencies import get_vectordb
 from utils.logger import get_logger
 
@@ -19,11 +19,15 @@ VECTORDB_TIMEOUT = _config.ray.indexer.get("vectordb_timeout", 30)
 
 
 class CreateWorkspaceRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     workspace_id: str
     display_name: str | None = None
 
 
 class AddFilesRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     file_ids: list[str]
 
 
