@@ -109,6 +109,8 @@ async def delete_workspace(
         timeout=VECTORDB_TIMEOUT,
         task_description=f"delete_workspace({workspace_id})",
     )
+    deleted_count = 0
+    failed_file_ids: list[str] = []
     if orphaned:
         results = await asyncio.gather(
             *[
@@ -124,7 +126,14 @@ async def delete_workspace(
         for file_id, result in zip(orphaned, results):
             if isinstance(result, Exception):
                 logger.warning("Failed to delete orphaned file from Milvus", file_id=file_id, error=str(result))
-    return {"status": "deleted", "orphaned_files_deleted": len(orphaned)}
+                failed_file_ids.append(file_id)
+            else:
+                deleted_count += 1
+    return {
+        "status": "deleted",
+        "orphaned_files_deleted": deleted_count,
+        "orphaned_files_failed": failed_file_ids,
+    }
 
 
 @router.post(
