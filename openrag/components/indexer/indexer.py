@@ -121,12 +121,19 @@ class Indexer:
             # record exists in the DB before we reference it from workspace_files.
             await task_state_manager.set_state.remote(task_id, "COMPLETED")
 
-            # Associate with workspaces only after successful indexing
+            # Associate with workspaces only after successful indexing (best-effort)
             if workspace_ids:
                 vectordb = ray.get_actor("Vectordb", namespace="openrag")
-                await asyncio.gather(
-                    *[vectordb.add_files_to_workspace.remote(ws_id, [file_id]) for ws_id in workspace_ids]
-                )
+                try:
+                    await asyncio.gather(
+                        *[vectordb.add_files_to_workspace.remote(ws_id, [file_id]) for ws_id in workspace_ids]
+                    )
+                except Exception as ws_err:
+                    log.warning(
+                        "Failed to associate file with workspaces; file is indexed but workspace links may be incomplete",
+                        error=str(ws_err),
+                        workspace_ids=workspace_ids,
+                    )
 
         except Exception as e:
             tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
