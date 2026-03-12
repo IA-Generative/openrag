@@ -323,7 +323,8 @@ async def check_llm_model_availability(request: Request):
 
     try:
         log.debug("Validating model")
-        openai_models = await get_openai_models(base_url=base_url, api_key=api_key, timeout=30)
+        timeout = int(llm_param.get("timeout", 30))
+        openai_models = await get_openai_models(base_url=base_url, api_key=api_key, timeout=timeout)
         available_models = {m.id for m in openai_models}
         if model not in available_models:
             raise HTTPException(
