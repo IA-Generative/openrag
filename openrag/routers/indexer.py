@@ -1,4 +1,3 @@
-import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
@@ -180,16 +179,12 @@ async def add_file(
                     detail=f"Workspace '{ws_id}' not found in partition '{partition}'",
                 )
 
-    # Indexing the file
-    task = indexer.add_file.remote(path=file_path, metadata=metadata, partition=partition, user=user)
+    # Indexing the file (workspace association happens inside add_file after successful indexing)
+    task = indexer.add_file.remote(
+        path=file_path, metadata=metadata, partition=partition, user=user, workspace_ids=parsed_workspace_ids
+    )
     await task_state_manager.set_state.remote(task.task_id().hex(), "QUEUED")
     await task_state_manager.set_object_ref.remote(task.task_id().hex(), {"ref": task})
-
-    # Add file to workspaces
-    if parsed_workspace_ids:
-        await asyncio.gather(
-            *[vectordb.add_files_to_workspace.remote(ws_id, [file_id]) for ws_id in parsed_workspace_ids]
-        )
 
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,

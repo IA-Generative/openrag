@@ -71,6 +71,7 @@ class Indexer:
         metadata: dict | None = None,
         partition: str | None = None,
         user: dict | None = None,
+        workspace_ids: list[str] | None = None,
     ):
         task_state_manager = ray.get_actor("TaskStateManager", namespace="openrag")
         task_id = ray.get_runtime_context().get_task_id()
@@ -116,8 +117,16 @@ class Indexer:
             else:
                 log.info(f"Vectordb insertion skipped (enable_insertion={self.enable_insertion}).")
 
-            # Mark task as completed
+            # Mark task as completed before workspace association so the file
+            # record exists in the DB before we reference it from workspace_files.
             await task_state_manager.set_state.remote(task_id, "COMPLETED")
+
+            # Associate with workspaces only after successful indexing
+            if workspace_ids:
+                vectordb = ray.get_actor("Vectordb", namespace="openrag")
+                await asyncio.gather(
+                    *[vectordb.add_files_to_workspace.remote(ws_id, [file_id]) for ws_id in workspace_ids]
+                )
 
         except Exception as e:
             tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
