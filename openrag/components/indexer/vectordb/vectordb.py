@@ -465,9 +465,20 @@ class MilvusDB(BaseVectorDB):
             filter = dict(filter)  # don't mutate caller's dict
             if "workspace_id" in filter:
                 workspace_id = filter.pop("workspace_id")
+                ws = self.partition_file_manager.get_workspace(workspace_id)
+                if not ws:
+                    return []  # Workspace not found → no results
                 file_ids = self.partition_file_manager.list_workspace_files(workspace_id)
                 if not file_ids:
                     return []  # Empty workspace → no results
+                # Pin to the workspace's own partition regardless of the requested
+                # partition set — file_id is only unique per (file_id, partition_name)
+                # so a cross-partition search could otherwise return chunks from a
+                # different partition that reuses the same file_id.
+                ws_partition = ws["partition_name"]
+                # Replace any outer partition filter with the workspace's partition
+                expr_parts = [p for p in expr_parts if not p.startswith("partition in ")]
+                expr_parts.append(f'partition == "{ws_partition}"')
                 id_list = ", ".join(f'"{fid}"' for fid in file_ids)
                 expr_parts.append(f"file_id in [{id_list}]")
             for key, value in filter.items():
