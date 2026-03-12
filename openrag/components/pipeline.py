@@ -167,7 +167,7 @@ class RagPipeline:
                 timeout=VECTORDB_TIMEOUT,
                 task_description=f"get_workspace({workspace})",
             )
-            if not ws or ws["partition_name"] not in partition:
+            if not ws or ("all" not in partition and ws["partition_name"] not in partition):
                 logger.warning(
                     "Workspace not found in partition(s) — ignoring workspace filter",
                     workspace=workspace,
