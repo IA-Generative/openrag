@@ -12,7 +12,7 @@ From a chat history, reformulate the user's last message into one or more autono
 - Split complex queries into independent sub-queries, especially for comparisons or multi-dimensional questions.
   - Distinct time periods 
     - "What are the sales figures for Product A in Q1 and Q2?" should give two sub-queries (one per quarter).
-    - "Evolution of carbone footprint in the last 2" should give two sub-queries (one per year).
+    - "Evolution of carbon footprint in the last 2 years" should give two sub-queries (one per year).
 
   - Distinct entities
     - "What are the sales figures for Product A and Product B?" should give two sub-queries (one per product).
