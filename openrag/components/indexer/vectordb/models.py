@@ -162,6 +162,6 @@ class WorkspaceFile(Base):
         nullable=False,
         index=True,
     )
-    file_id = Column(String, nullable=False, index=True)
+    file_id = Column(String, ForeignKey("files.file_id", ondelete="CASCADE"), nullable=False, index=True)
 
     __table_args__ = (UniqueConstraint("workspace_id", "file_id", name="uix_workspace_file"),)
