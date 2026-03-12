@@ -8,6 +8,7 @@ from components.prompts import (
     SPOKEN_STYLE_ANSWER_PROMPT,
     SYS_PROMPT_TMPLT,
 )
+from components.ray_utils import call_ray_actor_with_timeout
 from components.websearch import WebSearchFactory
 from config import load_config
 from langchain_core.documents.base import Document
@@ -22,6 +23,7 @@ from .utils import SOURCE_SEPARATOR, format_context, format_web_context
 
 logger = get_logger()
 config = load_config()
+VECTORDB_TIMEOUT = config.ray.indexer.get("vectordb_timeout", 30)
 
 
 class RAGMODE(Enum):
@@ -160,7 +162,11 @@ class RagPipeline:
         top_k = config.map_reduce["max_total_documents"] if use_map_reduce else None
         if workspace:
             vectordb = ray.get_actor("Vectordb", namespace="openrag")
-            ws = await vectordb.get_workspace.remote(workspace)
+            ws = await call_ray_actor_with_timeout(
+                vectordb.get_workspace.remote(workspace),
+                timeout=VECTORDB_TIMEOUT,
+                task_description=f"get_workspace({workspace})",
+            )
             if not ws or ws["partition_name"] not in partition:
                 logger.warning(
                     "Workspace not found in partition(s) — ignoring workspace filter",

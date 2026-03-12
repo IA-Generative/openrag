@@ -1,8 +1,13 @@
+from components.ray_utils import call_ray_actor_with_timeout
 from components.retriever import _expand_with_related_chunks
+from config import load_config
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from utils.dependencies import get_indexer, get_vectordb
 from utils.logger import get_logger
+
+_config = load_config()
+VECTORDB_TIMEOUT = _config.ray.indexer.get("vectordb_timeout", 30)
 
 from .utils import (
     current_user_or_admin_partitions_list,
@@ -83,7 +88,11 @@ async def search_multiple_partitions(
     )
 
     if workspace:
-        ws = await vectordb.get_workspace.remote(workspace)
+        ws = await call_ray_actor_with_timeout(
+            vectordb.get_workspace.remote(workspace),
+            timeout=VECTORDB_TIMEOUT,
+            task_description=f"get_workspace({workspace})",
+        )
         if not ws or ws["partition_name"] not in partitions:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     filter_dict = {"workspace_id": workspace} if workspace else None
@@ -173,7 +182,11 @@ async def search_one_partition(
         include_ancestors=include_ancestors,
     )
     if workspace:
-        ws = await vectordb.get_workspace.remote(workspace)
+        ws = await call_ray_actor_with_timeout(
+            vectordb.get_workspace.remote(workspace),
+            timeout=VECTORDB_TIMEOUT,
+            task_description=f"get_workspace({workspace})",
+        )
         if not ws or ws["partition_name"] != partition:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     filter_dict = {"workspace_id": workspace} if workspace else None
