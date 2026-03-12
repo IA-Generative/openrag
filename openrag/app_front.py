@@ -276,4 +276,4 @@ async def on_message(message: cl.Message):
                 await msg.update()
         except Exception as e:
             logger.exception("Error during chat completion", error=str(e))
-            await cl.Message(content=f"An error occurred: {e!s}").send()
+            await cl.Message(content=f"An error occurred: {e}").send()
