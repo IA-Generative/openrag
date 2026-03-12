@@ -74,6 +74,14 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/openrag \
     uv run alembic -c openrag/scripts/migrations/alembic/alembic.ini upgrade head
 ```
 
+:::tip[Quick alternative: run inside a running container]
+If your stack is already running, you can apply migrations directly without rebuilding:
+```bash title="Apply migrations via exec"
+docker compose exec -w /app/openrag openrag \
+  /app/.venv/bin/alembic -c scripts/migrations/alembic/alembic.ini upgrade head
+```
+:::
+
 :::tip[Automatic Migrations on Code Update]
 When you pull the latest changes to your local code, check if a new migration script has been added. If so, make sure to apply the migration before restarting the service.
 :::
