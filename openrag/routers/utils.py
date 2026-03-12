@@ -327,9 +327,10 @@ async def check_llm_model_availability(request: Request):
         openai_models = await get_openai_models(base_url=base_url, api_key=api_key, timeout=timeout)
         available_models = {m.id for m in openai_models}
         if model not in available_models:
+            available_str = ", ".join(available_models) if available_models else "(none)"
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"The underlying model '{model}' is not available via this endpoint. Available models: {', '.join(available_models)}",
+                detail=f"The underlying model '{model}' is not available via this endpoint. Available models: {available_str}",
             )
 
     except HTTPException:
