@@ -669,6 +669,17 @@ class PartitionFileManager:
             session.commit()
             return orphaned_file_ids
 
+    def get_existing_file_ids(self, partition: str, file_ids: list[str]) -> set[str]:
+        """Return the subset of *file_ids* that actually exist in *partition*."""
+        with self.Session() as session:
+            result = session.execute(
+                select(File.file_id).where(
+                    File.partition_name == partition,
+                    File.file_id.in_(file_ids),
+                )
+            )
+            return {r[0] for r in result.all()}
+
     def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]):
         with self.Session() as session:
             for fid in file_ids:
