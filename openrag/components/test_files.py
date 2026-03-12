@@ -1,11 +1,9 @@
 import io
-import uuid
 from pathlib import Path
 
-from fastapi import UploadFile
 import pytest
-
 from components.files import save_file_to_disk
+from fastapi import UploadFile
 
 
 @pytest.mark.asyncio
@@ -18,11 +16,7 @@ async def test_save_file_to_disk_writes_content(tmp_path: Path):
 
     dest_dir = tmp_path / "uploads"
 
-    saved_path = await save_file_to_disk(
-        file=upload,
-        dest_dir=dest_dir,
-        chunk_size=4
-    )
+    saved_path = await save_file_to_disk(file=upload, dest_dir=dest_dir, chunk_size=4)
 
     assert saved_path.exists()
     assert saved_path.parent == dest_dir
@@ -34,7 +28,6 @@ async def test_save_file_to_disk_writes_content(tmp_path: Path):
     assert saved_content == content
 
 
-
 @pytest.mark.asyncio
 async def test_save_file_to_disk_with_random_prefix(tmp_path, monkeypatch):
 
@@ -42,9 +35,7 @@ async def test_save_file_to_disk_with_random_prefix(tmp_path, monkeypatch):
         assert filename == "test.txt"
         return "PREFIX_1234_test.txt"
 
-    monkeypatch.setattr(
-        "components.files.make_unique_filename", fake_make_unique_filename
-    )
+    monkeypatch.setattr("components.files.make_unique_filename", fake_make_unique_filename)
 
     file_content = b"hello world"
     upload = UploadFile(

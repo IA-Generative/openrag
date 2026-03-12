@@ -1,11 +1,11 @@
-from pathlib import Path
-import aiofiles
-from fastapi import UploadFile
-import consts
-import time
-import secrets
 import asyncio
-from typing import Dict, Optional
+import secrets
+import time
+from pathlib import Path
+
+import aiofiles
+import consts
+from fastapi import UploadFile
 
 
 def make_unique_filename(filename: str) -> Path:
@@ -44,7 +44,7 @@ async def save_file_to_disk(
     return file_path
 
 
-async def serialize_file(task_id: str, path: str, metadata: Optional[Dict] = {}):
+async def serialize_file(task_id: str, path: str, metadata: dict | None = {}):
     import ray
     from ray.exceptions import TaskCancelledError
 
@@ -64,6 +64,5 @@ async def serialize_file(task_id: str, path: str, metadata: Optional[Dict] = {})
         except Exception:
             raise
     else:
-
         ray.cancel(future, recursive=True)
         raise TimeoutError(f"Serialization task {task_id} timed out after seconds")

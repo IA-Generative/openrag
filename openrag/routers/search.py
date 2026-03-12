@@ -6,14 +6,14 @@ from fastapi.responses import JSONResponse
 from utils.dependencies import get_indexer, get_vectordb
 from utils.logger import get_logger
 
-_config = load_config()
-VECTORDB_TIMEOUT = _config.ray.indexer.get("vectordb_timeout", 30)
-
 from .utils import (
     current_user_or_admin_partitions_list,
     require_partition_viewer,
     require_partitions_viewer,
 )
+
+_config = load_config()
+VECTORDB_TIMEOUT = _config.ray.indexer.get("vectordb_timeout", 30)
 
 logger = get_logger()
 
