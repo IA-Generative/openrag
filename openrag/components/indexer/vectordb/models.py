@@ -143,6 +143,7 @@ class Workspace(Base):
         String,
         ForeignKey("partitions.partition", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     display_name = Column(String, nullable=True)
