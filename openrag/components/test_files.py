@@ -30,7 +30,6 @@ async def test_save_file_to_disk_writes_content(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_save_file_to_disk_with_random_prefix(tmp_path, monkeypatch):
-
     def fake_make_unique_filename(filename: str) -> str:
         assert filename == "test.txt"
         return "PREFIX_1234_test.txt"
