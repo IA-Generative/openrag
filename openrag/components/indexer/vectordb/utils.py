@@ -634,14 +634,23 @@ class PartitionFileManager:
             }
 
     def delete_workspace(self, workspace_id: str) -> list[str]:
-        """Delete workspace, return list of orphaned file_ids (files only in this workspace)."""
+        """Delete workspace, return list of orphaned file_ids (files only in this workspace).
+
+        A file is only considered orphaned (and eligible for deletion) if it:
+        - exists in this workspace, AND
+        - does not appear in any other workspace, AND
+        - was not independently indexed into the partition (i.e. not in the files table)
+        """
         with self.Session() as session:
-            # Find files only in this workspace (not in any other)
-            subq = select(WorkspaceFile.file_id).where(WorkspaceFile.workspace_id != workspace_id).subquery()
+            # Files present in at least one other workspace
+            subq_other_ws = select(WorkspaceFile.file_id).where(WorkspaceFile.workspace_id != workspace_id).subquery()
+            # Files that were independently indexed (present in the files table)
+            subq_indexed = select(File.file_id).subquery()
             result = session.execute(
                 select(WorkspaceFile.file_id)
                 .where(WorkspaceFile.workspace_id == workspace_id)
-                .where(WorkspaceFile.file_id.notin_(select(subq.c.file_id)))
+                .where(WorkspaceFile.file_id.notin_(select(subq_other_ws.c.file_id)))
+                .where(WorkspaceFile.file_id.notin_(select(subq_indexed.c.file_id)))
             )
             orphaned_file_ids = [r[0] for r in result.all()]
 
