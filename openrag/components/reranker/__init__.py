@@ -1,6 +1,6 @@
 from .base import BaseReranker
 from .infinity import InfinityReranker
-from .openai_reranker import OpenAIReranker
+from .openai import OpenAIReranker
 
 RERANKER_MAPPING = {
     "infinity": InfinityReranker,

@@ -53,4 +53,4 @@ class InfinityReranker(BaseReranker):
                     model_name=self.model_name,
                     documents_count=len(documents),
                 )
-                raise e
+                return documents[:top_k]
