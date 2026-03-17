@@ -20,7 +20,7 @@ from utils.logger import get_logger
 
 from .llm import LLM
 from .map_reduce import RAGMapReduce
-from .reranker import Reranker
+from .reranker import BaseReranker, RerankerFactory
 from .retriever import BaseRetriever, RetrieverFactory
 from .utils import SOURCE_SEPARATOR
 
@@ -49,8 +49,8 @@ class RetrieverPipeline:
         self.retriever: BaseRetriever = RetrieverFactory.create_retriever(config=config)
 
         # reranker
-        self.reranker_enabled = config.reranker.enable
-        self.reranker = Reranker(logger, config)
+        self.reranker_enabled = config.reranker.get("enabled", True)
+        self.reranker: BaseReranker = RerankerFactory.get_reranker(config)
         logger.debug("Reranker", enabled=self.reranker_enabled)
         self.reranker_top_k = config.reranker.top_k
 
