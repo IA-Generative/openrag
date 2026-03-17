@@ -548,6 +548,7 @@ class PartitionFileManager:
                         relationship_id, 0 as depth
                     FROM files
                     WHERE file_id = :file_id AND partition_name = :partition
+                        AND relationship_id IS NOT NULL
 
                     UNION ALL
 
@@ -557,6 +558,7 @@ class PartitionFileManager:
                     FROM files f
                     INNER JOIN ancestors a ON f.file_id = a.parent_id
                         AND f.partition_name = a.partition_name
+                        AND f.relationship_id IS NOT NULL
                     {depth_condition}
                 )
                 SELECT * FROM ancestors ORDER BY depth DESC
