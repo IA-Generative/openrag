@@ -71,9 +71,10 @@ class BaseVectorDB(ABC):
         self,
         query: str,
         top_k: int = 5,
-        similarity_threshold: int = 0.60,
+        similarity_threshold: float = 0.60,
         partition: list[str] = None,
-        filter: dict | None = None,
+        filter: str | None = None,
+        filter_params: dict | None = None,
         with_surrounding_chunks: bool = False,
     ) -> list[Document]:
         pass
@@ -84,8 +85,9 @@ class BaseVectorDB(ABC):
         partition: list[str],
         queries: list[str],
         top_k_per_query: int = 5,
-        similarity_threshold: int = 0.6,
-        filter: dict | None = None,
+        similarity_threshold: float = 0.6,
+        filter: str | None = None,
+        filter_params: dict | None = None,
         with_surrounding_chunks: bool = False,
     ) -> list[Document]:
         pass
@@ -95,7 +97,7 @@ class BaseVectorDB(ABC):
         pass
 
     @abstractmethod
-    async def get_file_chunks(self, file_id: str, partition: str, include_id: bool = False, limit: int = 100):
+    async def get_file_chunks(self, file_id: str, partition: str, include_id: bool = False, limit: int = 2000):
         pass
 
     @abstractmethod
@@ -379,6 +381,7 @@ class MilvusDB(BaseVectorDB):
             entities = []
             vectors = await self.embedder.aembed_documents(chunks)
             order_metadata_l: list[dict] = _gen_chunk_order_metadata(n=len(chunks))
+
             for chunk, vector, order_metadata in zip(chunks, vectors, order_metadata_l):
                 entities.append(
                     {
@@ -425,6 +428,7 @@ class MilvusDB(BaseVectorDB):
         top_k_per_query=5,
         similarity_threshold=0.6,
         filter=None,
+        filter_params=None,
         with_surrounding_chunks=False,
     ) -> list[Document]:
         # Gather all search tasks concurrently
@@ -435,6 +439,7 @@ class MilvusDB(BaseVectorDB):
                 similarity_threshold=similarity_threshold,
                 partition=partition,
                 filter=filter,
+                filter_params=filter_params,
                 with_surrounding_chunks=with_surrounding_chunks,
             )
             for query in queries
@@ -452,9 +457,10 @@ class MilvusDB(BaseVectorDB):
         self,
         query: str,
         top_k: int = 5,
-        similarity_threshold: int = 0.80,
+        similarity_threshold: float = 0.60,
         partition: list[str] = None,
-        filter: dict | None = None,
+        filter: str | None = None,
+        filter_params: dict | None = None,
         with_surrounding_chunks: bool = False,
     ) -> list[Document]:
         expr_parts = []
@@ -462,15 +468,23 @@ class MilvusDB(BaseVectorDB):
             expr_parts.append(f"partition in {partition}")
 
         if filter:
-            filter = dict(filter)  # don't mutate caller's dict
-            if "workspace_id" in filter:
-                workspace_id = filter.pop("workspace_id")
+            expr_parts.append(filter)
+
+        if filter_params:
+            # Don't mutate the caller's dict — concurrent calls may share it
+            filter_params = dict(filter_params)
+            if "workspace_id" in filter_params:
+                workspace_id = filter_params.pop(
+                    "workspace_id"
+                )  # workspace_id is only used for filtering in the partition_file_manager, not in Milvus directly
                 ws = self.partition_file_manager.get_workspace(workspace_id)
                 if not ws:
                     return []  # Workspace not found → no results
+
                 file_ids = self.partition_file_manager.list_workspace_files(workspace_id)
                 if not file_ids:
                     return []  # Empty workspace → no results
+
                 # Pin to the workspace's own partition regardless of the requested
                 # partition set — file_id is only unique per (file_id, partition_name)
                 # so a cross-partition search could otherwise return chunks from a
@@ -479,13 +493,13 @@ class MilvusDB(BaseVectorDB):
                 # Replace any outer partition filter with the workspace's partition
                 expr_parts = [p for p in expr_parts if not p.startswith("partition in ")]
                 expr_parts.append(f'partition == "{ws_partition}"')
+
                 id_list = ", ".join(f'"{fid}"' for fid in file_ids)
-                expr_parts.append(f"file_id in [{id_list}]")
-            for key, value in filter.items():
-                expr_parts.append(f"{key} == '{value}'")
+                expr_parts.append(f"file_id IN [{id_list}]")
 
         # Join all parts with " and " only if there are multiple conditions
         expr = " and ".join(expr_parts) if expr_parts else ""
+        filter_params = filter_params or {}
 
         try:
             query_vector = await self.embedder.aembed_query(query)
@@ -502,6 +516,7 @@ class MilvusDB(BaseVectorDB):
                 },
                 "limit": top_k,
                 "expr": expr,
+                "expr_params": filter_params,
             }
             if self.hybrid_search:
                 sparse_param = {
@@ -513,6 +528,7 @@ class MilvusDB(BaseVectorDB):
                     },
                     "limit": top_k,
                     "expr": expr,
+                    "expr_params": filter_params,
                 }
                 reqs = [
                     AnnSearchRequest(**vector_param),
@@ -526,10 +542,24 @@ class MilvusDB(BaseVectorDB):
                     limit=top_k,
                 )
             else:
+                vector_param = {
+                    "data": [query_vector],
+                    "anns_field": "vector",
+                    "search_params": {
+                        "metric_type": "COSINE",
+                        "params": {
+                            "ef": 64,
+                            "radius": similarity_threshold,
+                            "range_filter": 1.0,
+                        },
+                    },
+                    "limit": top_k,
+                }
                 response = await self._async_client.search(
                     collection_name=self.collection_name,
                     output_fields=["*"],
-                    limit=top_k,
+                    filter=expr,
+                    filter_params=filter_params,
                     **vector_param,
                 )
 
@@ -637,33 +667,29 @@ class MilvusDB(BaseVectorDB):
                 file_id=file_id,
             )
 
-    async def get_file_chunks(self, file_id: str, partition: str, include_id: bool = False, limit: int = 100):
+    async def get_file_chunks(self, file_id: str, partition: str, include_id: bool = False, limit: int = 2000):
         log = self.logger.bind(file_id=file_id, partition=partition)
         try:
             self._check_file_exists(file_id, partition)
-            # Adjust filter expression based on the type of value
-            filter_expression = "partition == {partition} and file_id == {file_id}"
-            filter_params = {"partition": partition, "file_id": file_id}
-
-            # Pagination parameters
-            offset = 0
-            results = []
+            filter_expr = f'partition == "{partition}" and file_id == "{file_id}"'
             excluded_keys = ["text", "vector", "_id"] if not include_id else ["text", "vector"]
 
-            while True:
-                response = await self._async_client.query(
-                    collection_name=self.collection_name,
-                    filter=filter_expression,
-                    filter_params=filter_params,
-                    limit=limit,
-                    offset=offset,
-                )
-
-                if not response:
-                    break  # No more results
-
-                results.extend(response)
-                offset += len(response)  # Move offset forward
+            results = []
+            iterator = self._client.query_iterator(
+                collection_name=self.collection_name,
+                filter=filter_expr,
+                limit=limit,
+                batch_size=min(limit, 16000),
+                output_fields=["*"],
+            )
+            try:
+                while True:
+                    batch = iterator.next()
+                    if not batch:
+                        break
+                    results.extend(batch)
+            finally:
+                iterator.close()
 
             docs = [
                 Document(
@@ -859,20 +885,22 @@ class MilvusDB(BaseVectorDB):
                 output_fields=["*"],
             )
 
-            while True:
-                result = iterator.next()
-                if not result:
-                    iterator.close()
-                    break
-                chunks.extend(
-                    [
-                        Document(
-                            page_content=res["text"],
-                            metadata=prepare_metadata(res),
-                        )
-                        for res in result
-                    ]
-                )
+            try:
+                while True:
+                    result = iterator.next()
+                    if not result:
+                        break
+                    chunks.extend(
+                        [
+                            Document(
+                                page_content=res["text"],
+                                metadata=prepare_metadata(res),
+                            )
+                            for res in result
+                        ]
+                    )
+            finally:
+                iterator.close()
 
             return chunks
 
