@@ -203,10 +203,17 @@ class Indexer:
 
             # Restore workspace memberships that existed before the delete.
             if workspace_ids:
-                await asyncio.gather(
-                    *[vectordb.add_files_to_workspace.remote(ws_id, [file_id]) for ws_id in workspace_ids]
-                )
-                log.debug("Restored workspace memberships after metadata update.", workspace_ids=workspace_ids)
+                try:
+                    await asyncio.gather(
+                        *[vectordb.add_files_to_workspace.remote(ws_id, [file_id]) for ws_id in workspace_ids]
+                    )
+                    log.debug("Restored workspace memberships after metadata update.", workspace_ids=workspace_ids)
+                except Exception as ws_err:
+                    log.warning(
+                        "Failed to restore workspace memberships; file is indexed but workspace links may be incomplete.",
+                        error=str(ws_err),
+                        workspace_ids=workspace_ids,
+                    )
 
             log.info("Metadata updated for file.")
         except Exception as e:

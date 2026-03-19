@@ -39,6 +39,7 @@ logger = get_logger()
 # load config
 config = load_config()
 DATA_DIR = config.paths.data_dir
+VECTORDB_TIMEOUT = config.ray.indexer.get("vectordb_timeout", 30)
 
 FORBIDDEN_CHARS_IN_FILE_ID = set("/")  # set('"<>#%{}|\\^`[]')
 LOG_FILE = Path(config.paths.log_dir or "logs") / "app.json"
@@ -272,7 +273,11 @@ async def put_file(
         )
 
     # Snapshot workspace memberships before deletion so they can be restored on the new version.
-    existing_workspace_ids = await vectordb.get_file_workspaces.remote(file_id, partition)
+    existing_workspace_ids = await call_ray_actor_with_timeout(
+        future=vectordb.get_file_workspaces.remote(file_id, partition),
+        timeout=VECTORDB_TIMEOUT,
+        task_description=f"get_file_workspaces({file_id}, {partition})",
+    )
 
     # Delete the existing file from the vector database
     await indexer.delete_file.remote(file_id, partition)

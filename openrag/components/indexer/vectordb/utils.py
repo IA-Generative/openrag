@@ -634,33 +634,22 @@ class PartitionFileManager:
             }
 
     def delete_workspace(self, workspace_id: str) -> list[str]:
-        """Delete workspace, return list of orphaned file_ids (files only in this workspace).
+        """Delete workspace, return list of orphaned file_ids.
 
-        A file is only considered orphaned (and eligible for deletion) if it:
-        - exists in this workspace, AND
-        - does not appear in any other workspace, AND
-        - was not independently indexed into the partition (i.e. not in the files table)
+        A file is orphaned if it belongs to this workspace and no other.
+        Since WorkspaceFile.file_id is now an integer FK to files.id, every
+        workspace file has a backing files row, so the only condition is
+        "not present in any other workspace".
         """
         with self.Session() as session:
-            # Fetch the workspace's partition so we can scope the indexed-files check correctly.
-            workspace = session.execute(
-                select(Workspace).where(Workspace.workspace_id == workspace_id)
-            ).scalar_one_or_none()
-            if workspace is None:
-                return []
-            partition = workspace.partition_name
-
-            # Files present in at least one other workspace
+            # File PKs present in at least one other workspace
             subq_other_ws = select(WorkspaceFile.file_id).where(WorkspaceFile.workspace_id != workspace_id)
-            # Files that were independently indexed in the same partition.
-            # Scoped to the partition so a same-named file in another partition
-            # does not incorrectly block orphan detection here.
-            subq_indexed = select(File.file_id).where(File.partition_name == partition)
+            # Orphaned = in this workspace, not in any other
             result = session.execute(
-                select(WorkspaceFile.file_id)
+                select(File.file_id)
+                .join(WorkspaceFile, WorkspaceFile.file_id == File.id)
                 .where(WorkspaceFile.workspace_id == workspace_id)
                 .where(WorkspaceFile.file_id.notin_(subq_other_ws))
-                .where(WorkspaceFile.file_id.notin_(subq_indexed))
             )
             orphaned_file_ids = [r[0] for r in result.all()]
 
@@ -682,8 +671,20 @@ class PartitionFileManager:
 
     def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]):
         with self.Session() as session:
+            # Resolve the workspace's partition to scope the File lookup
+            workspace = session.execute(
+                select(Workspace).where(Workspace.workspace_id == workspace_id)
+            ).scalar_one_or_none()
+            if workspace is None:
+                return
+            partition = workspace.partition_name
             for fid in file_ids:
-                stmt = pg_insert(WorkspaceFile).values(workspace_id=workspace_id, file_id=fid)
+                file_row = session.execute(
+                    select(File.id).where(File.file_id == fid, File.partition_name == partition)
+                ).scalar_one_or_none()
+                if file_row is None:
+                    continue
+                stmt = pg_insert(WorkspaceFile).values(workspace_id=workspace_id, file_id=file_row)
                 stmt = stmt.on_conflict_do_nothing(constraint="uix_workspace_file")
                 session.execute(stmt)
             session.commit()
@@ -691,10 +692,17 @@ class PartitionFileManager:
     def remove_file_from_workspace(self, workspace_id: str, file_id: str) -> bool:
         """Remove a file from a workspace. Returns True if the association existed, False otherwise."""
         with self.Session() as session:
+            file_pk = session.execute(
+                select(File.id)
+                .join(Workspace, Workspace.partition_name == File.partition_name)
+                .where(Workspace.workspace_id == workspace_id, File.file_id == file_id)
+            ).scalar_one_or_none()
+            if file_pk is None:
+                return False
             result = session.execute(
                 delete(WorkspaceFile).where(
                     WorkspaceFile.workspace_id == workspace_id,
-                    WorkspaceFile.file_id == file_id,
+                    WorkspaceFile.file_id == file_pk,
                 )
             )
             session.commit()
@@ -702,16 +710,25 @@ class PartitionFileManager:
 
     def list_workspace_files(self, workspace_id: str) -> list[str]:
         with self.Session() as session:
-            result = session.execute(select(WorkspaceFile.file_id).where(WorkspaceFile.workspace_id == workspace_id))
+            result = session.execute(
+                select(File.file_id)
+                .join(WorkspaceFile, WorkspaceFile.file_id == File.id)
+                .where(WorkspaceFile.workspace_id == workspace_id)
+            )
             return [r[0] for r in result.all()]
 
     def get_file_workspaces(self, file_id: str, partition: str) -> list[str]:
         """Return the workspace IDs that contain the given file, scoped to the given partition."""
         with self.Session() as session:
+            file_pk = session.execute(
+                select(File.id).where(File.file_id == file_id, File.partition_name == partition)
+            ).scalar_one_or_none()
+            if file_pk is None:
+                return []
             ws_ids = select(Workspace.workspace_id).where(Workspace.partition_name == partition)
             result = session.execute(
                 select(WorkspaceFile.workspace_id).where(
-                    WorkspaceFile.file_id == file_id,
+                    WorkspaceFile.file_id == file_pk,
                     WorkspaceFile.workspace_id.in_(ws_ids),
                 )
             )
@@ -720,10 +737,15 @@ class PartitionFileManager:
     def remove_file_from_all_workspaces(self, file_id: str, partition: str):
         """Remove file from all workspaces in the given partition — called during file deletion."""
         with self.Session() as session:
+            file_pk = session.execute(
+                select(File.id).where(File.file_id == file_id, File.partition_name == partition)
+            ).scalar_one_or_none()
+            if file_pk is None:
+                return
             ws_ids = select(Workspace.workspace_id).where(Workspace.partition_name == partition)
             session.execute(
                 delete(WorkspaceFile).where(
-                    WorkspaceFile.file_id == file_id,
+                    WorkspaceFile.file_id == file_pk,
                     WorkspaceFile.workspace_id.in_(ws_ids),
                 )
             )
