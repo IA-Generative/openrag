@@ -634,14 +634,33 @@ class PartitionFileManager:
             }
 
     def delete_workspace(self, workspace_id: str) -> list[str]:
-        """Delete workspace, return list of orphaned file_ids (files only in this workspace)."""
+        """Delete workspace, return list of orphaned file_ids (files only in this workspace).
+
+        A file is only considered orphaned (and eligible for deletion) if it:
+        - exists in this workspace, AND
+        - does not appear in any other workspace, AND
+        - was not independently indexed into the partition (i.e. not in the files table)
+        """
         with self.Session() as session:
-            # Find files only in this workspace (not in any other)
-            subq = select(WorkspaceFile.file_id).where(WorkspaceFile.workspace_id != workspace_id).subquery()
+            # Fetch the workspace's partition so we can scope the indexed-files check correctly.
+            workspace = session.execute(
+                select(Workspace).where(Workspace.workspace_id == workspace_id)
+            ).scalar_one_or_none()
+            if workspace is None:
+                return []
+            partition = workspace.partition_name
+
+            # Files present in at least one other workspace
+            subq_other_ws = select(WorkspaceFile.file_id).where(WorkspaceFile.workspace_id != workspace_id)
+            # Files that were independently indexed in the same partition.
+            # Scoped to the partition so a same-named file in another partition
+            # does not incorrectly block orphan detection here.
+            subq_indexed = select(File.file_id).where(File.partition_name == partition)
             result = session.execute(
                 select(WorkspaceFile.file_id)
                 .where(WorkspaceFile.workspace_id == workspace_id)
-                .where(WorkspaceFile.file_id.notin_(select(subq.c.file_id)))
+                .where(WorkspaceFile.file_id.notin_(subq_other_ws))
+                .where(WorkspaceFile.file_id.notin_(subq_indexed))
             )
             orphaned_file_ids = [r[0] for r in result.all()]
 
