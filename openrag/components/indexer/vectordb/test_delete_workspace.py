@@ -74,10 +74,19 @@ class DeleteWorkspaceHelper:
         from sqlalchemy import delete, select
 
         with self.Session() as session:
+            workspace = session.execute(
+                select(WorkspaceModel).where(WorkspaceModel.workspace_id == workspace_id)
+            ).scalar_one_or_none()
+            if workspace is None:
+                return []
+            partition = workspace.partition_name
+
             subq_other_ws = (
                 select(WorkspaceFileModel.file_id).where(WorkspaceFileModel.workspace_id != workspace_id).subquery()
             )
-            subq_indexed = select(FileModel.file_id).subquery()
+            # Scoped to the workspace's partition so a same-named file in another
+            # partition does not incorrectly prevent orphan detection here.
+            subq_indexed = select(FileModel.file_id).where(FileModel.partition_name == partition).subquery()
             result = session.execute(
                 select(WorkspaceFileModel.file_id)
                 .where(WorkspaceFileModel.workspace_id == workspace_id)
@@ -160,3 +169,16 @@ def test_empty_workspace_returns_no_orphans(db):
     orphans = db.delete_workspace("ws1")
 
     assert orphans == []
+
+
+def test_file_indexed_in_different_partition_is_still_orphaned(db):
+    """A file_id that exists in the files table under a *different* partition must
+    not prevent orphan detection in the workspace's own partition."""
+    db.add_file("p2", "doc.pdf")  # indexed in p2, NOT in p1
+    db.add_workspace("ws1", "p1")
+    db.add_file_to_workspace("ws1", "doc.pdf")  # workspace lives in p1
+
+    orphans = db.delete_workspace("ws1")
+
+    # doc.pdf is not indexed in p1, so it is a true orphan of ws1
+    assert orphans == ["doc.pdf"]

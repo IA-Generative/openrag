@@ -642,10 +642,20 @@ class PartitionFileManager:
         - was not independently indexed into the partition (i.e. not in the files table)
         """
         with self.Session() as session:
+            # Fetch the workspace's partition so we can scope the indexed-files check correctly.
+            workspace = session.execute(
+                select(Workspace).where(Workspace.workspace_id == workspace_id)
+            ).scalar_one_or_none()
+            if workspace is None:
+                return []
+            partition = workspace.partition_name
+
             # Files present in at least one other workspace
             subq_other_ws = select(WorkspaceFile.file_id).where(WorkspaceFile.workspace_id != workspace_id).subquery()
-            # Files that were independently indexed (present in the files table)
-            subq_indexed = select(File.file_id).subquery()
+            # Files that were independently indexed in the same partition.
+            # Scoped to the partition so a same-named file in another partition
+            # does not incorrectly block orphan detection here.
+            subq_indexed = select(File.file_id).where(File.partition_name == partition).subquery()
             result = session.execute(
                 select(WorkspaceFile.file_id)
                 .where(WorkspaceFile.workspace_id == workspace_id)
