@@ -693,6 +693,52 @@ class MilvusDB(BaseVectorDB):
                 file_id=file_id,
             )
 
+    async def delete_chunks_by_ids(self, chunk_ids: list[int]):
+        """Delete specific Milvus chunks by their _id primary keys."""
+        if not chunk_ids:
+            return
+        try:
+            await self._async_client.delete(
+                collection_name=self.collection_name,
+                ids=chunk_ids,
+            )
+            self.logger.info("Deleted old chunks by ID.", count=len(chunk_ids))
+        except MilvusException as e:
+            self.logger.exception("Failed to delete old chunks by ID", error=str(e))
+            raise VDBDeleteError(
+                f"Failed to delete old chunks by ID: {e!s}",
+                collection_name=self.collection_name,
+            )
+
+    async def get_file_chunk_ids(self, file_id: str, partition: str) -> list[int]:
+        """Return the Milvus _id values for all chunks of a file."""
+        try:
+            results = []
+            offset = 0
+            limit = 100
+            while True:
+                response = await self._async_client.query(
+                    collection_name=self.collection_name,
+                    filter="partition == {partition} and file_id == {file_id}",
+                    filter_params={"partition": partition, "file_id": file_id},
+                    output_fields=["_id"],
+                    limit=limit,
+                    offset=offset,
+                )
+                if not response:
+                    break
+                results.extend(r["_id"] for r in response)
+                offset += len(response)
+            return results
+        except MilvusException as e:
+            self.logger.exception("Failed to get file chunk IDs", error=str(e))
+            raise VDBSearchError(
+                f"Failed to get file chunk IDs for {file_id}: {e!s}",
+                collection_name=self.collection_name,
+                partition=partition,
+                file_id=file_id,
+            )
+
     async def upsert_file_metadata(self, file_id: str, partition: str, metadata: dict):
         """Update metadata on all chunks of a file in-place via Milvus upsert.
 
@@ -757,11 +803,18 @@ class MilvusDB(BaseVectorDB):
             )
 
     async def add_documents_for_existing_file(self, chunks: list[Document], user: dict) -> None:
-        """Insert new chunks into Milvus for a file that already exists in PostgreSQL.
+        """Replace Milvus chunks for a file that already exists in PostgreSQL.
 
-        Used by PUT (file replace): the PostgreSQL File row is preserved and updated
-        in-place, so this method only handles Milvus insertion + PG metadata update.
-        Unlike async_add_documents, it does NOT create a new File row or check for duplicates.
+        Used by PUT (file replace). The flow is insert-before-delete so the file
+        is never left in a half-replaced state:
+        1. Snapshot old chunk _id values
+        2. Embed and insert new chunks
+        3. Delete old chunks by _id
+        4. Update the PostgreSQL File row in-place
+
+        If step 2 fails, old chunks remain intact. If step 3 fails, we have
+        duplicates temporarily but no data loss — a retry or manual cleanup
+        can resolve it.
         """
         try:
             file_metadata = dict(chunks[0].metadata)
@@ -772,6 +825,10 @@ class MilvusDB(BaseVectorDB):
 
             self.logger.bind(partition=partition, file_id=file_id, filename=file_metadata.get("filename"))
 
+            # 1. Snapshot old chunk _id values before inserting new ones.
+            old_chunk_ids = await self.get_file_chunk_ids(file_id, partition)
+
+            # 2. Embed and insert new chunks.
             entities = []
             vectors = await self.embedder.aembed_documents(chunks)
             order_metadata_l: list[dict] = _gen_chunk_order_metadata(n=len(chunks))
@@ -790,7 +847,10 @@ class MilvusDB(BaseVectorDB):
                 data=entities,
             )
 
-            # Update existing PostgreSQL file record in-place (preserves files.id PK)
+            # 3. Delete old chunks by _id (new ones are already durable).
+            await self.delete_chunks_by_ids(old_chunk_ids)
+
+            # 4. Update existing PostgreSQL file record in-place (preserves files.id PK)
             self.partition_file_manager.update_file_in_partition(
                 file_id=file_id,
                 partition=partition,

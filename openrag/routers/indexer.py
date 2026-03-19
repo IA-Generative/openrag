@@ -271,13 +271,9 @@ async def put_file(
             detail=f"'{file_id}' not found in partition '{partition}'",
         )
 
-    # Delete only the Milvus chunks — the PostgreSQL File row (and its workspace
-    # FK references) is preserved so workspace memberships survive the replace.
-    await call_ray_actor_with_timeout(
-        future=vectordb.delete_file_chunks.remote(file_id, partition),
-        timeout=VECTORDB_TIMEOUT,
-        task_description=f"delete_file_chunks({file_id}, {partition})",
-    )
+    # No Milvus deletion here. The Indexer's add_file(replace=True) flow uses
+    # insert-before-delete: it snapshots old chunk IDs, inserts new chunks,
+    # then deletes old ones — so the file is never left in a half-replaced state.
 
     save_dir = Path(DATA_DIR)
     original_filename = file.filename
