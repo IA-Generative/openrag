@@ -271,15 +271,13 @@ async def put_file(
             detail=f"'{file_id}' not found in partition '{partition}'",
         )
 
-    # Snapshot workspace memberships before deletion so they can be restored on the new version.
-    existing_workspace_ids = await call_ray_actor_with_timeout(
-        future=vectordb.get_file_workspaces.remote(file_id, partition),
+    # Delete only the Milvus chunks — the PostgreSQL File row (and its workspace
+    # FK references) is preserved so workspace memberships survive the replace.
+    await call_ray_actor_with_timeout(
+        future=vectordb.delete_file_chunks.remote(file_id, partition),
         timeout=VECTORDB_TIMEOUT,
-        task_description=f"get_file_workspaces({file_id}, {partition})",
+        task_description=f"delete_file_chunks({file_id}, {partition})",
     )
-
-    # Delete the existing file from the vector database
-    await indexer.delete_file.remote(file_id, partition)
 
     save_dir = Path(DATA_DIR)
     original_filename = file.filename
@@ -301,13 +299,14 @@ async def put_file(
     metadata["created_at"] = datetime.fromtimestamp(file_stat.st_ctime).isoformat()
     metadata["file_id"] = file_id
 
-    # Indexing the file — restore pre-existing workspace memberships on the new version.
+    # Re-index: serialize → chunk → embed → insert into Milvus + update PG row in-place.
+    # replace=True tells add_file to update the existing PG File row rather than creating a new one.
     task = indexer.add_file.remote(
         path=file_path,
         metadata=metadata,
         partition=partition,
         user=user,
-        workspace_ids=existing_workspace_ids or None,
+        replace=True,
     )
     await task_state_manager.set_state.remote(task.task_id().hex(), "QUEUED")
     await task_state_manager.set_object_ref.remote(task.task_id().hex(), {"ref": task})

@@ -668,12 +668,169 @@ class MilvusDB(BaseVectorDB):
                 file_id=file_id,
             )
 
-    async def get_file_chunks(self, file_id: str, partition: str, include_id: bool = False, limit: int = 2000):
+    async def delete_file_chunks(self, file_id: str, partition: str):
+        """Delete file chunks from Milvus only — does NOT touch PostgreSQL or workspace associations.
+
+        Used by PUT (file replace) to remove old Milvus vectors while keeping the
+        PostgreSQL File row intact, preserving workspace FK references.
+        """
+        log = self.logger.bind(file_id=file_id, partition=partition)
+        try:
+            res = await self._async_client.delete(
+                collection_name=self.collection_name,
+                filter=f"partition == '{partition}' and file_id == '{file_id}'",
+            )
+            log.info("Deleted file chunks from Milvus (PG row preserved).", count=res.get("delete_count", 0))
+        except MilvusException as e:
+            log.exception(f"Couldn't delete file chunks for file_id {file_id}", error=str(e))
+            raise VDBDeleteError(
+                f"Couldn't delete file chunks for file_id {file_id}: {e!s}",
+                collection_name=self.collection_name,
+                partition=partition,
+                file_id=file_id,
+            )
+
+    async def upsert_file_metadata(self, file_id: str, partition: str, metadata: dict):
+        """Update metadata on all chunks of a file in-place via Milvus upsert.
+
+        Fetches existing chunks (with _id and vectors), merges new metadata,
+        then upserts back into Milvus. No re-embedding is performed.
+        Also updates the PostgreSQL file record metadata in-place.
+        """
+        log = self.logger.bind(file_id=file_id, partition=partition)
+        try:
+            # Fetch all chunks with their _id and vector so we can upsert without re-embedding.
+            docs = await self.get_file_chunks(file_id, partition, include_id=True, include_vectors=True)
+            if not docs:
+                log.warning("No chunks found for metadata upsert")
+                return
+
+            entities = []
+            for doc in docs:
+                chunk_metadata = dict(doc.metadata)
+                milvus_id = chunk_metadata.pop("_id")
+                vector = chunk_metadata.pop("vector")
+                # Merge new metadata into the chunk metadata
+                chunk_metadata.update(metadata)
+                entities.append(
+                    {
+                        "_id": milvus_id,
+                        "text": doc.page_content,
+                        "vector": vector,
+                        **chunk_metadata,
+                    }
+                )
+
+            await self._async_client.upsert(
+                collection_name=self.collection_name,
+                data=entities,
+            )
+
+            # Build file-level metadata from the first chunk (same as async_add_documents)
+            file_metadata = dict(docs[0].metadata)
+            file_metadata.pop("_id", None)
+            file_metadata.pop("vector", None)
+            file_metadata.pop("page", None)
+            file_metadata.update(metadata)
+            self.partition_file_manager.update_file_metadata_in_db(file_id, partition, file_metadata)
+
+            log.info("Upserted file metadata in-place.", chunk_count=len(entities))
+
+        except MilvusException as e:
+            log.exception("Milvus upsert failed", error=str(e))
+            raise VDBInsertError(
+                f"Couldn't upsert metadata for file {file_id}: {e!s}",
+                collection_name=self.collection_name,
+                partition=partition,
+                file_id=file_id,
+            )
+        except VDBError:
+            raise
+        except Exception as e:
+            log.exception("Unexpected error during metadata upsert", error=str(e))
+            raise UnexpectedVDBError(
+                f"Unexpected error during metadata upsert for {file_id}: {e!s}",
+                collection_name=self.collection_name,
+            )
+
+    async def add_documents_for_existing_file(self, chunks: list[Document], user: dict) -> None:
+        """Insert new chunks into Milvus for a file that already exists in PostgreSQL.
+
+        Used by PUT (file replace): the PostgreSQL File row is preserved and updated
+        in-place, so this method only handles Milvus insertion + PG metadata update.
+        Unlike async_add_documents, it does NOT create a new File row or check for duplicates.
+        """
+        try:
+            file_metadata = dict(chunks[0].metadata)
+            file_metadata.pop("page")
+            file_id, partition = file_metadata.get("file_id"), file_metadata.get("partition")
+            relationship_id = file_metadata.get("relationship_id")
+            parent_id = file_metadata.get("parent_id")
+
+            self.logger.bind(partition=partition, file_id=file_id, filename=file_metadata.get("filename"))
+
+            entities = []
+            vectors = await self.embedder.aembed_documents(chunks)
+            order_metadata_l: list[dict] = _gen_chunk_order_metadata(n=len(chunks))
+            for chunk, vector, order_metadata in zip(chunks, vectors, order_metadata_l):
+                entities.append(
+                    {
+                        "text": chunk.page_content,
+                        "vector": vector,
+                        **order_metadata,
+                        **chunk.metadata,
+                    }
+                )
+
+            await self._async_client.insert(
+                collection_name=self.collection_name,
+                data=entities,
+            )
+
+            # Update existing PostgreSQL file record in-place (preserves files.id PK)
+            self.partition_file_manager.update_file_in_partition(
+                file_id=file_id,
+                partition=partition,
+                file_metadata=file_metadata,
+                relationship_id=relationship_id,
+                parent_id=parent_id,
+            )
+            self.logger.info(f"File '{file_id}' chunks replaced in partition '{partition}'")
+
+        except EmbeddingError as e:
+            self.logger.exception("Embedding failed", error=str(e))
+            raise
+        except VDBError as e:
+            self.logger.exception("VectorDB operation failed", error=str(e))
+            raise
+        except Exception as e:
+            self.logger.exception("Unexpected error while adding chunks for existing file", error=str(e))
+            raise UnexpectedVDBError(
+                f"Unexpected error while adding chunks for existing file: {e!s}",
+                collection_name=self.collection_name,
+            )
+
+    async def get_file_chunks(
+        self,
+        file_id: str,
+        partition: str,
+        include_id: bool = False,
+        include_vectors: bool = False,
+        limit: int = 2000,
+    ):
         log = self.logger.bind(file_id=file_id, partition=partition)
         try:
             self._check_file_exists(file_id, partition)
             filter_expr = f'partition == "{partition}" and file_id == "{file_id}"'
-            excluded_keys = ["text", "vector", "_id"] if not include_id else ["text", "vector"]
+            excluded_keys = {"text"}
+            if not include_id:
+                excluded_keys.add("_id")
+            if not include_vectors:
+                excluded_keys.add("vector")
+
+            # Milvus query with output_fields=["*"] returns all scalar fields
+            # but excludes vector fields. To include vectors, request them explicitly.
+            output_fields = ["*", "vector"] if include_vectors else ["*"]
 
             results = []
             iterator = self._client.query_iterator(
@@ -681,7 +838,7 @@ class MilvusDB(BaseVectorDB):
                 filter=filter_expr,
                 limit=limit,
                 batch_size=min(limit, 16000),
-                output_fields=["*"],
+                output_fields=output_fields,
             )
             try:
                 while True:

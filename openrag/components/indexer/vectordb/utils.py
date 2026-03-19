@@ -176,6 +176,63 @@ class PartitionFileManager:
                 log.error(f"Error removing file: {e}")
                 raise e
 
+    def update_file_metadata_in_db(self, file_id: str, partition: str, file_metadata: dict) -> bool:
+        """Update the file_metadata JSON column for an existing file in-place.
+
+        Returns True if the file was found and updated, False otherwise.
+        Unlike remove_file_from_partition + add_file_to_partition, this preserves
+        the files.id primary key so that workspace FK references remain valid.
+        """
+        log = self.logger.bind(file_id=file_id, partition=partition)
+        with self.Session() as session:
+            try:
+                file = session.query(File).filter(File.file_id == file_id, File.partition_name == partition).first()
+                if not file:
+                    log.warning("File not found for metadata update")
+                    return False
+                file.file_metadata = file_metadata
+                session.commit()
+                log.info("Updated file metadata in-place")
+                return True
+            except Exception:
+                session.rollback()
+                log.exception("Error updating file metadata")
+                raise
+
+    def update_file_in_partition(
+        self,
+        file_id: str,
+        partition: str,
+        file_metadata: dict | None = None,
+        relationship_id: str | None = None,
+        parent_id: str | None = None,
+    ) -> bool:
+        """Update an existing file record in-place (for PUT: new content, same file_id).
+
+        Preserves files.id so workspace FK references stay intact.
+        Unlike delete+re-add, this never touches file_count or created_by.
+        """
+        log = self.logger.bind(file_id=file_id, partition=partition)
+        with self.Session() as session:
+            try:
+                file = session.query(File).filter(File.file_id == file_id, File.partition_name == partition).first()
+                if not file:
+                    log.warning("File not found for update")
+                    return False
+                if file_metadata is not None:
+                    file.file_metadata = file_metadata
+                if relationship_id is not None:
+                    file.relationship_id = relationship_id
+                if parent_id is not None:
+                    file.parent_id = parent_id
+                session.commit()
+                log.info("Updated file record in-place")
+                return True
+            except Exception:
+                session.rollback()
+                log.exception("Error updating file in partition")
+                raise
+
     def delete_partition(self, partition: str):
         """Delete a partition and all its files"""
         with self.Session() as session:

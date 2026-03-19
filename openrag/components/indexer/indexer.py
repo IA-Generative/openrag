@@ -72,6 +72,7 @@ class Indexer:
         partition: str | None = None,
         user: dict | None = None,
         workspace_ids: list[str] | None = None,
+        replace: bool = False,
     ):
         task_state_manager = ray.get_actor("TaskStateManager", namespace="openrag")
         task_id = ray.get_runtime_context().get_task_id()
@@ -110,7 +111,12 @@ class Indexer:
             if self.enable_insertion:
                 if chunks:
                     await task_state_manager.set_state.remote(task_id, "INSERTING")
-                    await self.handle.insert_documents.remote(chunks, user=user)
+                    if replace:
+                        # PUT flow: PG File row already exists; insert new Milvus chunks
+                        # and update PG metadata in-place (no File row creation).
+                        await self.handle.replace_file_documents.remote(chunks, user=user)
+                    else:
+                        await self.handle.insert_documents.remote(chunks, user=user)
                     log.info(f"Document {path} indexed successfully")
                 else:
                     log.debug("No chunks to insert !!! Potentially the uploaded file is empty")
@@ -121,8 +127,9 @@ class Indexer:
             # record exists in the DB before we reference it from workspace_files.
             await task_state_manager.set_state.remote(task_id, "COMPLETED")
 
-            # Associate with workspaces only after successful indexing (best-effort)
-            if workspace_ids:
+            # Associate with workspaces only after successful indexing (best-effort).
+            # Not needed for replace=True since the PG row (and its workspace FKs) is preserved.
+            if workspace_ids and not replace:
                 vectordb = ray.get_actor("Vectordb", namespace="openrag")
                 try:
                     await asyncio.gather(
@@ -160,6 +167,16 @@ class Indexer:
         vectordb = ray.get_actor("Vectordb", namespace="openrag")
         await vectordb.async_add_documents.remote(chunks, user)
 
+    @ray.method(concurrency_group="insert")
+    async def replace_file_documents(self, chunks, user):
+        """Insert chunks for an existing file after its old Milvus chunks have been deleted.
+
+        Unlike insert_documents, this calls add_documents_for_existing_file which
+        updates the PostgreSQL File row in-place instead of creating a new one.
+        """
+        vectordb = ray.get_actor("Vectordb", namespace="openrag")
+        await vectordb.add_documents_for_existing_file.remote(chunks, user)
+
     @ray.method(concurrency_group="delete")
     async def delete_file(self, file_id: str, partition: str) -> bool:
         log = self.logger.bind(file_id=file_id, partition=partition)
@@ -191,30 +208,10 @@ class Indexer:
             return
 
         try:
-            docs = await vectordb.get_file_chunks.remote(file_id, partition)
-            for doc in docs:
-                doc.metadata.update(metadata)
-
-            # Snapshot workspace memberships before deletion so they can be restored.
-            workspace_ids = await vectordb.get_file_workspaces.remote(file_id, partition)
-
-            await self.delete_file(file_id, partition)
-            await vectordb.async_add_documents.remote(docs, user=user)
-
-            # Restore workspace memberships that existed before the delete.
-            if workspace_ids:
-                try:
-                    await asyncio.gather(
-                        *[vectordb.add_files_to_workspace.remote(ws_id, [file_id]) for ws_id in workspace_ids]
-                    )
-                    log.debug("Restored workspace memberships after metadata update.", workspace_ids=workspace_ids)
-                except Exception as ws_err:
-                    log.warning(
-                        "Failed to restore workspace memberships; file is indexed but workspace links may be incomplete.",
-                        error=str(ws_err),
-                        workspace_ids=workspace_ids,
-                    )
-
+            # Upsert metadata in-place: updates Milvus chunks (preserving vectors,
+            # no re-embedding) and the PostgreSQL file record. No delete step, so
+            # workspace FK references and file_count are never disturbed.
+            await vectordb.upsert_file_metadata.remote(file_id, partition, metadata)
             log.info("Metadata updated for file.")
         except Exception as e:
             log.error("Error in update_file_metadata", error=str(e))
