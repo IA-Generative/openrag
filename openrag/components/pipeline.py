@@ -55,9 +55,16 @@ class RetrieverPipeline:
         self.reranker_top_k = config.reranker["top_k"]
 
     async def retrieve_docs(
-        self, partition: list[str], query: str, top_k: int | None = None, filter: dict | None = None
+        self,
+        partition: list[str],
+        query: str,
+        top_k: int | None = None,
+        filter: str | None = None,
+        filter_params: dict | None = None,
     ) -> list[Document]:
-        docs = await self.retriever.retrieve(partition=partition, query=query, filter=filter)
+        docs = await self.retriever.retrieve(
+            partition=partition, query=query, filter=filter, filter_params=filter_params
+        )
         logger.debug("Documents retreived", document_count=len(docs))
 
         if docs:
@@ -92,10 +99,11 @@ class RetrieverPipeline:
         partition: list[str],
         search_queries: SearchQueries,
         top_k: int | None = None,
-        filter: dict | None = None,
+        filter: str | None = None,
+        filter_params: dict | None = None,
     ) -> list[Document]:
         tasks = [
-            self.retrieve_docs(partition=partition, query=q, top_k=top_k, filter=filter)
+            self.retrieve_docs(partition=partition, query=q, top_k=top_k, filter=filter, filter_params=filter_params)
             for q in search_queries.query_list
         ]
         results = await asyncio.gather(*tasks)
@@ -214,13 +222,16 @@ class RagPipeline:
                     partition=partition,
                 )
                 workspace = None
-        filter_dict = {"workspace_id": workspace} if workspace else None
+
+        filter_params = {"workspace_id": workspace} if workspace else None
 
         if partition is not None and use_websearch:
             # Run one retrieval and one web search per sub-query, all concurrently (Option C).
             # Web results from different sub-queries are deduplicated by URL, preserving order.
             rag_tasks = [
-                self.retriever_pipeline.retrieve_docs(partition=partition, query=q, top_k=top_k, filter=filter_dict)
+                self.retriever_pipeline.retrieve_docs(
+                    partition=partition, query=q, top_k=top_k, filter_params=filter_params
+                )
                 for q in queries.query_list
             ]
             web_tasks = [self.web_search_service.search(q) for q in queries.query_list]
@@ -240,7 +251,7 @@ class RagPipeline:
                     web_results.append(result)
         elif partition is not None:
             docs = await self.retriever_pipeline.get_relevant_docs(
-                partition=partition, search_queries=queries, top_k=top_k, filter=filter_dict
+                partition=partition, search_queries=queries, top_k=top_k, filter_params=filter_params
             )
             web_results = []
         else:

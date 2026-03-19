@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from components.ray_utils import call_ray_actor_with_timeout
 from components.retriever import _expand_with_related_chunks
 from config import load_config
@@ -20,6 +22,39 @@ logger = get_logger()
 router = APIRouter()
 
 
+class RelatedDocSearchParams:
+    def __init__(
+        self,
+        include_related: bool = Query(False, description="Include chunks from files with same relationship_id"),
+        include_ancestors: bool = Query(False, description="Include chunks from ancestor files in hierarchy"),
+        related_limit: int = Query(20, description="Maximum number of related/ancestor chunks to fetch per result"),
+        max_ancestor_depth: int | None = Query(
+            None, description="Maximum depth of ancestor files to include. None means unlimited."
+        ),
+    ):
+        self.include_related = include_related
+        self.include_ancestors = include_ancestors
+        self.related_limit = related_limit
+        self.max_ancestor_depth = max_ancestor_depth
+
+
+class CommonSearchParams:
+    def __init__(
+        self,
+        text: str = Query(..., description="Text to search semantically"),
+        top_k: int = Query(5, description="Number of top results to return"),
+        similarity_threshold: float = Query(0.6, description="Minimum similarity score for results (0 to 1)"),
+        filter: str | None = Query(
+            default=None,
+            description="""Milvus filter expression string.""",
+        ),
+    ):
+        self.text = text
+        self.top_k = top_k
+        self.similarity_threshold = similarity_threshold
+        self.filter = filter
+
+
 @router.get(
     "",
     description="""Perform semantic search across multiple partitions.
@@ -28,10 +63,21 @@ router = APIRouter()
 - `partitions`: List of partition names (default: ["all"])
 - `text`: Search query text (required)
 - `top_k`: Number of results to return (default: 5)
+- similarity_threshold: Minimum similarity score for results (0 to 1, default: 0.75)
 - `include_related`: Include chunks from files with same relationship_id (default: false)
 - `include_ancestors`: Include chunks from ancestor files in hierarchy (default: false)
 - `related_limit`: Maximum number of related/ancestor chunks to fetch per result (default: 20). This is used when `include_related` or `include_ancestors` is true.
 - `max_ancestor_depth`: Maximum depth of ancestor files to include. None means unlimited. (default: None)
+- `filter`: Milvus filter expression string for additional filtering (optional)
+    Milvus supports the following operators:
+    - Comparison: ==, !=, >, <, >=, <=
+    - Range: IN, LIKE
+    - Logical: AND, OR, NOT (see https://milvus.io/docs/boolean.md)
+    Examples:
+    - `file_id == "abc123"`
+    - `created_at > "2024-01-01"`
+    - `page >= 5 AND page <= 10`
+    - `file_id in ["id1", "id2", "id3"]`
 
 **Behavior:**
 - `partitions=["all"]`: Search all accessible partitions
@@ -60,15 +106,9 @@ Use relationship expansion for context-aware retrieval in email threads or folde
 )
 async def search_multiple_partitions(
     request: Request,
-    partitions: list[str] = Query(default=["all"], description="List of partitions to search"),
-    text: str = Query(..., description="Text to search semantically"),
-    top_k: int = Query(5, description="Number of top results to return"),
-    include_related: bool = Query(False, description="Include chunks from files with same relationship_id"),
-    include_ancestors: bool = Query(False, description="Include chunks from ancestor files in hierarchy"),
-    related_limit: int = Query(20, description="Maximum number of related/ancestor chunks to fetch per result"),
-    max_ancestor_depth: int | None = Query(
-        None, description="Maximum depth of ancestor files to include. None means unlimited."
-    ),
+    search_params: Annotated[CommonSearchParams, Depends()],
+    related_params: Annotated[RelatedDocSearchParams, Depends()],
+    partitions: list[str] | None = Query(default=["all"], description="List of partitions to search"),
     workspace: str | None = Query(None, description="Workspace ID to filter results"),
     indexer=Depends(get_indexer),
     vectordb=Depends(get_vectordb),
@@ -81,12 +121,14 @@ async def search_multiple_partitions(
 
     log = logger.bind(
         partitions=partitions,
-        query=text,
-        top_k=top_k,
-        include_related=include_related,
-        include_ancestors=include_ancestors,
+        query=search_params.text,
+        top_k=search_params.top_k,
+        workspace=workspace,
+        include_related=related_params.include_related,
+        include_ancestors=related_params.include_ancestors,
     )
 
+    filter_params = None
     if workspace:
         ws = await call_ray_actor_with_timeout(
             vectordb.get_workspace.remote(workspace),
@@ -95,22 +137,31 @@ async def search_multiple_partitions(
         )
         if not ws or ws["partition_name"] not in partitions:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
-    filter_dict = {"workspace_id": workspace} if workspace else None
-    results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partitions, filter=filter_dict)
+
+        filter_params = {"workspace_id": workspace}
+
+    results = await indexer.asearch.remote(
+        query=search_params.text,
+        top_k=search_params.top_k,
+        similarity_threshold=search_params.similarity_threshold,
+        partition=partitions,
+        filter=search_params.filter,
+        filter_params=filter_params,
+    )
     log.info(
         "Semantic search on multiple partitions completed.",
         result_count=len(results),
     )
 
     # Expand with related/ancestor chunks if requested
-    if include_related or include_ancestors:
+    if related_params.include_related or related_params.include_ancestors:
         results = await _expand_with_related_chunks(
             results=results,
             db=vectordb,
-            include_related=include_related,
-            include_ancestors=include_ancestors,
-            related_limit=related_limit,
-            max_ancestor_depth=max_ancestor_depth,
+            include_related=related_params.include_related,
+            include_ancestors=related_params.include_ancestors,
+            related_limit=related_params.related_limit,
+            max_ancestor_depth=related_params.max_ancestor_depth,
         )
         log.info(
             "Expanded results with related/ancestor chunks.",
@@ -139,10 +190,21 @@ async def search_multiple_partitions(
 **Query Parameters:**
 - `text`: Search query text (required)
 - `top_k`: Number of results to return (default: 5)
+- similarity_threshold: Minimum similarity score for results (0 to 1, default: 0.75)
 - `include_related`: Include chunks from files with same relationship_id (default: false)
 - `include_ancestors`: Include chunks from ancestor files in hierarchy (default: false)
 - `related_limit`: Maximum number of related/ancestor chunks to fetch per result (default: 20). This is used when `include_related` or `include_ancestors` is true.
 - `max_ancestor_depth`: Maximum depth of ancestor files to include. None means unlimited. (default: None)
+- `filter`: Milvus filter expression string for additional filtering (optional)
+    Milvus supports the following operators:
+    - Comparison: ==, !=, >, <, >=, <=
+    - Range: IN, LIKE
+    - Logical: AND, OR, NOT (see https://milvus.io/docs/boolean.md)
+    Examples:
+    - `file_id == "abc123"`
+    - `created_at > "2024-01-01"`
+    - `page >= 5 AND page <= 10`
+    - `file_id in ["id1", "id2", "id3"]`
 
 **Permissions:**
 - Requires viewer role on the partition
@@ -161,14 +223,8 @@ Use relationship expansion for context-aware retrieval in email threads or folde
 async def search_one_partition(
     request: Request,
     partition: str,
-    text: str = Query(..., description="Text to search semantically"),
-    top_k: int = Query(5, description="Number of top results to return"),
-    include_related: bool = Query(False, description="Include chunks from files with same relationship_id"),
-    include_ancestors: bool = Query(False, description="Include chunks from ancestor files in hierarchy"),
-    related_limit: int = Query(20, description="Maximum number of related/ancestor chunks to fetch per result"),
-    max_ancestor_depth: int | None = Query(
-        None, description="Maximum depth of ancestor files to include. None means unlimited."
-    ),
+    search_params: Annotated[CommonSearchParams, Depends()],
+    related_params: Annotated[RelatedDocSearchParams, Depends()],
     workspace: str | None = Query(None, description="Workspace ID to filter results"),
     indexer=Depends(get_indexer),
     vectordb=Depends(get_vectordb),
@@ -176,11 +232,13 @@ async def search_one_partition(
 ):
     log = logger.bind(
         partition=partition,
-        query=text,
-        top_k=top_k,
-        include_related=include_related,
-        include_ancestors=include_ancestors,
+        query=search_params.text,
+        top_k=search_params.top_k,
+        workspace=workspace,
+        include_related=related_params.include_related,
+        include_ancestors=related_params.include_ancestors,
     )
+    filter_params = None
     if workspace:
         ws = await call_ray_actor_with_timeout(
             vectordb.get_workspace.remote(workspace),
@@ -189,19 +247,29 @@ async def search_one_partition(
         )
         if not ws or ws["partition_name"] != partition:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
-    filter_dict = {"workspace_id": workspace} if workspace else None
-    results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partition, filter=filter_dict)
+
+        filter_params = {"workspace_id": workspace}
+
+    results = await indexer.asearch.remote(
+        query=search_params.text,
+        top_k=search_params.top_k,
+        similarity_threshold=search_params.similarity_threshold,
+        partition=partition,
+        filter=search_params.filter,
+        filter_params=filter_params,
+    )
+
     log.info("Semantic search on single partition completed.", result_count=len(results))
 
     # Expand with related/ancestor chunks if requested
-    if include_related or include_ancestors:
+    if related_params.include_related or related_params.include_ancestors:
         results = await _expand_with_related_chunks(
             results=results,
             db=vectordb,
-            include_related=include_related,
-            include_ancestors=include_ancestors,
-            related_limit=related_limit,
-            max_ancestor_depth=max_ancestor_depth,
+            include_related=related_params.include_related,
+            include_ancestors=related_params.include_ancestors,
+            related_limit=related_params.related_limit,
+            max_ancestor_depth=related_params.max_ancestor_depth,
         )
         log.info(
             "Expanded results with related/ancestor chunks.",
@@ -231,6 +299,17 @@ async def search_one_partition(
 **Query Parameters:**
 - `text`: Search query text (required)
 - `top_k`: Number of results to return (default: 5)
+- similarity_threshold: Minimum similarity score for results (0 to 1, default: 0.75)
+- `filter`: Milvus filter expression string for additional filtering (optional)
+    Milvus supports the following operators:
+    - Comparison: ==, !=, >, <, >=, <=
+    - Range: IN, LIKE
+    - Logical: AND, OR, NOT (see https://milvus.io/docs/boolean.md)
+    Examples:
+    - `file_id == "abc123"`
+    - `created_at > "2024-01-01"`
+    - `page >= 5 AND page <= 10`
+    - `file_id in ["id1", "id2", "id3"]`
 
 **Permissions:**
 - Requires viewer role on the partition
@@ -249,21 +328,24 @@ async def search_file(
     request: Request,
     partition: str,
     file_id: str,
-    text: str = Query(..., description="Text to search semantically"),
-    top_k: int = Query(5, description="Number of top results to return"),
+    search_params: Annotated[CommonSearchParams, Depends()],
     indexer=Depends(get_indexer),
     vectordb=Depends(get_vectordb),
     partition_viewer=Depends(require_partition_viewer),
 ):
-    log = logger.bind(
+    log = logger.bind(partition=partition, file_id=file_id, query=search_params.text, top_k=search_params.top_k)
+
+    filter = "file_id == {_file_id}" + (f" AND {search_params.filter}" if search_params.filter else "")
+    params = {"_file_id": file_id}
+
+    results = await indexer.asearch.remote(
+        query=search_params.text,
+        top_k=search_params.top_k,
+        similarity_threshold=search_params.similarity_threshold,
         partition=partition,
-        file_id=file_id,
-        query=text,
-        top_k=top_k,
-        include_related=False,
-        include_ancestors=False,
+        filter=filter,
+        filter_params=params,
     )
-    results = await indexer.asearch.remote(query=text, top_k=top_k, partition=partition, filter={"file_id": file_id})
     log.info("Semantic search on specific file completed.", result_count=len(results))
 
     documents = [
