@@ -676,9 +676,12 @@ class MilvusDB(BaseVectorDB):
         """
         log = self.logger.bind(file_id=file_id, partition=partition)
         try:
+            # Use parameterized filter to avoid expression injection via
+            # crafted file_id or partition values.
             res = await self._async_client.delete(
                 collection_name=self.collection_name,
-                filter=f"partition == '{partition}' and file_id == '{file_id}'",
+                filter="partition == {partition} and file_id == {file_id}",
+                filter_params={"partition": partition, "file_id": file_id},
             )
             log.info("Deleted file chunks from Milvus (PG row preserved).", count=res.get("delete_count", 0))
         except MilvusException as e:
