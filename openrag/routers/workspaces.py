@@ -1,11 +1,12 @@
 """Workspace management endpoints."""
 
 import asyncio
+import re
 
 from components.ray_utils import call_ray_actor_with_timeout
 from config import load_config
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from utils.dependencies import get_vectordb
 from utils.logger import get_logger
 
@@ -17,12 +18,23 @@ logger = get_logger()
 _config = load_config()
 VECTORDB_TIMEOUT = _config.ray.indexer.get("vectordb_timeout", 30)
 
+_WORKSPACE_ID_RE = re.compile(r"[a-zA-Z0-9_-]+")
+
 
 class CreateWorkspaceRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     workspace_id: str
     display_name: str | None = None
+
+    @field_validator("workspace_id")
+    @classmethod
+    def validate_workspace_id(cls, v: str) -> str:
+        if not v or not _WORKSPACE_ID_RE.fullmatch(v):
+            raise ValueError(
+                "workspace_id must be non-empty and contain only alphanumeric characters, hyphens, or underscores"
+            )
+        return v
 
 
 class AddFilesRequest(BaseModel):
