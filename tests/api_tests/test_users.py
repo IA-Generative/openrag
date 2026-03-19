@@ -38,7 +38,7 @@ class TestUserManagement:
         # Create a new user with quota 10
         create_response = api_client.post(
             "/users/",
-            data={"display_name": "quota_test_user", "file_quota": 10},
+            json={"display_name": "quota_test_user", "file_quota": 10},
         )
         assert create_response.status_code == 201
         user_data = create_response.json()
@@ -47,16 +47,14 @@ class TestUserManagement:
         try:
             # Update the user's quota to 12
             update_response = api_client.patch(
-                f"/users/{user_id}/quota",
-                data={"file_quota": 12},
+                f"/users/{user_id}",
+                json={"file_quota": 12},
             )
             assert update_response.status_code == 200
             update_data = update_response.json()
-            assert "message" in update_data
-            assert str(user_id) in update_data["message"]
-            assert "12" in update_data["message"]
+            assert update_data["file_quota"] == 12
 
-            # check that user user has quota 12
+            # check that user has quota 12
             get_response = api_client.get(f"/users/{user_id}")
             assert get_response.status_code == 200
             get_data = get_response.json()
@@ -70,7 +68,7 @@ class TestUserManagement:
         # Create a user without specifying quota (None)
         create_response = api_client.post(
             "/users/",
-            data={"display_name": "default_quota_user"},
+            json={"display_name": "default_quota_user"},
         )
         assert create_response.status_code == 201
         user_data = create_response.json()

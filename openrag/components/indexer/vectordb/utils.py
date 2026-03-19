@@ -3,6 +3,7 @@ import os
 import secrets
 
 from config import load_config
+from models.user import UserCreate, UserUpdate
 from sqlalchemy import create_engine, delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import sessionmaker
@@ -233,26 +234,20 @@ class PartitionFileManager:
 
     # Users
 
-    def create_user(
-        self,
-        display_name: str | None = None,
-        external_user_id: str | None = None,
-        is_admin: bool = False,
-        file_quota: int | None = None,
-    ) -> dict:
+    def create_user(self, body: UserCreate) -> dict:
         """Create a user and generate an API token for them."""
         with self.Session() as s:
             token = f"or-{secrets.token_hex(16)}"
             hashed_token = self.hash_token(token)
-
+            file_quota = body.file_quota
             if self.file_quota_per_user > 0 and file_quota is None:
                 file_quota = self.file_quota_per_user  # default to default quota
 
             user = User(
-                display_name=display_name,
-                external_user_id=external_user_id,
+                display_name=body.display_name,
+                external_user_id=body.external_user_id,
                 token=hashed_token,
-                is_admin=is_admin,
+                is_admin=body.is_admin,
                 file_quota=file_quota,
             )
             s.add(user)
@@ -453,25 +448,21 @@ class PartitionFileManager:
         with self.Session() as s:
             return s.query(PartitionMembership).filter_by(user_id=user_id, partition_name=partition).first() is not None
 
-    def update_user_quota(self, user_id: int, file_quota: int | None) -> dict:
-        """
-        Update a user's file quota.
-        - None: Use global default (DEFAULT_FILE_QUOTA env var)
-        - <0: Unlimited
-        - >=0: Specific limit
-        """
+    def update_user(self, user_id: int, body: UserUpdate) -> dict:
+        """Update user's profile fields. Only provided (non-None) fields are updated."""
         with self.Session() as s:
             user = s.query(User).filter(User.id == user_id).first()
-            user.file_quota = file_quota
-            s.commit()
-            self.logger.info(f"Updated file_quota for user {user_id} to {file_quota}")
-            s.refresh(user)
+            for field, value in body.model_dump(exclude_unset=True).items():
+                setattr(user, field, value)
 
+            s.commit()
+            s.refresh(user)
             return {
                 "id": user.id,
                 "display_name": user.display_name,
                 "external_user_id": user.external_user_id,
                 "is_admin": user.is_admin,
+                "created_at": user.created_at.isoformat(),
                 "file_quota": user.file_quota,
                 "file_count": user.file_count,
             }

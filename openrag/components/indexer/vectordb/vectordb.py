@@ -6,6 +6,7 @@ import numpy as np
 import ray
 from config import load_config
 from langchain_core.documents.base import Document
+from models.user import UserCreate, UserUpdate
 from pymilvus import (
     AnnSearchRequest,
     AsyncMilvusClient,
@@ -925,14 +926,8 @@ class MilvusDB(BaseVectorDB):
                 partition=partition,
             )
 
-    async def create_user(
-        self,
-        display_name: str | None = None,
-        external_user_id: str | None = None,
-        is_admin: bool = False,
-        file_quota: int | None = None,
-    ):
-        return self.partition_file_manager.create_user(display_name, external_user_id, is_admin, file_quota)
+    async def create_user(self, body: UserCreate):
+        return self.partition_file_manager.create_user(body)
 
     async def get_user(self, user_id: int):
         self._check_user_exists(user_id)
@@ -957,9 +952,9 @@ class MilvusDB(BaseVectorDB):
         self._check_user_exists(user_id)
         return self.partition_file_manager.regenerate_user_token(user_id)
 
-    def update_user_quota(self, user_id: int, file_quota: int | None):
+    async def update_user(self, user_id: int, body: UserUpdate):
         self._check_user_exists(user_id)
-        return self.partition_file_manager.update_user_quota(user_id, file_quota)
+        return self.partition_file_manager.update_user(user_id, body)
 
     async def list_user_partitions(self, user_id: int):
         self._check_user_exists(user_id)
