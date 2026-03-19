@@ -692,10 +692,13 @@ class PartitionFileManager:
     def remove_file_from_workspace(self, workspace_id: str, file_id: str) -> bool:
         """Remove a file from a workspace. Returns True if the association existed, False otherwise."""
         with self.Session() as session:
+            workspace = session.execute(
+                select(Workspace).where(Workspace.workspace_id == workspace_id)
+            ).scalar_one_or_none()
+            if workspace is None:
+                return False
             file_pk = session.execute(
-                select(File.id)
-                .join(Workspace, Workspace.partition_name == File.partition_name)
-                .where(Workspace.workspace_id == workspace_id, File.file_id == file_id)
+                select(File.id).where(File.file_id == file_id, File.partition_name == workspace.partition_name)
             ).scalar_one_or_none()
             if file_pk is None:
                 return False

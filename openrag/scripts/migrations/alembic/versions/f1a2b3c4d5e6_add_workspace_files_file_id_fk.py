@@ -26,8 +26,18 @@ def upgrade() -> None:
     # 2. Add a temporary integer column to hold the resolved files.id value.
     op.add_column("workspace_files", sa.Column("file_fk", sa.Integer(), nullable=True))
 
-    # 3. Populate it by joining on the string file_id.
-    op.execute("UPDATE workspace_files wf SET file_fk = f.id FROM files f WHERE f.file_id = wf.file_id")
+    # 3. Populate it by joining on the string file_id, scoped to the workspace's partition
+    #    to resolve ambiguity when the same filename exists in multiple partitions.
+    op.execute(
+        "UPDATE workspace_files wf "
+        "SET file_fk = f.id "
+        "FROM files f "
+        "JOIN workspaces w ON w.workspace_id = wf.workspace_id "
+        "WHERE f.file_id = wf.file_id AND f.partition_name = w.partition_name"
+    )
+
+    # 3b. Drop any rows that couldn't be resolved (file_fk still NULL).
+    op.execute("DELETE FROM workspace_files WHERE file_fk IS NULL")
 
     # 4. Drop the old string column and its index.
     op.drop_index("ix_workspace_files_file_id", table_name="workspace_files")
@@ -36,8 +46,9 @@ def upgrade() -> None:
     # 5. Rename file_fk → file_id, make it NOT NULL.
     op.alter_column("workspace_files", "file_fk", new_column_name="file_id", nullable=False)
 
-    # 6. Recreate the index and add the FK constraint.
+    # 6. Recreate the index, unique constraint, and FK.
     op.create_index("ix_workspace_files_file_id", "workspace_files", ["file_id"])
+    op.create_unique_constraint("uix_workspace_file", "workspace_files", ["workspace_id", "file_id"])
     op.create_foreign_key(
         "fk_workspace_files_file_id",
         "workspace_files",
@@ -59,3 +70,4 @@ def downgrade() -> None:
     op.drop_column("workspace_files", "file_id")
     op.alter_column("workspace_files", "file_str", new_column_name="file_id", nullable=False)
     op.create_index("ix_workspace_files_file_id", "workspace_files", ["file_id"])
+    op.create_unique_constraint("uix_workspace_file", "workspace_files", ["workspace_id", "file_id"])
