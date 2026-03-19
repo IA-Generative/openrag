@@ -669,25 +669,30 @@ class PartitionFileManager:
             )
             return {r[0] for r in result.all()}
 
-    def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]):
+    def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]) -> list[str]:
+        """Add files to a workspace. Returns list of file_ids that could not be resolved."""
         with self.Session() as session:
             # Resolve the workspace's partition to scope the File lookup
             workspace = session.execute(
                 select(Workspace).where(Workspace.workspace_id == workspace_id)
             ).scalar_one_or_none()
             if workspace is None:
-                return
+                return file_ids
             partition = workspace.partition_name
-            for fid in file_ids:
-                file_row = session.execute(
-                    select(File.id).where(File.file_id == fid, File.partition_name == partition)
-                ).scalar_one_or_none()
-                if file_row is None:
-                    continue
-                stmt = pg_insert(WorkspaceFile).values(workspace_id=workspace_id, file_id=file_row)
+
+            # Bulk-resolve all file_ids → File.id in a single query
+            rows = session.execute(
+                select(File.file_id, File.id).where(File.file_id.in_(file_ids), File.partition_name == partition)
+            ).all()
+            id_map = {r[0]: r[1] for r in rows}
+            missing = [fid for fid in file_ids if fid not in id_map]
+
+            for fid, file_pk in id_map.items():
+                stmt = pg_insert(WorkspaceFile).values(workspace_id=workspace_id, file_id=file_pk)
                 stmt = stmt.on_conflict_do_nothing(constraint="uix_workspace_file")
                 session.execute(stmt)
             session.commit()
+            return missing
 
     def remove_file_from_workspace(self, workspace_id: str, file_id: str) -> bool:
         """Remove a file from a workspace. Returns True if the association existed, False otherwise."""
