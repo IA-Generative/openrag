@@ -209,18 +209,24 @@ class PartitionFileManager:
                 log.exception("Error updating file metadata")
                 raise
 
+    # Sentinel object to distinguish "not provided" from explicit None.
+    _UNSET = object()
+
     def update_file_in_partition(
         self,
         file_id: str,
         partition: str,
         file_metadata: dict | None = None,
-        relationship_id: str | None = None,
-        parent_id: str | None = None,
+        relationship_id: str | None | object = _UNSET,
+        parent_id: str | None | object = _UNSET,
     ) -> bool:
         """Update an existing file record in-place (for PUT: new content, same file_id).
 
         Preserves files.id so workspace FK references stay intact.
         Unlike delete+re-add, this never touches file_count or created_by.
+
+        Pass relationship_id=None or parent_id=None explicitly to clear a stale
+        link. Omit the argument entirely to leave the column unchanged.
         """
         log = self.logger.bind(file_id=file_id, partition=partition)
         with self.Session() as session:
@@ -231,9 +237,9 @@ class PartitionFileManager:
                     return False
                 if file_metadata is not None:
                     file.file_metadata = file_metadata
-                if relationship_id is not None:
+                if relationship_id is not self._UNSET:
                     file.relationship_id = relationship_id
-                if parent_id is not None:
+                if parent_id is not self._UNSET:
                     file.parent_id = parent_id
                 session.commit()
                 log.info("Updated file record in-place")
