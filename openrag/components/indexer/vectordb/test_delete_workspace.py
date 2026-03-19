@@ -81,17 +81,15 @@ class DeleteWorkspaceHelper:
                 return []
             partition = workspace.partition_name
 
-            subq_other_ws = (
-                select(WorkspaceFileModel.file_id).where(WorkspaceFileModel.workspace_id != workspace_id).subquery()
-            )
+            subq_other_ws = select(WorkspaceFileModel.file_id).where(WorkspaceFileModel.workspace_id != workspace_id)
             # Scoped to the workspace's partition so a same-named file in another
             # partition does not incorrectly prevent orphan detection here.
-            subq_indexed = select(FileModel.file_id).where(FileModel.partition_name == partition).subquery()
+            subq_indexed = select(FileModel.file_id).where(FileModel.partition_name == partition)
             result = session.execute(
                 select(WorkspaceFileModel.file_id)
                 .where(WorkspaceFileModel.workspace_id == workspace_id)
-                .where(WorkspaceFileModel.file_id.notin_(select(subq_other_ws.c.file_id)))
-                .where(WorkspaceFileModel.file_id.notin_(select(subq_indexed.c.file_id)))
+                .where(WorkspaceFileModel.file_id.notin_(subq_other_ws))
+                .where(WorkspaceFileModel.file_id.notin_(subq_indexed))
             )
             orphaned = [r[0] for r in result.all()]
             session.execute(delete(WorkspaceFileModel).where(WorkspaceFileModel.workspace_id == workspace_id))
@@ -182,3 +180,9 @@ def test_file_indexed_in_different_partition_is_still_orphaned(db):
 
     # doc.pdf is not indexed in p1, so it is a true orphan of ws1
     assert orphans == ["doc.pdf"]
+
+
+def test_nonexistent_workspace_returns_empty_list(db):
+    """Deleting a workspace that doesn't exist returns an empty list."""
+    orphans = db.delete_workspace("nonexistent-ws")
+    assert orphans == []
