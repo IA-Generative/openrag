@@ -1123,6 +1123,10 @@ class MilvusDB(BaseVectorDB):
         """Delete workspace and return orphaned file_ids. Caller must delete those files from Milvus."""
         return self.partition_file_manager.delete_workspace(workspace_id)
 
+    async def get_existing_file_ids(self, partition: str, file_ids: list[str]) -> list[str]:
+        """Return the subset of file_ids that exist in the given partition."""
+        return list(self.partition_file_manager.get_existing_file_ids(partition, file_ids))
+
     async def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]):
         self.partition_file_manager.add_files_to_workspace(workspace_id, file_ids)
 

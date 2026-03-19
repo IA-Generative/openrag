@@ -153,11 +153,23 @@ async def delete_workspace(
     dependencies=[Depends(require_partition_editor)],
 )
 async def add_files_to_workspace(
+    partition: str,
     workspace_id: str,
     body: AddFilesRequest,
     vectordb=Depends(get_vectordb),
     _ws=Depends(require_workspace_in_partition),
 ):
+    existing_ids = await call_ray_actor_with_timeout(
+        vectordb.get_existing_file_ids.remote(partition, body.file_ids),
+        timeout=VECTORDB_TIMEOUT,
+        task_description=f"get_existing_file_ids({partition})",
+    )
+    unknown_ids = sorted(set(body.file_ids) - set(existing_ids))
+    if unknown_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File IDs not found in partition '{partition}': {unknown_ids}",
+        )
     await call_ray_actor_with_timeout(
         vectordb.add_files_to_workspace.remote(workspace_id, body.file_ids),
         timeout=VECTORDB_TIMEOUT,

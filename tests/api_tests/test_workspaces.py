@@ -76,7 +76,20 @@ class TestWorkspaceCRUD:
 
 
 class TestWorkspaceFiles:
+    @staticmethod
+    def _upload_file(api_client, partition: str, file_id: str, content: str = "Test content"):
+        file_obj = io.BytesIO(content.encode())
+        response = api_client.post(
+            f"/indexer/partition/{partition}/file/{file_id}",
+            files={"file": (f"{file_id}.txt", file_obj, "text/plain")},
+            data={"metadata": "{}"},
+        )
+        assert response.status_code in [200, 201, 202]
+        wait_for_indexing(api_client, response.json())
+
     def test_add_files_to_workspace(self, api_client, workspace_partition, workspace_id):
+        self._upload_file(api_client, workspace_partition, "file-a")
+        self._upload_file(api_client, workspace_partition, "file-b")
         api_client.post(
             f"/partition/{workspace_partition}/workspaces",
             json={"workspace_id": workspace_id},
@@ -89,6 +102,7 @@ class TestWorkspaceFiles:
         assert set(response.json()["file_ids"]) == {"file-a", "file-b"}
 
     def test_list_workspace_files(self, api_client, workspace_partition, workspace_id):
+        self._upload_file(api_client, workspace_partition, "file-a")
         api_client.post(
             f"/partition/{workspace_partition}/workspaces",
             json={"workspace_id": workspace_id},
@@ -102,6 +116,8 @@ class TestWorkspaceFiles:
         assert "file-a" in response.json()["file_ids"]
 
     def test_remove_file_from_workspace(self, api_client, workspace_partition, workspace_id):
+        self._upload_file(api_client, workspace_partition, "file-a")
+        self._upload_file(api_client, workspace_partition, "file-b")
         api_client.post(
             f"/partition/{workspace_partition}/workspaces",
             json={"workspace_id": workspace_id},
@@ -119,6 +135,7 @@ class TestWorkspaceFiles:
         assert "file-b" in files_resp.json()["file_ids"]
 
     def test_add_same_file_to_multiple_workspaces(self, api_client, workspace_partition):
+        self._upload_file(api_client, workspace_partition, "shared-file")
         ws1 = f"ws-{uuid.uuid4().hex[:8]}"
         ws2 = f"ws-{uuid.uuid4().hex[:8]}"
         api_client.post(f"/partition/{workspace_partition}/workspaces", json={"workspace_id": ws1})
