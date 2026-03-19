@@ -726,11 +726,11 @@ class MilvusDB(BaseVectorDB):
                 data=entities,
             )
 
-            # Build file-level metadata from the first chunk (same as async_add_documents)
+            # Build file-level metadata from the first chunk (same as async_add_documents).
+            # Strip per-chunk fields that don't belong in the file-level PG record.
             file_metadata = dict(docs[0].metadata)
-            file_metadata.pop("_id", None)
-            file_metadata.pop("vector", None)
-            file_metadata.pop("page", None)
+            for key in ("_id", "vector", "page", "section_id", "prev_section_id", "next_section_id"):
+                file_metadata.pop(key, None)
             file_metadata.update(metadata)
             self.partition_file_manager.update_file_metadata_in_db(file_id, partition, file_metadata)
 
