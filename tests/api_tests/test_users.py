@@ -183,18 +183,21 @@ class TestUserManagement:
         """Test that other fields can be updated on user 1 (default admin)."""
         # Get current display_name
         get_response = api_client.get("/users/1")
+        assert get_response.status_code == 200
         original_name = get_response.json().get("display_name")
 
-        # Update display_name (not is_admin)
-        response = api_client.patch(
-            "/users/1",
-            json={"display_name": "updated_admin_name"},
-        )
-        assert response.status_code == 200
-        assert response.json()["display_name"] == "updated_admin_name"
-
-        # Restore original name
-        api_client.patch("/users/1", json={"display_name": original_name})
+        try:
+            # Update display_name (not is_admin)
+            response = api_client.patch(
+                "/users/1",
+                json={"display_name": "updated_admin_name"},
+            )
+            assert response.status_code == 200
+            assert response.json()["display_name"] == "updated_admin_name"
+        finally:
+            # Restore original name
+            restore_response = api_client.patch("/users/1", json={"display_name": original_name})
+            assert restore_response.status_code == 200
 
     def test_user_default_quota(self, api_client):
         """Test that user created with None quota gets default value (10)."""
