@@ -806,7 +806,11 @@ class MilvusDB(BaseVectorDB):
             for key in ("_id", "vector", "page", "section_id", "prev_section_id", "next_section_id"):
                 file_metadata.pop(key, None)
             file_metadata.update(metadata)
-            self.partition_file_manager.update_file_metadata_in_db(file_id, partition, file_metadata)
+            if not self.partition_file_manager.update_file_metadata_in_db(file_id, partition, file_metadata):
+                # PG row was concurrently deleted; Milvus upsert already succeeded.
+                # Log warning but don't fail — Milvus data will be orphaned until
+                # next cleanup, but the user-facing operation should still succeed.
+                log.warning("PG file row not found during metadata upsert; Milvus updated but PG skipped")
 
             log.info("Upserted file metadata in-place.", chunk_count=len(entities))
 
@@ -877,13 +881,17 @@ class MilvusDB(BaseVectorDB):
             await self.delete_chunks_by_ids(old_chunk_ids)
 
             # 4. Update existing PostgreSQL file record in-place (preserves files.id PK)
-            self.partition_file_manager.update_file_in_partition(
+            if not self.partition_file_manager.update_file_in_partition(
                 file_id=file_id,
                 partition=partition,
                 file_metadata=file_metadata,
                 relationship_id=relationship_id,
                 parent_id=parent_id,
-            )
+            ):
+                # PG row was concurrently deleted after we inserted new Milvus chunks.
+                # Log warning — Milvus has new orphaned chunks but data is consistent
+                # (old chunks deleted, new chunks inserted, no PG record).
+                log.warning("PG file row not found during replace; Milvus updated but PG skipped")
             log.info(f"File '{file_id}' chunks replaced in partition '{partition}'")
 
         except EmbeddingError as e:
