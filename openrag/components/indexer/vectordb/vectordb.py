@@ -719,9 +719,16 @@ class MilvusDB(BaseVectorDB):
                 f"Failed to delete old chunks by ID: {e!s}",
                 collection_name=self.collection_name,
             )
+        except Exception as e:
+            self.logger.exception("Unexpected error while deleting chunks by ID", error=str(e))
+            raise UnexpectedVDBError(
+                f"Unexpected error while deleting chunks by ID: {e!s}",
+                collection_name=self.collection_name,
+            )
 
     async def get_file_chunk_ids(self, file_id: str, partition: str) -> list[int]:
         """Return the Milvus _id values for all chunks of a file."""
+        log = self.logger.bind(file_id=file_id, partition=partition)
         try:
             results = []
             offset = 0
@@ -741,9 +748,17 @@ class MilvusDB(BaseVectorDB):
                 offset += len(response)
             return results
         except MilvusException as e:
-            self.logger.exception("Failed to get file chunk IDs", error=str(e))
+            log.exception("Failed to get file chunk IDs", error=str(e))
             raise VDBSearchError(
                 f"Failed to get file chunk IDs for {file_id}: {e!s}",
+                collection_name=self.collection_name,
+                partition=partition,
+                file_id=file_id,
+            )
+        except Exception as e:
+            log.exception("Unexpected error while getting file chunk IDs", error=str(e))
+            raise UnexpectedVDBError(
+                f"Unexpected error while getting file chunk IDs for {file_id}: {e!s}",
                 collection_name=self.collection_name,
                 partition=partition,
                 file_id=file_id,
