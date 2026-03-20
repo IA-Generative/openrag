@@ -63,6 +63,139 @@ class TestUserManagement:
             # Clean up: delete the test user
             api_client.delete(f"/users/{user_id}")
 
+    def test_update_user_display_name(self, api_client):
+        """Test updating user display_name."""
+        create_response = api_client.post(
+            "/users/",
+            json={"display_name": "original_name"},
+        )
+        assert create_response.status_code == 201
+        user_id = create_response.json()["id"]
+
+        try:
+            update_response = api_client.patch(
+                f"/users/{user_id}",
+                json={"display_name": "updated_name"},
+            )
+            assert update_response.status_code == 200
+            assert update_response.json()["display_name"] == "updated_name"
+
+            # Verify persistence
+            get_response = api_client.get(f"/users/{user_id}")
+            assert get_response.json()["display_name"] == "updated_name"
+        finally:
+            api_client.delete(f"/users/{user_id}")
+
+    def test_update_user_multiple_fields(self, api_client):
+        """Test updating multiple user fields at once."""
+        create_response = api_client.post(
+            "/users/",
+            json={"display_name": "multi_test", "file_quota": 5},
+        )
+        assert create_response.status_code == 201
+        user_id = create_response.json()["id"]
+
+        try:
+            update_response = api_client.patch(
+                f"/users/{user_id}",
+                json={
+                    "display_name": "multi_updated",
+                    "external_user_id": "ext-123",
+                    "file_quota": 20,
+                },
+            )
+            assert update_response.status_code == 200
+            data = update_response.json()
+            assert data["display_name"] == "multi_updated"
+            assert data["external_user_id"] == "ext-123"
+            assert data["file_quota"] == 20
+        finally:
+            api_client.delete(f"/users/{user_id}")
+
+    def test_update_user_partial_preserves_other_fields(self, api_client):
+        """Test that partial update preserves fields not in request."""
+        create_response = api_client.post(
+            "/users/",
+            json={
+                "display_name": "partial_test",
+                "external_user_id": "ext-preserve",
+                "file_quota": 15,
+            },
+        )
+        assert create_response.status_code == 201
+        user_id = create_response.json()["id"]
+
+        try:
+            # Update only display_name
+            update_response = api_client.patch(
+                f"/users/{user_id}",
+                json={"display_name": "partial_updated"},
+            )
+            assert update_response.status_code == 200
+            data = update_response.json()
+            # Updated field should change
+            assert data["display_name"] == "partial_updated"
+            # Other fields should be preserved
+            assert data["external_user_id"] == "ext-preserve"
+            assert data["file_quota"] == 15
+        finally:
+            api_client.delete(f"/users/{user_id}")
+
+    def test_update_user_is_admin(self, api_client):
+        """Test granting and revoking admin privileges."""
+        create_response = api_client.post(
+            "/users/",
+            json={"display_name": "admin_test", "is_admin": False},
+        )
+        assert create_response.status_code == 201
+        user_id = create_response.json()["id"]
+
+        try:
+            # Grant admin
+            update_response = api_client.patch(
+                f"/users/{user_id}",
+                json={"is_admin": True},
+            )
+            assert update_response.status_code == 200
+            assert update_response.json()["is_admin"] is True
+
+            # Revoke admin
+            update_response = api_client.patch(
+                f"/users/{user_id}",
+                json={"is_admin": False},
+            )
+            assert update_response.status_code == 200
+            assert update_response.json()["is_admin"] is False
+        finally:
+            api_client.delete(f"/users/{user_id}")
+
+    def test_cannot_revoke_admin_from_default_user(self, api_client):
+        """Test that admin cannot be revoked from user 1 (default admin)."""
+        # Attempt to revoke admin from user 1
+        response = api_client.patch(
+            "/users/1",
+            json={"is_admin": False},
+        )
+        assert response.status_code == 400
+        assert "Cannot revoke admin" in response.json()["detail"]
+
+    def test_can_update_other_fields_on_default_user(self, api_client):
+        """Test that other fields can be updated on user 1 (default admin)."""
+        # Get current display_name
+        get_response = api_client.get("/users/1")
+        original_name = get_response.json().get("display_name")
+
+        # Update display_name (not is_admin)
+        response = api_client.patch(
+            "/users/1",
+            json={"display_name": "updated_admin_name"},
+        )
+        assert response.status_code == 200
+        assert response.json()["display_name"] == "updated_admin_name"
+
+        # Restore original name
+        api_client.patch("/users/1", json={"display_name": original_name})
+
     def test_user_default_quota(self, api_client):
         """Test that user created with None quota gets default value (10)."""
         # Create a user without specifying quota (None)
