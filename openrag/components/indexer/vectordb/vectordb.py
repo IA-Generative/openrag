@@ -692,6 +692,16 @@ class MilvusDB(BaseVectorDB):
                 partition=partition,
                 file_id=file_id,
             )
+        except VDBError:
+            raise
+        except Exception as e:
+            log.exception("Unexpected error while deleting file chunks", error=str(e))
+            raise UnexpectedVDBError(
+                f"Unexpected error while deleting file chunks {file_id}: {e!s}",
+                collection_name=self.collection_name,
+                partition=partition,
+                file_id=file_id,
+            )
 
     async def delete_chunks_by_ids(self, chunk_ids: list[int]):
         """Delete specific Milvus chunks by their _id primary keys."""
