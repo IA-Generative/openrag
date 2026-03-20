@@ -380,7 +380,7 @@ class TestUserQuotaEnforcement:
         data = {"display_name": display_name}
         if file_quota is not None:
             data["file_quota"] = file_quota
-        response = api_client.post("/users/", data=data)
+        response = api_client.post("/users/", json=data)
         assert response.status_code == 201, f"Failed to create user: {response.text}"
         return response.json()
 

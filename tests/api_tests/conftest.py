@@ -41,7 +41,7 @@ def created_user(api_client):
 
     response = api_client.post(
         "/users/",
-        data={"display_name": display_name, "external_user_id": external_id},
+        json={"display_name": display_name, "external_user_id": external_id},
     )
     assert response.status_code == 201, f"Failed to create user: {response.text}"
     user = response.json()

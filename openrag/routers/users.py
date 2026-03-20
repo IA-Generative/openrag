@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, Form, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import JSONResponse
+from models.user import UserCreate, UserPublic, UserUpdate
 from utils.dependencies import get_task_state_manager, get_vectordb
 from utils.logger import get_logger
 
@@ -123,22 +124,14 @@ Returns created user including:
 """,
 )
 async def create_user(
-    display_name: str | None = Form(None),
-    external_user_id: str | None = Form(None),
-    is_admin: bool = Form(False),
+    body: UserCreate,
     vectordb=Depends(get_vectordb),
-    file_quota: int | None = Form(None),
     admin_user=Depends(require_admin),
 ):
     """
     Create a new user and generate a token.
     """
-    user = await vectordb.create_user.remote(
-        display_name=display_name,
-        external_user_id=external_user_id,
-        is_admin=is_admin,
-        file_quota=file_quota,
-    )
+    user = await vectordb.create_user.remote(body)
     logger.info("Created new user", user_id=user["id"])
     return JSONResponse(status_code=status.HTTP_201_CREATED, content=user)
 
@@ -240,38 +233,50 @@ async def regenerate_user_token(user_id: int, vectordb=Depends(get_vectordb)):
 
 
 @router.patch(
-    "/{user_id}/quota",
-    description="""Update a user's file quota.
+    "/{user_id}",
+    description="""Update a user's profile information.
 
 **Parameters:**
 - `user_id`: User identifier
-- `file_quota`: New file quota value (form data)
-    * `None` or not provided: Use global default (`DEFAULT_FILE_QUOTA` env var)
-    * `<0`: Unlimited
-    * `>=0`: Specific limit for this user
+- `display_name`: New display name (optional)
+- `external_user_id`: New external system user ID (optional)
+- `is_admin`: Grant or revoke admin privileges (optional)
+- `file_quota`: File quota override (optional)
+    * `None` or omitted: field is not changed
+    * `< 0`: Unlimited
+    * `>= 0`: Specific file limit for this user
+
+Only fields explicitly provided in the request body are updated.
 
 **Permissions:**
 - Requires admin role
 
 **Response:**
-Returns 200 OK with success message.
-
-**Note:** Admins always have unlimited quota regardless of this setting.
+Returns updated user details including:
+- `id`: User identifier
+- `display_name`: Updated display name
+- `external_user_id`: Updated external ID
+- `is_admin`: Updated admin status
+- `created_at`: Account creation timestamp
+- `file_quota`: File quota setting (`null` = use global default, `< 0` = unlimited)
+- `file_count`: Number of indexed files
 """,
 )
-async def update_user_quota(
+async def update_user(
     user_id: int,
-    file_quota: int | None = Form(None),
+    body: UserUpdate,
     vectordb=Depends(get_vectordb),
     admin_user=Depends(require_admin),
-):
+) -> UserPublic:
     """
-    Update a user's file quota.
+    Update a user's profile fields.
     """
-    await vectordb.update_user_quota.remote(user_id, file_quota)
-
-    logger.debug("Updated user quota", user_id=user_id, file_quota=file_quota)
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content={"message": f"Quota for user {user_id} updated to {file_quota}"},
-    )
+    # Only block if is_admin was explicitly set to False in the request
+    if user_id == 1 and "is_admin" in body.model_fields_set and body.is_admin is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot revoke admin privileges from the default admin user.",
+        )
+    user = await vectordb.update_user.remote(user_id, body)
+    logger.info("Updated user info", user_id=user_id)
+    return user
