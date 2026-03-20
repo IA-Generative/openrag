@@ -826,6 +826,7 @@ class MilvusDB(BaseVectorDB):
         duplicates temporarily but no data loss — a retry or manual cleanup
         can resolve it.
         """
+        log = self.logger  # Fallback; rebound with context below
         try:
             file_metadata = dict(chunks[0].metadata)
             file_metadata.pop("page")
@@ -871,13 +872,13 @@ class MilvusDB(BaseVectorDB):
             log.info(f"File '{file_id}' chunks replaced in partition '{partition}'")
 
         except EmbeddingError as e:
-            self.logger.exception("Embedding failed", error=str(e))
+            log.exception("Embedding failed", error=str(e))
             raise
         except VDBError as e:
-            self.logger.exception("VectorDB operation failed", error=str(e))
+            log.exception("VectorDB operation failed", error=str(e))
             raise
         except Exception as e:
-            self.logger.exception("Unexpected error while adding chunks for existing file", error=str(e))
+            log.exception("Unexpected error while adding chunks for existing file", error=str(e))
             raise UnexpectedVDBError(
                 f"Unexpected error while adding chunks for existing file: {e!s}",
                 collection_name=self.collection_name,
