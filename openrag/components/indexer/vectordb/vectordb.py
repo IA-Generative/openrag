@@ -823,7 +823,7 @@ class MilvusDB(BaseVectorDB):
             relationship_id = file_metadata.get("relationship_id")
             parent_id = file_metadata.get("parent_id")
 
-            self.logger.bind(partition=partition, file_id=file_id, filename=file_metadata.get("filename"))
+            log = self.logger.bind(partition=partition, file_id=file_id, filename=file_metadata.get("filename"))
 
             # 1. Snapshot old chunk _id values before inserting new ones.
             old_chunk_ids = await self.get_file_chunk_ids(file_id, partition)
@@ -858,7 +858,7 @@ class MilvusDB(BaseVectorDB):
                 relationship_id=relationship_id,
                 parent_id=parent_id,
             )
-            self.logger.info(f"File '{file_id}' chunks replaced in partition '{partition}'")
+            log.info(f"File '{file_id}' chunks replaced in partition '{partition}'")
 
         except EmbeddingError as e:
             self.logger.exception("Embedding failed", error=str(e))
