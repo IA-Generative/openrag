@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserBase(BaseModel):
@@ -9,11 +9,11 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    pass
+    model_config = ConfigDict(extra="allow")
 
 
 class UserUpdate(UserBase):
-    pass
+    model_config = ConfigDict(extra="allow")
 
 
 class UserPublic(UserBase):
