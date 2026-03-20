@@ -271,7 +271,8 @@ async def update_user(
     """
     Update a user's profile fields.
     """
-    if user_id == 1:
+    # Only block if is_admin was explicitly set to False in the request
+    if user_id == 1 and "is_admin" in body.model_fields_set and body.is_admin is False:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot revoke admin privileges from the default admin user.",
