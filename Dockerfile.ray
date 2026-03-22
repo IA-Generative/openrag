@@ -46,9 +46,8 @@ WORKDIR /app/openrag
 # Copy source code
 COPY openrag/ .
 
-# Copy assests & config
+# Copy assets
 COPY prompts/ /app/prompts/
-COPY .hydra_config/ /app/.hydra_config/
 
 RUN apt install -y 
 RUN ln -s /app/.venv/bin/ray /usr/local/bin/ray

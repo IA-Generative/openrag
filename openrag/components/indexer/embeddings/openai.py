@@ -10,11 +10,11 @@ logger = get_logger()
 
 
 class OpenAIEmbedding(BaseEmbedding):
-    def __init__(self, embeddings_config: dict):
-        self.embedding_model = embeddings_config.get("model_name")
-        self.base_url = embeddings_config.get("base_url")
-        self.api_key = embeddings_config.get("api_key")
-        self.max_model_len = embeddings_config.get("max_model_len", 8192)
+    def __init__(self, embeddings_config):
+        self.embedding_model = embeddings_config.model_name
+        self.base_url = embeddings_config.base_url
+        self.api_key = embeddings_config.api_key
+        self.max_model_len = embeddings_config.max_model_len
         self._sync_client = OpenAI(base_url=self.base_url, api_key=self.api_key)
 
     @property

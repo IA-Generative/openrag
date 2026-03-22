@@ -39,15 +39,14 @@ logger = get_logger()
 # load config
 config = load_config()
 DATA_DIR = config.paths.data_dir
-VECTORDB_TIMEOUT = config.ray.indexer.get("vectordb_timeout", 30)
+VECTORDB_TIMEOUT = config.ray.indexer.vectordb_timeout
 
 FORBIDDEN_CHARS_IN_FILE_ID = set("/")  # set('"<>#%{}|\\^`[]')
 LOG_FILE = Path(config.paths.log_dir or "logs") / "app.json"
-VECTORDB_TIMEOUT = config.ray.indexer.get("vectordb_timeout", 30)
 
 # supported file formats or mimetypes
-ACCEPTED_FILE_FORMATS = dict(config.loader["file_loaders"]).keys()
-DICT_MIMETYPES = dict(config.loader["mimetypes"])
+ACCEPTED_FILE_FORMATS = config.loader.file_loaders.model_dump().keys()
+DICT_MIMETYPES = config.loader.mimetypes.to_dict()
 
 # URL scheme configuration
 PREFERRED_URL_SCHEME = config.server.preferred_url_scheme

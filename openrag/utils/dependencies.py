@@ -46,7 +46,7 @@ def get_serializer():
 
 
 def get_marker_pool():
-    pdf_loader = config.loader.file_loaders.get("pdf")
+    pdf_loader = config.loader.file_loaders.pdf
     match pdf_loader:
         case "DoclingLoader2":
             return get_or_create_actor("DoclingPool", DoclingPool, lifetime="detached")
@@ -64,7 +64,7 @@ def get_vectordb():
 
 
 def init_audio_actor():
-    use_whisper_lang_detector = config.loader.transcriber.get("use_whisper_lang_detector", True)
+    use_whisper_lang_detector = config.loader.transcriber.use_whisper_lang_detector
     file_loaders = config.loader.file_loaders
     loader_values = set(file_loaders.values()) if file_loaders else set()
 

@@ -29,15 +29,15 @@ class OpenAILoader(BaseLoader, ABC):
         super().__init__(**kwargs)
 
         self.llm = ChatOpenAI(
-            base_url=self.config.loader["openai"]["base_url"],
-            api_key=self.config.loader["openai"]["api_key"],
-            model=self.config.loader["openai"]["model"],
-            temperature=self.config.loader["openai"].get("temperature", 0.2),
-            timeout=self.config.loader["openai"].get("timeout", 180),
-            max_retries=self.config.loader["openai"].get("max_retries", 2),
-            top_p=self.config.loader["openai"].get("top_p", 0.9),
+            base_url=self.config.loader.openai.base_url,
+            api_key=self.config.loader.openai.api_key,
+            model=self.config.loader.openai.model,
+            temperature=self.config.loader.openai.temperature,
+            timeout=self.config.loader.openai.timeout,
+            max_retries=self.config.loader.openai.max_retries,
+            top_p=self.config.loader.openai.top_p,
         )
-        self.llm_semaphore = asyncio.Semaphore(self.config.loader["openai"].get("concurrency_limit", 20))
+        self.llm_semaphore = asyncio.Semaphore(self.config.loader.openai.concurrency_limit)
 
     async def aload_document(
         self,

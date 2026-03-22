@@ -26,7 +26,7 @@ from .utils import SOURCE_SEPARATOR
 
 logger = get_logger()
 config = load_config()
-VECTORDB_TIMEOUT = config.ray.indexer.get("vectordb_timeout", 30)
+VECTORDB_TIMEOUT = config.ray.indexer.vectordb_timeout
 
 
 class RAGMODE(Enum):
@@ -49,10 +49,10 @@ class RetrieverPipeline:
         self.retriever: BaseRetriever = RetrieverFactory.create_retriever(config=config)
 
         # reranker
-        self.reranker_enabled = config.reranker["enable"]
+        self.reranker_enabled = config.reranker.enable
         self.reranker = Reranker(logger, config)
         logger.debug("Reranker", enabled=self.reranker_enabled)
-        self.reranker_top_k = config.reranker["top_k"]
+        self.reranker_top_k = config.reranker.top_k
 
     async def retrieve_docs(
         self,
@@ -120,19 +120,19 @@ class RagPipeline:
         self.retriever_pipeline = RetrieverPipeline()
 
         # RAG
-        self.rag_mode = config.rag["mode"]
-        self.chat_history_depth = config.rag["chat_history_depth"]
-        self.max_context_tokens = config.reranker.get("top_k", 10) * config.chunker.get("chunk_size", 512)
+        self.rag_mode = config.rag.mode
+        self.chat_history_depth = config.rag.chat_history_depth
+        self.max_context_tokens = config.reranker.top_k * config.chunker.chunk_size
 
         self.llm_client = LLM(config.llm, logger)
         self.query_generator = ChatOpenAI(
-            base_url=config.llm.get("base_url"),
-            api_key=config.llm.get("api_key"),
-            model=config.llm.get("model"),
-            temperature=config.llm.get("temperature", 0.3),
+            base_url=config.llm.base_url,
+            api_key=config.llm.api_key,
+            model=config.llm.model,
+            temperature=config.llm.temperature,
         ).with_structured_output(SearchQueries, method="function_calling")
 
-        self.max_contextualized_query_len = config.rag["max_contextualized_query_len"]
+        self.max_contextualized_query_len = config.rag.max_contextualized_query_len
 
         # map reduce
         self.map_reduce: RAGMapReduce = RAGMapReduce(config=config)
@@ -140,7 +140,7 @@ class RagPipeline:
         # Web search
         self.web_search_service = WebSearchFactory.create_service(config)
         if self.web_search_service.provider:
-            logger.info("Web search enabled", provider=config.websearch.get("provider"))
+            logger.info("Web search enabled", provider=config.websearch.provider)
         else:
             logger.info("Web search disabled (WEBSEARCH_API_TOKEN not set)")
 
@@ -207,7 +207,7 @@ class RagPipeline:
         )
 
         # 2. get docs and/or web results concurrently
-        top_k = config.map_reduce["max_total_documents"] if use_map_reduce else None
+        top_k = config.map_reduce.max_total_documents if use_map_reduce else None
         if workspace:
             vectordb = ray.get_actor("Vectordb", namespace="openrag")
             ws = await call_ray_actor_with_timeout(

@@ -8,8 +8,8 @@ EMBEDDER_MAPPING = {
 
 class EmbeddingFactory:
     @staticmethod
-    def get_embedder(embeddings_config: dict) -> BaseEmbedding:
-        provider = embeddings_config.get("provider")
+    def get_embedder(embeddings_config) -> BaseEmbedding:
+        provider = embeddings_config.provider
         embedder_class = EMBEDDER_MAPPING.get(provider, None)
 
         if not embedder_class:
