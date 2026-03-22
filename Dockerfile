@@ -41,8 +41,9 @@ WORKDIR /app/openrag
 # Copy source code
 COPY openrag/ .
 
-# Copy assets
+# Copy assets and config
 COPY prompts/ /app/prompts/
+COPY conf/ /app/conf/
 ENV PYTHONPATH=/app/openrag/
 ENV APP_iPORT=${APP_iPORT:-8080}
 ENTRYPOINT ../entrypoint.sh

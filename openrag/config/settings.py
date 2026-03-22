@@ -32,7 +32,11 @@ from .models import (
 
 
 class Settings(ConfigMixin):
-    """Root configuration — composes all sub-models."""
+    """Root configuration — composes all sub-models.
+
+    Defaults here are fallbacks only. In production, values come from
+    conf/config.yaml merged with environment variable overrides.
+    """
 
     llm_params: LLMParamsConfig = Field(default_factory=LLMParamsConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -55,35 +59,10 @@ class Settings(ConfigMixin):
     rag: RAGConfig = Field(default_factory=RAGConfig)
     websearch: WebSearchConfig = Field(default_factory=WebSearchConfig)
 
-    @classmethod
-    def from_env(cls) -> Settings:
-        """Build the entire settings tree from environment variables."""
-        return cls(
-            llm=LLMConfig.from_env(),
-            vlm=VLMConfig.from_env(),
-            semaphore=SemaphoreConfig.from_env(),
-            embedder=EmbedderConfig.from_env(),
-            vectordb=VectorDBConfig.from_env(),
-            rdb=RDBConfig.from_env(),
-            reranker=RerankerConfig.from_env(),
-            map_reduce=MapReduceConfig.from_env(),
-            verbose=VerboseConfig.from_env(),
-            server=ServerConfig.from_env(),
-            llm_context=LLMContextConfig.from_env(),
-            paths=PathsConfig.from_env(),
-            loader=LoaderConfig.from_env(),
-            ray=RayConfig.from_env(),
-            chunker=ChunkerConfig.from_env(),
-            retriever=RetrieverConfig.from_env(),
-            rag=RAGConfig.from_env(),
-            websearch=WebSearchConfig.from_env(),
-        )
-
 
 @lru_cache
 def get_settings() -> Settings:
     """Cached singleton — one Settings instance per process."""
-    from dotenv import load_dotenv
+    from .loader import load_config
 
-    load_dotenv()
-    return Settings.from_env()
+    return load_config()

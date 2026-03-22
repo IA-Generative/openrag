@@ -46,10 +46,11 @@ WORKDIR /app/openrag
 # Copy source code
 COPY openrag/ .
 
-# Copy assets
+# Copy assets and config
 COPY prompts/ /app/prompts/
+COPY conf/ /app/conf/
 
-RUN apt install -y 
+RUN apt install -y
 RUN ln -s /app/.venv/bin/ray /usr/local/bin/ray
 
 ENV PYTHONPATH=/app/openrag/
