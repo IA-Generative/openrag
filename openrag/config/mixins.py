@@ -27,19 +27,19 @@ class ConfigMixin(BaseModel):
             raise KeyError(key)
 
     def keys(self):
-        return list(self.model_fields.keys())
+        return list(type(self).model_fields.keys())
 
     def values(self):
-        return [getattr(self, k) for k in self.model_fields]
+        return [getattr(self, k) for k in type(self).model_fields]
 
     def items(self):
-        return [(k, getattr(self, k)) for k in self.model_fields]
+        return [(k, getattr(self, k)) for k in type(self).model_fields]
 
     def __iter__(self):
-        return iter(self.model_fields)
+        return iter(type(self).model_fields)
 
     def __contains__(self, key: str) -> bool:
-        return key in self.model_fields
+        return key in type(self).model_fields
 
 
 # ---------------------------------------------------------------------------

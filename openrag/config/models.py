@@ -372,8 +372,6 @@ class MimetypesConfig(ConfigMixin):
     Access via dict() or .items() for iteration.
     """
 
-    model_config = {"extra": "allow"}
-
     text_plain: str = Field(default=".txt", alias="text/plain")
     text_markdown: str = Field(default=".md", alias="text/markdown")
     application_pdf: str = Field(default=".pdf", alias="application/pdf")
@@ -403,7 +401,7 @@ class MimetypesConfig(ConfigMixin):
     def to_dict(self) -> dict[str, str]:
         """Return {mime_type: extension} mapping using aliases as keys."""
         result = {}
-        for field_name, field_info in self.model_fields.items():
+        for field_name, field_info in type(self).model_fields.items():
             alias = field_info.alias or field_name
             result[alias] = getattr(self, field_name)
         return result
