@@ -90,7 +90,7 @@ _ENV_OVERRIDES: list[tuple[str, str, type]] = [
     ("WHISPER_MODEL", "loader.local_whisper.model", str),
     ("WHISPER_N_WORKERS", "loader.local_whisper.whisper_n_workers", int),
     ("WHISPER_NUM_GPUS", "loader.local_whisper.whisper_num_gpus", float),
-    ("WHISPER_CONCURRENCY_PER_WORKER", "loader.local_whisper.whisper_concurency_per_worker", int),
+    ("WHISPER_CONCURRENCY_PER_WORKER", "loader.local_whisper.whisper_concurrency_per_worker", int),
     ("TRANSCRIBER_BASE_URL", "loader.transcriber.base_url", str),
     ("TRANSCRIBER_API_KEY", "loader.transcriber.api_key", str),
     ("TRANSCRIBER_MODEL", "loader.transcriber.model_name", str),

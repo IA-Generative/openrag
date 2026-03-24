@@ -19,7 +19,7 @@ if torch.cuda.is_available():
 else:  # On CPU
     WHISPER_NUM_GPUS = 0
 
-WHISPER_CONCURRENCY_PER_WORKER = config.loader.local_whisper.whisper_concurency_per_worker
+WHISPER_CONCURRENCY_PER_WORKER = config.loader.local_whisper.whisper_concurrency_per_worker
 
 
 @ray.remote(

@@ -223,7 +223,7 @@ class LocalWhisperConfig(ConfigMixin):
     model: str = "base"
     whisper_n_workers: int = 3
     whisper_num_gpus: float = 0.01
-    whisper_concurency_per_worker: int = 2
+    whisper_concurrency_per_worker: int = 2
 
 
 # ---------------------------------------------------------------------------

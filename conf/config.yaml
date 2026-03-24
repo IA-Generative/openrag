@@ -147,7 +147,7 @@ loader:
     model: base
     whisper_n_workers: 3
     whisper_num_gpus: 0.01
-    whisper_concurency_per_worker: 2
+    whisper_concurrency_per_worker: 2
 
   # Env: PDFLoader, AUDIOLOADER (per-extension overrides)
   file_loaders:
