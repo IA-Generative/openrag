@@ -551,7 +551,6 @@ class MilvusDB(BaseVectorDB):
 
         # Join all parts with " and " only if there are multiple conditions
         expr = " and ".join(expr_parts) if expr_parts else ""
-        filter_params = filter_params or {}
 
         try:
             query_vector = await self.embedder.aembed_query(query)
@@ -568,7 +567,6 @@ class MilvusDB(BaseVectorDB):
                 },
                 "limit": top_k,
                 "expr": expr,
-                "expr_params": filter_params,
             }
             if self.hybrid_search:
                 sparse_param = {
@@ -580,7 +578,6 @@ class MilvusDB(BaseVectorDB):
                     },
                     "limit": top_k,
                     "expr": expr,
-                    "expr_params": filter_params,
                 }
                 reqs = [
                     AnnSearchRequest(**vector_param),
@@ -611,7 +608,6 @@ class MilvusDB(BaseVectorDB):
                     collection_name=self.collection_name,
                     output_fields=["*"],
                     filter=expr,
-                    filter_params=filter_params,
                     **vector_param,
                 )
 
