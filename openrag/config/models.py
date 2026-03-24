@@ -8,10 +8,49 @@ in production, values come from conf/config.yaml merged with env var overrides
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-from .mixins import ConfigMixin
+
+# ---------------------------------------------------------------------------
+# Base mixin — frozen models with dict-like backward compat
+# ---------------------------------------------------------------------------
+class ConfigMixin(BaseModel):
+    """Frozen Pydantic model with dict-like access for backward compatibility.
+
+    Existing code using ``config.section.get("key")``, ``config.section["key"]``,
+    ``dict(config.section)``, and ``**config.section`` keeps working.
+    """
+
+    model_config = {"frozen": True}
+
+    def get(self, key: str, default: Any = None) -> Any:
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            return default
+
+    def __getitem__(self, key: str) -> Any:
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            raise KeyError(key)
+
+    def keys(self):
+        return list(type(self).model_fields.keys())
+
+    def values(self):
+        return [getattr(self, k) for k in type(self).model_fields]
+
+    def items(self):
+        return [(k, getattr(self, k)) for k in type(self).model_fields]
+
+    def __iter__(self):
+        return iter(type(self).model_fields)
+
+    def __contains__(self, key: str) -> bool:
+        return key in type(self).model_fields
 
 
 # ---------------------------------------------------------------------------
@@ -376,3 +415,34 @@ class WebSearchConfig(ConfigMixin):
     fetch_timeout: float = 1.0
     fetch_max_tokens: int = 500
     fetch_verify_ssl: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Root Settings — composes all sub-models
+# ---------------------------------------------------------------------------
+class Settings(ConfigMixin):
+    """Root configuration.
+
+    Defaults here are fallbacks only. In production, values come from
+    conf/config.yaml merged with environment variable overrides.
+    """
+
+    llm: LLMConfig = Field(default_factory=LLMConfig)
+    vlm: VLMConfig = Field(default_factory=VLMConfig)
+    semaphore: SemaphoreConfig = Field(default_factory=SemaphoreConfig)
+    embedder: EmbedderConfig = Field(default_factory=EmbedderConfig)
+    vectordb: VectorDBConfig = Field(default_factory=VectorDBConfig)
+    rdb: RDBConfig = Field(default_factory=RDBConfig)
+    reranker: RerankerConfig = Field(default_factory=RerankerConfig)
+    map_reduce: MapReduceConfig = Field(default_factory=MapReduceConfig)
+    verbose: VerboseConfig = Field(default_factory=VerboseConfig)
+    server: ServerConfig = Field(default_factory=ServerConfig)
+    llm_context: LLMContextConfig = Field(default_factory=LLMContextConfig)
+    paths: PathsConfig = Field(default_factory=PathsConfig)
+    prompts: PromptsConfig = Field(default_factory=PromptsConfig)
+    loader: LoaderConfig = Field(default_factory=LoaderConfig)
+    ray: RayConfig = Field(default_factory=RayConfig)
+    chunker: ChunkerConfig = Field(default_factory=ChunkerConfig)
+    retriever: RetrieverConfig = Field(default_factory=RetrieverConfig)
+    rag: RAGConfig = Field(default_factory=RAGConfig)
+    websearch: WebSearchConfig = Field(default_factory=WebSearchConfig)
