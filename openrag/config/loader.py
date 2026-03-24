@@ -214,7 +214,7 @@ def _apply_env_overrides(data: dict) -> dict:
     # SEMAPHORE sets both LLM and VLM semaphores (convenience shorthand)
     semaphore = os.environ.get("SEMAPHORE")
     if semaphore:
-        sem_value = int(semaphore)
+        sem_value = _coerce(semaphore, int, "SEMAPHORE")
         sem = data.setdefault("semaphore", {})
         sem.setdefault("llm_semaphore", sem_value)
         sem.setdefault("vlm_semaphore", sem_value)
@@ -235,7 +235,7 @@ def _apply_env_overrides(data: dict) -> dict:
 
     # Resolve paths
     paths = data.get("paths", {})
-    for key in ("prompts_dir", "data_dir", "log_dir"):
+    for key in ("prompts_dir", "data_dir", "db_dir", "log_dir"):
         if key in paths and paths[key]:
             paths[key] = str(Path(paths[key]).resolve())
 

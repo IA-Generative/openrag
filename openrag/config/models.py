@@ -119,7 +119,7 @@ class RDBConfig(ConfigMixin):
     host: str = "rdb"
     port: int = 5432
     user: str = "root"
-    password: str = Field(default="root_password", repr=False)
+    password: str = Field(default="", repr=False)
     default_file_quota: int = -1
 
 

@@ -62,7 +62,7 @@ rdb:
   host: rdb
   port: 5432
   user: root
-  password: root_password
+  password: ""
   default_file_quota: -1
 
 # --- Reranker ---

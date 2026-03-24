@@ -50,7 +50,6 @@ COPY openrag/ .
 COPY prompts/ /app/prompts/
 COPY conf/ /app/conf/
 
-RUN apt install -y
 RUN ln -s /app/.venv/bin/ray /usr/local/bin/ray
 
 ENV PYTHONPATH=/app/openrag/

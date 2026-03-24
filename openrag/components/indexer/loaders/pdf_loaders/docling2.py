@@ -109,7 +109,7 @@ class DoclingLoader2(BaseLoader):
             s += f"\n[PAGE_{i}]\n"
 
         enriched_content = s
-        if self.config.loader.image_captioning:
+        if self.image_captioning:
             pictures = result.document.pictures
             descriptions = await self.get_captions(pictures)
             for description in descriptions:

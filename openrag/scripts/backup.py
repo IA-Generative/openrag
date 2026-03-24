@@ -186,9 +186,7 @@ def main():
             logger: Logger instance.
 
         Returns:
-            tuple:
-                rdb (dict): Relational database configuration.
-                vdb (dict): Vector database configuration.
+            tuple: (RDBConfig, VectorDBConfig) Pydantic config models.
         """
         from config import load_config
 
@@ -222,20 +220,18 @@ def main():
     rdb, vdb = load_openrag_config(logger)
 
     if args.verbose:
-        logger.info(
-            f"rdb @ {rdb['host']}:{rdb['port']} | vdb @ {vdb['host']}:{vdb['port']} | collection: {vdb['collection_name']}"
-        )
+        logger.info(f"rdb @ {rdb.host}:{rdb.port} | vdb @ {vdb.host}:{vdb.port} | collection: {vdb.collection_name}")
 
     # List existing partitions
     try:
         pfm = PartitionFileManager(
-            database_url=f"postgresql://{rdb['user']}:{rdb['password']}@{rdb['host']}:{rdb['port']}/partitions_for_collection_{vdb['collection_name']}",
+            database_url=f"postgresql://{rdb.user}:{rdb.password}@{rdb.host}:{rdb.port}/partitions_for_collection_{vdb.collection_name}",
             logger=logger,
         )
 
         existing_partitions = {item["partition"]: item for item in pfm.list_partitions()}
     except Exception as e:
-        logger.error(f"Failed while accessing PartitionFileManager at {rdb['host']}:{rdb['port']}\n{e}")
+        logger.error(f"Failed while accessing PartitionFileManager at {rdb.host}:{rdb.port}\n{e}")
         raise
 
     if args.include_only:
@@ -259,15 +255,15 @@ def main():
 
     # Connect to Milvus
     try:
-        connections.connect("default", host=vdb["host"], port=vdb["port"])
+        connections.connect("default", host=vdb.host, port=vdb.port)
     except Exception as e:
-        logger.error(f"Can't connect to Milvus at {vdb['host']}:{vdb['port']}\n{e}")
+        logger.error(f"Can't connect to Milvus at {vdb.host}:{vdb.port}\n{e}")
         raise
 
     try:
-        vdb_collection = Collection(vdb["collection_name"])
+        vdb_collection = Collection(vdb.collection_name)
     except Exception as e:
-        logger.error(f"Can't access Milvus collection {vdb['collection_name']} at {vdb['host']}:{vdb['port']}\n{e}")
+        logger.error(f"Can't access Milvus collection {vdb.collection_name} at {vdb.host}:{vdb.port}\n{e}")
         raise
 
     try:
