@@ -221,12 +221,16 @@ class EmlLoader(BaseLoader):
                                         os.unlink(temp_file_path)
 
                             # Special handling for images with captioning if no specific loader or captioning is enabled
-                            elif file_ext in [
-                                ".png",
-                                ".jpg",
-                                ".jpeg",
-                                ".svg",
-                            ] and self.config.loader.image_captioning:
+                            elif (
+                                file_ext
+                                in [
+                                    ".png",
+                                    ".jpg",
+                                    ".jpeg",
+                                    ".svg",
+                                ]
+                                and self.config.loader.image_captioning
+                            ):
                                 try:
                                     # Load image from raw bytes
                                     image = Image.open(io.BytesIO(attachment["raw"]))

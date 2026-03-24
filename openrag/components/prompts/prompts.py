@@ -11,7 +11,7 @@ prompt_mapping = config.prompts
 def load_prompt(
     prompt_name: str,
     prompts_dir: Path = prompts_dir,
-    prompt_mapping = prompt_mapping,
+    prompt_mapping=prompt_mapping,
 ) -> str:
     file_name = getattr(prompt_mapping, prompt_name, None)
     if not file_name:
