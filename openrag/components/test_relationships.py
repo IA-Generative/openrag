@@ -113,6 +113,7 @@ class PartitionFileManagerHelper:
                         relationship_id, 0 as depth
                     FROM files
                     WHERE file_id = :file_id AND partition_name = :partition
+                        AND relationship_id IS NOT NULL
 
                     UNION ALL
 
@@ -122,6 +123,7 @@ class PartitionFileManagerHelper:
                     FROM files f
                     INNER JOIN ancestors a ON f.file_id = a.parent_id
                         AND f.partition_name = a.partition_name
+                        AND f.relationship_id IS NOT NULL
                     {depth_condition}
                 )
                 SELECT * FROM ancestors ORDER BY depth DESC
@@ -322,11 +324,12 @@ class TestGetFileAncestors:
     """Test retrieving ancestor chain for a file."""
 
     def test_get_file_ancestors_single_file(self, file_manager):
-        """Test that a file with no parent returns only itself."""
+        """Test that a file with no parent but with a relationship_id returns only itself."""
         file_manager.add_file_to_partition(
             partition="test_partition",
             file_id="root_email",
             file_metadata={"filename": "root.eml"},
+            relationship_id="thread_single",
         )
 
         ancestors = file_manager.get_file_ancestors(
@@ -378,24 +381,28 @@ class TestGetFileAncestors:
             partition="test_partition",
             file_id="file_a",
             file_metadata={"filename": "a.txt"},
+            relationship_id="thread_ordered",
         )
         file_manager.add_file_to_partition(
             partition="test_partition",
             file_id="file_b",
             file_metadata={"filename": "b.txt"},
             parent_id="file_a",
+            relationship_id="thread_ordered",
         )
         file_manager.add_file_to_partition(
             partition="test_partition",
             file_id="file_c",
             file_metadata={"filename": "c.txt"},
             parent_id="file_b",
+            relationship_id="thread_ordered",
         )
         file_manager.add_file_to_partition(
             partition="test_partition",
             file_id="file_d",
             file_metadata={"filename": "d.txt"},
             parent_id="file_c",
+            relationship_id="thread_ordered",
         )
 
         ancestors = file_manager.get_file_ancestors(
@@ -424,12 +431,14 @@ class TestGetFileAncestors:
             partition="test_partition",
             file_id="parent_file",
             file_metadata={"filename": "parent.txt"},
+            relationship_id="thread_ids",
         )
         file_manager.add_file_to_partition(
             partition="test_partition",
             file_id="child_file",
             file_metadata={"filename": "child.txt"},
             parent_id="parent_file",
+            relationship_id="thread_ids",
         )
 
         ancestor_ids = file_manager.get_ancestor_file_ids(
@@ -447,6 +456,7 @@ class TestGetFileAncestors:
             partition="test_partition",
             file_id="level_0",
             file_metadata={"filename": "root.txt"},
+            relationship_id="thread_depth_none",
         )
         for i in range(1, 6):
             file_manager.add_file_to_partition(
@@ -454,6 +464,7 @@ class TestGetFileAncestors:
                 file_id=f"level_{i}",
                 file_metadata={"filename": f"level_{i}.txt"},
                 parent_id=f"level_{i - 1}",
+                relationship_id="thread_depth_none",
             )
 
         # Without max_ancestor_depth (None), should return all 6 levels
@@ -474,6 +485,7 @@ class TestGetFileAncestors:
             partition="test_partition",
             file_id="node_0",
             file_metadata={"filename": "root.txt"},
+            relationship_id="thread_depth_limit",
         )
         for i in range(1, 6):
             file_manager.add_file_to_partition(
@@ -481,6 +493,7 @@ class TestGetFileAncestors:
                 file_id=f"node_{i}",
                 file_metadata={"filename": f"node_{i}.txt"},
                 parent_id=f"node_{i - 1}",
+                relationship_id="thread_depth_limit",
             )
 
         # With max_ancestor_depth=2, should return target (depth 0) + 2 ancestors
@@ -501,12 +514,14 @@ class TestGetFileAncestors:
             partition="test_partition",
             file_id="root",
             file_metadata={"filename": "root.txt"},
+            relationship_id="thread_depth_zero",
         )
         file_manager.add_file_to_partition(
             partition="test_partition",
             file_id="child",
             file_metadata={"filename": "child.txt"},
             parent_id="root",
+            relationship_id="thread_depth_zero",
         )
 
         # max_ancestor_depth=0 means no traversal beyond the target
@@ -527,18 +542,21 @@ class TestGetFileAncestors:
             partition="test_partition",
             file_id="short_0",
             file_metadata={"filename": "a.txt"},
+            relationship_id="thread_short",
         )
         file_manager.add_file_to_partition(
             partition="test_partition",
             file_id="short_1",
             file_metadata={"filename": "b.txt"},
             parent_id="short_0",
+            relationship_id="thread_short",
         )
         file_manager.add_file_to_partition(
             partition="test_partition",
             file_id="short_2",
             file_metadata={"filename": "c.txt"},
             parent_id="short_1",
+            relationship_id="thread_short",
         )
 
         # max_ancestor_depth=100 but chain is only 3 levels
@@ -560,6 +578,7 @@ class TestGetFileAncestors:
             partition="test_partition",
             file_id="chain_0",
             file_metadata={"filename": "a.txt"},
+            relationship_id="thread_chain",
         )
         for i in range(1, 4):
             file_manager.add_file_to_partition(
@@ -567,6 +586,7 @@ class TestGetFileAncestors:
                 file_id=f"chain_{i}",
                 file_metadata={"filename": f"{chr(97 + i)}.txt"},
                 parent_id=f"chain_{i - 1}",
+                relationship_id="thread_chain",
             )
 
         # With max_ancestor_depth=1, should get target + 1 ancestor
@@ -578,6 +598,49 @@ class TestGetFileAncestors:
 
         assert len(ancestor_ids) == 2
         assert ancestor_ids == ["chain_2", "chain_3"]
+
+
+class TestStandaloneFileNoExpansion:
+    """Test that a file indexed without relationship_id yields no additional chunks
+    when include_related and include_ancestors are both active."""
+
+    def test_no_extra_chunks_for_file_without_relationship_id(self, file_manager):
+        """A standalone file (no relationship_id, no parent_id) must not bring
+        additional files when both include_related and include_ancestors are activated.
+
+        Mirrors the logic in _expand_with_related_chunks:
+        - include_related: the guard `metadata.get("relationship_id")` is falsy,
+          so no related lookup is issued and the related task set stays empty.
+        - include_ancestors: get_file_ancestors returns only the file itself when
+          there is no parent, so it is already in seen_ids — nothing new is added.
+        """
+        file_manager.add_file_to_partition(
+            partition="test_partition",
+            file_id="standalone",
+            file_metadata={"filename": "standalone.pdf"},
+            # No relationship_id, no parent_id
+        )
+
+        # Verify the file has no relationship_id (the falsy guard that prevents
+        # the include_related lookup from being issued at all).
+        files = file_manager.get_files_by_relationship(
+            partition="test_partition",
+            relationship_id="standalone",  # non-existent → empty
+        )
+        assert files == [], "No files should share a relationship with a standalone file"
+
+        with file_manager.Session() as session:
+            row = session.execute(text("SELECT relationship_id FROM files WHERE file_id = 'standalone'")).fetchone()
+            assert not row[0], "relationship_id must be falsy so include_related is skipped"
+
+        ancestors = file_manager.get_file_ancestors(
+            partition="test_partition",
+            file_id="standalone",
+        )
+        assert len(ancestors) == 0, (
+            "Standalone file has no relationship_id, so ancestor list must be empty — "
+            "the relationship_id filter in get_file_ancestors excludes it"
+        )
 
 
 class TestFileModelFields:
