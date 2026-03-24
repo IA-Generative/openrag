@@ -189,14 +189,17 @@ def _set_nested(data: dict, dotted_path: str, value: Any) -> None:
     current[keys[-1]] = value
 
 
-def _coerce(value: str, target_type: type) -> Any:
+def _coerce(value: str, target_type: type, env_var: str = "") -> Any:
     """Coerce a string env var value to the target type."""
     if target_type is bool:
         return value.lower() in ("true", "1", "yes")
-    if target_type is int:
-        return int(value)
-    if target_type is float:
-        return float(value)
+    try:
+        if target_type is int:
+            return int(value)
+        if target_type is float:
+            return float(value)
+    except ValueError:
+        raise ValueError(f"Invalid value for {env_var}: expected {target_type.__name__}, got {value!r}")
     return value
 
 
@@ -205,7 +208,15 @@ def _apply_env_overrides(data: dict) -> dict:
     for env_var, dotted_path, target_type in _ENV_OVERRIDES:
         value = os.environ.get(env_var)
         if value is not None and value != "":
-            _set_nested(data, dotted_path, _coerce(value, target_type))
+            _set_nested(data, dotted_path, _coerce(value, target_type, env_var))
+
+    # SEMAPHORE sets both LLM and VLM semaphores (convenience shorthand)
+    semaphore = os.environ.get("SEMAPHORE")
+    if semaphore:
+        sem_value = int(semaphore)
+        sem = data.setdefault("semaphore", {})
+        sem.setdefault("llm_semaphore", sem_value)
+        sem.setdefault("vlm_semaphore", sem_value)
 
     # AUDIOLOADER applies to all audio/video extensions
     audio_loader = os.environ.get("AUDIOLOADER")
@@ -255,6 +266,9 @@ def load_config(
 
     # 1. Load YAML defaults
     data = _load_yaml(conf_dir / "config.yaml")
+
+    # Remove YAML anchors (keys starting with _) — they are DRY helpers, not config sections
+    data = {k: v for k, v in data.items() if not k.startswith("_")}
 
     # 2. Apply env var overrides
     data = _apply_env_overrides(data)

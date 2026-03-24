@@ -12,7 +12,6 @@ from .models import (
     EmbedderConfig,
     LLMConfig,
     LLMContextConfig,
-    LLMParamsConfig,
     LoaderConfig,
     MapReduceConfig,
     PathsConfig,
@@ -38,7 +37,6 @@ class Settings(ConfigMixin):
     conf/config.yaml merged with environment variable overrides.
     """
 
-    llm_params: LLMParamsConfig = Field(default_factory=LLMParamsConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     vlm: VLMConfig = Field(default_factory=VLMConfig)
     semaphore: SemaphoreConfig = Field(default_factory=SemaphoreConfig)

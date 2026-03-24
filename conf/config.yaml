@@ -8,8 +8,8 @@
 # or a .env file instead.
 # =============================================================================
 
-# --- LLM parameters (shared by llm and vlm) ---
-llm_params:
+# --- Shared LLM parameters (YAML anchor, not a config section) ---
+_llm_params: &llm_params
   temperature: 0.1
   timeout: 60
   max_retries: 2
@@ -18,10 +18,7 @@ llm_params:
 # --- LLM ---
 # Env: BASE_URL, MODEL, API_KEY
 llm:
-  temperature: 0.1
-  timeout: 60
-  max_retries: 2
-  logprobs: true
+  <<: *llm_params
   base_url: ""
   model: ""
   api_key: ""
@@ -29,10 +26,7 @@ llm:
 # --- VLM (Vision Language Model) ---
 # Env: VLM_BASE_URL, VLM_MODEL, VLM_API_KEY
 vlm:
-  temperature: 0.1
-  timeout: 60
-  max_retries: 2
-  logprobs: true
+  <<: *llm_params
   base_url: ""
   model: ""
   api_key: ""

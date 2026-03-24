@@ -30,7 +30,7 @@ class LLMParamsConfig(ConfigMixin):
 class LLMConfig(LLMParamsConfig):
     base_url: str = ""
     model: str = ""
-    api_key: str = ""
+    api_key: str = Field(default="", repr=False)
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ class LLMConfig(LLMParamsConfig):
 class VLMConfig(LLMParamsConfig):
     base_url: str = ""
     model: str = ""
-    api_key: str = ""
+    api_key: str = Field(default="", repr=False)
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ class EmbedderConfig(ConfigMixin):
     provider: str = "openai"
     model_name: str = "jinaai/jina-embeddings-v3"
     base_url: str = "http://vllm:8000/v1"
-    api_key: str = "EMPTY"
+    api_key: str = Field(default="EMPTY", repr=False)
     max_model_len: int = 8192
 
 
@@ -80,7 +80,7 @@ class RDBConfig(ConfigMixin):
     host: str = "rdb"
     port: int = 5432
     user: str = "root"
-    password: str = "root_password"
+    password: str = Field(default="root_password", repr=False)
     default_file_quota: int = -1
 
 
@@ -135,7 +135,7 @@ class PathsConfig(ConfigMixin):
     db_dir: Path = Path("/app/db")
     log_dir: Path = Path("/app/logs")
 
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = {"frozen": True, "arbitrary_types_allowed": True}
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +156,7 @@ class PromptsConfig(ConfigMixin):
 # ---------------------------------------------------------------------------
 class TranscriberConfig(ConfigMixin):
     base_url: str = "http://transcriber:8000/v1"
-    api_key: str = "EMPTY"
+    api_key: str = Field(default="EMPTY", repr=False)
     model_name: str = "openai/whisper-large-v3-turbo"
     timeout: int = 3600
     max_concurrent_chunks: int = 20
@@ -168,7 +168,7 @@ class TranscriberConfig(ConfigMixin):
 # ---------------------------------------------------------------------------
 class OpenAILoaderConfig(ConfigMixin):
     base_url: str = "http://openai:8000/v1"
-    api_key: str = "EMPTY"
+    api_key: str = Field(default="EMPTY", repr=False)
     model: str = "dotsocr-model"
     temperature: float = 0.2
     timeout: int = 180
@@ -246,7 +246,7 @@ class MimetypesConfig(ConfigMixin):
     audio_x_ms_wma: str = Field(default=".wma", alias="audio/x-ms-wma")
     video_mp4: str = Field(default=".mp4", alias="video/mp4")
 
-    model_config = {"extra": "allow", "populate_by_name": True}
+    model_config = {"frozen": True, "extra": "allow", "populate_by_name": True}
 
     def to_dict(self) -> dict[str, str]:
         """Return {mime_type: extension} mapping using aliases as keys."""
@@ -366,7 +366,7 @@ class RAGConfig(ConfigMixin):
 # ---------------------------------------------------------------------------
 class WebSearchConfig(ConfigMixin):
     provider: str = "staan"
-    api_token: str = ""
+    api_token: str = Field(default="", repr=False)
     base_url: str = "https://api.staan.ai/search/web"
     top_k: int = 5
     lang: str = "fr-FR"

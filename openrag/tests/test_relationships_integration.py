@@ -291,7 +291,7 @@ class TestRelationshipAwareRetrieverIntegration:
     Tests the retriever's ability to expand search results with
     related and ancestor documents.
 
-    Note: These tests require the hydra configuration to be available.
+    Note: These tests require the configuration to be available.
     They are marked to skip when the config is not found.
     """
 
@@ -337,7 +337,7 @@ class TestRelationshipAwareRetrieverIntegration:
         try:
             from components.retriever import RelationshipAwareRetriever
         except Exception:
-            pytest.skip("Requires hydra config to be available")
+            pytest.skip("Requires config to be available")
 
         with patch("components.retriever.get_vectordb") as mock_get_db:
             mock_db = MagicMock()
@@ -362,7 +362,7 @@ class TestRelationshipAwareRetrieverIntegration:
         try:
             from components.retriever import RelationshipAwareRetriever
         except Exception:
-            pytest.skip("Requires hydra config to be available")
+            pytest.skip("Requires config to be available")
 
         with patch("components.retriever.get_vectordb") as mock_get_db:
             mock_db = MagicMock()
@@ -394,7 +394,7 @@ class TestRelationshipAwareRetrieverIntegration:
         try:
             from components.retriever import RelationshipAwareRetriever
         except Exception:
-            pytest.skip("Requires hydra config to be available")
+            pytest.skip("Requires config to be available")
 
         with patch("components.retriever.get_vectordb") as mock_get_db:
             mock_db = MagicMock()

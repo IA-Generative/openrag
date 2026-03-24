@@ -13,6 +13,8 @@ class ConfigMixin(BaseModel):
     ``dict(config.section)``, and ``**config.section`` keeps working.
     """
 
+    model_config = {"frozen": True}
+
     def get(self, key: str, default: Any = None) -> Any:
         try:
             return getattr(self, key)
