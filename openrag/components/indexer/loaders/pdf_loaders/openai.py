@@ -77,7 +77,7 @@ class OpenAILoader(BaseLoader, ABC):
         for page_img, page_res in zip(pages, results):
             if not page_res:
                 continue
-            if self.config["loader"]["image_captioning"]:
+            if self.image_captioning:
                 await self._caption_images(page_img, page_res)
             markdown_parts.append(self._result_to_md(page_res))
         return "\n\n".join(markdown_parts).strip()

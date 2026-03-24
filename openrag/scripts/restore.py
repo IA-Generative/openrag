@@ -225,7 +225,7 @@ def main():
             logger.error(f"Failed while trying to obtain OpenRAG config: {e}")
             raise
 
-        return config["rdb"], config["vectordb"]
+        return config.rdb, config.vectordb
 
     # Arguments and configs
     import argparse

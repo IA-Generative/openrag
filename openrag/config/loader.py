@@ -38,7 +38,8 @@ _ENV_OVERRIDES: list[tuple[str, str, type]] = [
     ("MAX_MODEL_LEN", "embedder.max_model_len", int),
     # VectorDB
     ("VDB_HOST", "vectordb.host", str),
-    ("VDB_iPORT", "vectordb.port", int),
+    ("VDB_PORT", "vectordb.port", int),
+    ("VDB_iPORT", "vectordb.port", int),  # legacy typo, kept for backward compat
     ("VDB_CONNECTOR_NAME", "vectordb.connector_name", str),
     ("VDB_COLLECTION_NAME", "vectordb.collection_name", str),
     ("VDB_HYBRID_SEARCH", "vectordb.hybrid_search", bool),

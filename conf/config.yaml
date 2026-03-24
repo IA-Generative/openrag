@@ -47,7 +47,7 @@ embedder:
   max_model_len: 8192
 
 # --- Vector Database (Milvus) ---
-# Env: VDB_HOST, VDB_iPORT, VDB_CONNECTOR_NAME, VDB_COLLECTION_NAME, VDB_HYBRID_SEARCH
+# Env: VDB_HOST, VDB_PORT, VDB_CONNECTOR_NAME, VDB_COLLECTION_NAME, VDB_HYBRID_SEARCH
 vectordb:
   host: milvus
   port: 19530
