@@ -42,7 +42,7 @@ _ENV_OVERRIDES: list[tuple[str, str, type]] = [
     # VectorDB
     ("VDB_HOST", "vectordb.host", str),
     ("VDB_iPORT", "vectordb.port", int),  # legacy typo, kept for backward compat
-    ("VDB_PORT", "vectordb.port", int),   # canonical name, wins if both are set
+    ("VDB_PORT", "vectordb.port", int),  # canonical name, wins if both are set
     ("VDB_CONNECTOR_NAME", "vectordb.connector_name", str),
     ("VDB_COLLECTION_NAME", "vectordb.collection_name", str),
     ("VDB_HYBRID_SEARCH", "vectordb.hybrid_search", bool),
