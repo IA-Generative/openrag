@@ -321,13 +321,13 @@ class RetrieverFactory:
 
     @classmethod
     def create_retriever(cls, config) -> ABCRetriever:
-        retreiverConfig = config.retriever.model_dump()
+        retrieverConfig = config.retriever.model_dump()
 
-        retriever_type = retreiverConfig.pop("type")
+        retriever_type = retrieverConfig.pop("type")
         retriever_cls = RetrieverFactory.RETRIEVERS.get(retriever_type, None)
 
         if retriever_cls is None:
             raise ValueError(f"Unknown retriever type: {retriever_type}")
 
-        retreiverConfig["llm"] = ChatOpenAI(**config.llm.model_dump())
-        return retriever_cls(**retreiverConfig)
+        retrieverConfig["llm"] = ChatOpenAI(**config.llm.model_dump())
+        return retriever_cls(**retrieverConfig)

@@ -174,7 +174,7 @@ class PathsConfig(ConfigMixin):
     db_dir: Path = Path("/app/db")
     log_dir: Path = Path("/app/logs")
 
-    model_config = {"frozen": True, "arbitrary_types_allowed": True}
+    model_config = {**ConfigMixin.model_config, "arbitrary_types_allowed": True}
 
 
 # ---------------------------------------------------------------------------
@@ -315,9 +315,9 @@ class LoaderConfig(ConfigMixin):
     marker_num_gpus: float = 0.01
     marker_timeout: int = 3600
     marker_pdftext_workers: int = 2
-    docling_num_gpus: float = 0.01
-    docling_pool_size: int = 1
-    docling_max_tasks_per_worker: int = 2
+    docling_num_gpus: float = Field(default=0.01, ge=0)
+    docling_pool_size: int = Field(default=1, ge=1)
+    docling_max_tasks_per_worker: int = Field(default=2, ge=1)
     transcriber: TranscriberConfig = Field(default_factory=TranscriberConfig)
     openai: OpenAILoaderConfig = Field(default_factory=OpenAILoaderConfig)
 

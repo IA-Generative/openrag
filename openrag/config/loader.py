@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,8 @@ from typing import Any
 import yaml
 
 from config.models import Settings
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_CONF_DIR = Path(__file__).resolve().parent.parent.parent / "conf"
 
@@ -38,8 +41,8 @@ _ENV_OVERRIDES: list[tuple[str, str, type]] = [
     ("MAX_MODEL_LEN", "embedder.max_model_len", int),
     # VectorDB
     ("VDB_HOST", "vectordb.host", str),
-    ("VDB_PORT", "vectordb.port", int),
     ("VDB_iPORT", "vectordb.port", int),  # legacy typo, kept for backward compat
+    ("VDB_PORT", "vectordb.port", int),   # canonical name, wins if both are set
     ("VDB_CONNECTOR_NAME", "vectordb.connector_name", str),
     ("VDB_COLLECTION_NAME", "vectordb.collection_name", str),
     ("VDB_HYBRID_SEARCH", "vectordb.hybrid_search", bool),
@@ -164,6 +167,7 @@ _AUDIO_EXTENSIONS = ("mp3", "flac", "ogg", "aac", "flv", "wma", "mp4")
 def _load_yaml(path: Path) -> dict[str, Any]:
     """Load a YAML file, returning empty dict if not found."""
     if not path.exists():
+        logger.warning("Config file not found: %s — using defaults", path)
         return {}
     with open(path) as f:
         data = yaml.safe_load(f)
@@ -193,7 +197,12 @@ def _set_nested(data: dict, dotted_path: str, value: Any) -> None:
 def _coerce(value: str, target_type: type, env_var: str = "") -> Any:
     """Coerce a string env var value to the target type."""
     if target_type is bool:
-        return value.lower() in ("true", "1", "yes")
+        lower = value.lower()
+        if lower in ("true", "1", "yes"):
+            return True
+        if lower in ("false", "0", "no"):
+            return False
+        raise ValueError(f"Invalid value for {env_var}: expected bool, got {value!r}")
     try:
         if target_type is int:
             return int(value)
@@ -232,12 +241,6 @@ def _apply_env_overrides(data: dict) -> dict:
         reranker = data.setdefault("reranker", {})
         if not reranker.get("base_url"):
             reranker["base_url"] = f"http://reranker:{port}"
-
-    # Resolve paths
-    paths = data.get("paths", {})
-    for key in ("prompts_dir", "data_dir", "db_dir", "log_dir"):
-        if key in paths and paths[key]:
-            paths[key] = str(Path(paths[key]).resolve())
 
     return data
 
@@ -278,5 +281,11 @@ def load_config(
     if overrides:
         data = _deep_merge(data, overrides)
 
-    # 4. Validate with Pydantic
+    # 4. Resolve paths (after all merging so overrides are honored)
+    paths = data.get("paths", {})
+    for key in ("prompts_dir", "data_dir", "db_dir", "log_dir"):
+        if key in paths and paths[key]:
+            paths[key] = str(Path(paths[key]).resolve())
+
+    # 5. Validate with Pydantic
     return Settings(**data)
