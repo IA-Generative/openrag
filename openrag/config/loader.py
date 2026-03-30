@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from config.models import Settings
+from .models import Settings
 
 logger = logging.getLogger(__name__)
 

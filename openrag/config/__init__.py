@@ -8,13 +8,13 @@ Public API:
 
 from functools import lru_cache
 
-from config.models import Settings
+from .models import Settings
 
 
 @lru_cache
 def get_settings() -> Settings:
     """Cached singleton — one Settings instance per process."""
-    from config.loader import load_config as _load
+    from .loader import load_config as _load
 
     return _load()
 
@@ -28,7 +28,7 @@ def load_config(config_path=None, overrides=None) -> Settings:
     The ``overrides`` parameter bypasses the cache (useful for tests).
     """
     if overrides or config_path:
-        from config.loader import load_config as _load
+        from .loader import load_config as _load
 
         return _load(conf_dir=config_path, overrides=overrides)
     return get_settings()
