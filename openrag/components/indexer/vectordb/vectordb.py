@@ -1150,8 +1150,8 @@ class MilvusDB(BaseVectorDB):
         """Return the subset of file_ids that exist in the given partition."""
         return list(self.partition_file_manager.get_existing_file_ids(partition, file_ids))
 
-    async def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]):
-        self.partition_file_manager.add_files_to_workspace(workspace_id, file_ids)
+    async def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]) -> list[str]:
+        return self.partition_file_manager.add_files_to_workspace(workspace_id, file_ids)
 
     async def remove_file_from_workspace(self, workspace_id: str, file_id: str) -> bool:
         return self.partition_file_manager.remove_file_from_workspace(workspace_id, file_id)

@@ -170,11 +170,17 @@ async def add_files_to_workspace(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"File IDs not found in partition '{partition}': {unknown_ids}",
         )
-    await call_ray_actor_with_timeout(
+    missing = await call_ray_actor_with_timeout(
         vectordb.add_files_to_workspace.remote(workspace_id, body.file_ids),
         timeout=VECTORDB_TIMEOUT,
         task_description=f"add_files_to_workspace({workspace_id})",
     )
+    if missing:
+        # TOCTOU: files were deleted between the pre-check and the insert.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File IDs not found in partition '{partition}': {sorted(missing)}",
+        )
     return {"status": "added", "file_ids": body.file_ids}
 
 
