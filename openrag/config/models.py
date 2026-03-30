@@ -293,6 +293,8 @@ class MimetypesConfig(ConfigMixin):
         for field_name, field_info in type(self).model_fields.items():
             alias = field_info.alias or field_name
             result[alias] = getattr(self, field_name)
+        if self.__pydantic_extra__:
+            result.update(self.__pydantic_extra__)
         return result
 
 

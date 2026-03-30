@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from .models import Settings
+from config.models import Settings
 
 _DEFAULT_CONF_DIR = Path(__file__).resolve().parent.parent.parent / "conf"
 
