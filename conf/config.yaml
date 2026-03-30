@@ -68,9 +68,13 @@ rdb:
 # --- Reranker ---
 # Env: RERANKER_ENABLED, RERANKER_MODEL, RERANKER_TOP_K, RERANKER_BASE_URL, RERANKER_PORT
 reranker:
-  enable: true
+  provider: infinity
+  enabled: true
   model_name: Alibaba-NLP/gte-multilingual-reranker-base
   top_k: 10
+  api_key: EMPTY
+  timeout: 60.0
+  semaphore: 5
   base_url: ""   # Default built from RERANKER_PORT if empty
 
 # --- Map-Reduce ---

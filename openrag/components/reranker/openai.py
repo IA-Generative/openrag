@@ -11,12 +11,13 @@ logger = get_logger()
 
 class OpenAIReranker(BaseReranker):
     def __init__(self, config):
-        self.model_name = config.reranker["model_name"]
-        self.api_key = config.reranker["api_key"]
-        base_url = config.reranker.get("base_url", "").rstrip("/")
+        self.model_name = config.reranker.model_name
+        self.api_key = config.reranker.api_key
+        base_url = config.reranker.base_url.rstrip("/")
         self.rerank_url = f"{base_url}/rerank"
-        semaphore = config.reranker.get("semaphore", 40)
+        semaphore = config.reranker.semaphore
         self.semaphore = asyncio.Semaphore(semaphore)
+        self.timeout = config.reranker.timeout
         logger.debug("OpenAI Reranker initialized", model_name=self.model_name)
 
     async def rerank(self, query: str, documents: list[Document], top_k: int | None = None) -> list[Document]:
@@ -34,7 +35,7 @@ class OpenAIReranker(BaseReranker):
                             "documents": [doc.page_content for doc in documents],
                             "top_n": top_k,
                         },
-                        timeout=60.0,
+                        timeout=self.timeout,
                     )
                     response.raise_for_status()
                     data = response.json()

@@ -49,7 +49,7 @@ class RetrieverPipeline:
         self.retriever: BaseRetriever = RetrieverFactory.create_retriever(config=config)
 
         # reranker
-        self.reranker_enabled = config.reranker.get("enabled", True)
+        self.reranker_enabled = config.reranker.enabled
         self.reranker: BaseReranker = RerankerFactory.get_reranker(config)
         logger.debug("Reranker", enabled=self.reranker_enabled, provider=config.reranker.provider)
         self.reranker_top_k = config.reranker["top_k"]

@@ -126,11 +126,29 @@ class RDBConfig(ConfigMixin):
 # ---------------------------------------------------------------------------
 # Reranker
 # ---------------------------------------------------------------------------
-class RerankerConfig(ConfigMixin):
-    enable: bool = True
+class _BaseRerankerConfig(ConfigMixin):
     model_name: str = "Alibaba-NLP/gte-multilingual-reranker-base"
     top_k: int = 10
-    base_url: str = ""
+    api_key: str = Field(default="EMPTY", repr=False)
+    timeout: float = 60.0
+    semaphore: int = 5
+    enabled: bool = True
+
+
+class InfinityRerankerConfig(_BaseRerankerConfig):
+    provider: Literal["infinity"] = "infinity"
+    base_url: str = "http://reranker:7997"
+
+
+class OpenAIRerankerConfig(_BaseRerankerConfig):
+    provider: Literal["openai"] = "openai"
+    base_url: str = "http://reranker:8000/v1"
+
+
+RerankerConfig = Annotated[
+    InfinityRerankerConfig | OpenAIRerankerConfig,
+    Field(discriminator="provider"),
+]
 
 
 # ---------------------------------------------------------------------------
