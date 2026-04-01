@@ -1,20 +1,17 @@
 from .base import BaseReranker
-from .infinity import InfinityReranker
-from .openai import OpenAIReranker
-
-RERANKER_MAPPING = {
-    "infinity": InfinityReranker,
-    "openai": OpenAIReranker,
-}
 
 
 class RerankerFactory:
     @staticmethod
-    def get_reranker(config: dict) -> BaseReranker:
-        provider = config.reranker.get("provider")
-        reranker_class = RERANKER_MAPPING.get(provider, None)
+    def get_reranker(config) -> BaseReranker:
+        provider = config.reranker.provider
+        if provider == "infinity":
+            from .infinity import InfinityReranker
 
-        if not reranker_class:
+            return InfinityReranker(config)
+        elif provider == "openai":
+            from .openai import OpenAIReranker
+
+            return OpenAIReranker(config)
+        else:
             raise ValueError(f"Unsupported reranker provider: {provider}")
-
-        return reranker_class(config)
