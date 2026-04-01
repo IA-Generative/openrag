@@ -747,15 +747,12 @@ class MilvusDB(BaseVectorDB):
             entities = []
             for doc in docs:
                 chunk_metadata = dict(doc.metadata)
-                milvus_id = chunk_metadata.pop("_id")
-                vector = chunk_metadata.pop("vector")
-                # Merge new metadata into the chunk metadata
+                # Merge new metadata into the chunk metadata.
+                # _id and vector are already in chunk_metadata (via include_id/include_vectors).
                 chunk_metadata.update(metadata)
                 entities.append(
                     {
-                        "_id": milvus_id,
                         "text": doc.page_content,
-                        "vector": vector,
                         **chunk_metadata,
                     }
                 )
@@ -809,6 +806,12 @@ class MilvusDB(BaseVectorDB):
         If step 2 fails, old chunks remain intact. If step 3 fails, we have
         duplicates temporarily but no data loss — a retry or manual cleanup
         can resolve it.
+
+        Note: this implements strict PUT semantics — the new chunk metadata
+        fully replaces the old. Fields like ``relationship_id`` and ``parent_id``
+        are taken from the new chunks' metadata; if the caller omits them, the
+        PG columns are cleared. To preserve old values across a PUT, the caller
+        must re-supply them in the request metadata.
         """
         log = self.logger  # Fallback; rebound with context below
         try:
