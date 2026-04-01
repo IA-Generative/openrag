@@ -668,41 +668,6 @@ class MilvusDB(BaseVectorDB):
                 file_id=file_id,
             )
 
-    async def delete_file_chunks(self, file_id: str, partition: str):
-        """Delete file chunks from Milvus only — does NOT touch PostgreSQL or workspace associations.
-
-        Used by PUT (file replace) to remove old Milvus vectors while keeping the
-        PostgreSQL File row intact, preserving workspace FK references.
-        """
-        log = self.logger.bind(file_id=file_id, partition=partition)
-        try:
-            # Use parameterized filter to avoid expression injection via
-            # crafted file_id or partition values.
-            res = await self._async_client.delete(
-                collection_name=self.collection_name,
-                filter="partition == {partition} and file_id == {file_id}",
-                filter_params={"partition": partition, "file_id": file_id},
-            )
-            log.info("Deleted file chunks from Milvus (PG row preserved).", count=res.get("delete_count", 0))
-        except MilvusException as e:
-            log.exception(f"Couldn't delete file chunks for file_id {file_id}", error=str(e))
-            raise VDBDeleteError(
-                f"Couldn't delete file chunks for file_id {file_id}: {e!s}",
-                collection_name=self.collection_name,
-                partition=partition,
-                file_id=file_id,
-            )
-        except VDBError:
-            raise
-        except Exception as e:
-            log.exception("Unexpected error while deleting file chunks", error=str(e))
-            raise UnexpectedVDBError(
-                f"Unexpected error while deleting file chunks {file_id}: {e!s}",
-                collection_name=self.collection_name,
-                partition=partition,
-                file_id=file_id,
-            )
-
     async def delete_chunks_by_ids(self, chunk_ids: list[int]):
         """Delete specific Milvus chunks by their _id primary keys."""
         if not chunk_ids:
