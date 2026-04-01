@@ -9,7 +9,6 @@ from langchain_core.documents.base import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from omegaconf import OmegaConf
 from utils.dependencies import get_vectordb
 from utils.logger import get_logger
 
@@ -321,14 +320,14 @@ class RetrieverFactory:
     }
 
     @classmethod
-    def create_retriever(cls, config: OmegaConf) -> ABCRetriever:
-        retreiverConfig = OmegaConf.to_container(config.retriever, resolve=True)
+    def create_retriever(cls, config) -> ABCRetriever:
+        retrieverConfig = config.retriever.model_dump()
 
-        retriever_type = retreiverConfig.pop("type")
+        retriever_type = retrieverConfig.pop("type")
         retriever_cls = RetrieverFactory.RETRIEVERS.get(retriever_type, None)
 
         if retriever_cls is None:
             raise ValueError(f"Unknown retriever type: {retriever_type}")
 
-        retreiverConfig["llm"] = ChatOpenAI(**config.llm)
-        return retriever_cls(**retreiverConfig)
+        retrieverConfig["llm"] = ChatOpenAI(**config.llm.model_dump())
+        return retriever_cls(**retrieverConfig)

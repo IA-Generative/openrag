@@ -5,15 +5,15 @@ from config import load_config
 config = load_config()
 
 prompts_dir: Path = config.paths.prompts_dir
-prompt_mapping: dict = config.prompts
+prompt_mapping = config.prompts
 
 
 def load_prompt(
     prompt_name: str,
     prompts_dir: Path = prompts_dir,
-    prompt_mapping: dict = prompt_mapping,
+    prompt_mapping=prompt_mapping,
 ) -> str:
-    file_name = prompt_mapping.get(prompt_name, None)
+    file_name = getattr(prompt_mapping, prompt_name, None)
     if not file_name:
         raise ValueError(f"No associated file name found for prompt: `{prompt_name}`")
 

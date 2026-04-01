@@ -15,7 +15,7 @@ from .utils import (
 )
 
 _config = load_config()
-VECTORDB_TIMEOUT = _config.ray.indexer.get("vectordb_timeout", 30)
+VECTORDB_TIMEOUT = _config.ray.indexer.vectordb_timeout
 
 logger = get_logger()
 

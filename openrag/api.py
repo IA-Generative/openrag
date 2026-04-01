@@ -10,7 +10,7 @@ import ray
 import uvicorn
 from config import load_config
 from dotenv import dotenv_values
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
@@ -32,6 +32,7 @@ from routers.queue import router as queue_router
 from routers.search import router as search_router
 from routers.tools import router as tools_router
 from routers.users import router as users_router
+from routers.utils import require_admin
 from routers.workspaces import router as workspaces_router
 from starlette.middleware.base import BaseHTTPMiddleware
 from utils.dependencies import get_vectordb
@@ -235,6 +236,11 @@ async def health_check(request: Request):
 @app.get("/version", summary="Get openRAG version", dependencies=[])
 def get_version():
     return {"version": app.version}
+
+
+@app.get("/config", summary="Get current configuration", tags=["Configuration"], dependencies=[Depends(require_admin)])
+def get_config():
+    return config
 
 
 # Mount the indexer router

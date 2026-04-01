@@ -1,0 +1,297 @@
+# =============================================================================
+# OpenRAG Configuration
+# =============================================================================
+# This file is the single source of truth for all default settings.
+# Values can be overridden via environment variables (see comments).
+#
+# Secrets (API keys, passwords) should NEVER be set here — use env vars
+# or a .env file instead.
+# =============================================================================
+
+# --- Shared LLM parameters (YAML anchor, not a config section) ---
+_llm_params: &llm_params
+  temperature: 0.1
+  timeout: 60
+  max_retries: 2
+  logprobs: true
+
+# --- LLM ---
+# Env: BASE_URL, MODEL, API_KEY
+llm:
+  <<: *llm_params
+  base_url: ""
+  model: ""
+  api_key: ""
+
+# --- VLM (Vision Language Model) ---
+# Env: VLM_BASE_URL, VLM_MODEL, VLM_API_KEY
+vlm:
+  <<: *llm_params
+  base_url: ""
+  model: ""
+  api_key: ""
+
+# --- Semaphore (concurrency limits) ---
+# Env: LLM_SEMAPHORE, VLM_SEMAPHORE
+semaphore:
+  llm_semaphore: 10
+  vlm_semaphore: 10
+
+# --- Embedder ---
+# Env: EMBEDDER_MODEL_NAME, EMBEDDER_BASE_URL, EMBEDDER_API_KEY, MAX_MODEL_LEN
+embedder:
+  provider: openai
+  model_name: jinaai/jina-embeddings-v3
+  base_url: http://vllm:8000/v1
+  api_key: EMPTY
+  max_model_len: 8192
+
+# --- Vector Database (Milvus) ---
+# Env: VDB_HOST, VDB_PORT, VDB_CONNECTOR_NAME, VDB_COLLECTION_NAME, VDB_HYBRID_SEARCH
+vectordb:
+  host: milvus
+  port: 19530
+  connector_name: milvus
+  collection_name: vdb_test
+  hybrid_search: true
+  enable: true
+
+# --- Relational Database (PostgreSQL) ---
+# Env: POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD, DEFAULT_FILE_QUOTA
+rdb:
+  host: rdb
+  port: 5432
+  user: root
+  password: "root_password"
+  default_file_quota: -1
+
+# --- Reranker ---
+# Env: RERANKER_ENABLED, RERANKER_MODEL, RERANKER_TOP_K, RERANKER_BASE_URL, RERANKER_PORT
+reranker:
+  enable: true
+  model_name: Alibaba-NLP/gte-multilingual-reranker-base
+  top_k: 10
+  base_url: ""   # Default built from RERANKER_PORT if empty
+
+# --- Map-Reduce ---
+# Env: MAP_REDUCE_INITIAL_BATCH_SIZE, MAP_REDUCE_EXPANSION_BATCH_SIZE,
+#      MAP_REDUCE_MAX_TOTAL_DOCUMENTS, MAP_REDUCE_DEBUG
+map_reduce:
+  initial_batch_size: 10
+  expansion_batch_size: 5
+  max_total_documents: 20
+  debug: false
+
+# --- Logging ---
+# Env: LOG_LEVEL
+verbose:
+  level: DEBUG
+
+# --- Server ---
+# Env: PREFERRED_URL_SCHEME
+server:
+  preferred_url_scheme: null
+
+# --- LLM Context ---
+# Env: MAX_LLM_CONTEXT_SIZE, MAX_OUTPUT_TOKENS
+llm_context:
+  max_llm_context_size: 8192
+  max_output_tokens: 1024
+
+# --- Paths ---
+# Env: PROMPTS_DIR, DATA_DIR, DB_DIR, LOG_DIR
+paths:
+  prompts_dir: ../prompts/example1
+  data_dir: ../data
+  db_dir: /app/db
+  log_dir: /app/logs
+
+# --- Prompt template filenames ---
+prompts:
+  sys_prompt: sys_prompt_tmpl.txt
+  query_contextualizer: query_contextualizer_tmpl.txt
+  chunk_contextualizer: chunk_contextualizer_tmpl.txt
+  image_describer: image_captioning_tmpl.txt
+  spoken_style_answer: spoken_style_answer_tmpl.txt
+  hyde: hyde.txt
+  multi_query: multi_query_pmpt_tmpl.txt
+
+# --- Document loader ---
+loader:
+  # Env: IMAGE_CAPTIONING, IMAGE_CAPTIONING_URL, SAVE_MARKDOWN
+  image_captioning: true
+  image_captioning_url: true
+  save_markdown: false
+
+  mimetypes:
+    text/plain: .txt
+    text/markdown: .md
+    application/pdf: .pdf
+    message/rfc822: .eml
+    application/vnd.openxmlformats-officedocument.wordprocessingml.document: .docx
+    application/vnd.openxmlformats-officedocument.presentationml.presentation: .pptx
+    application/msword: .doc
+    image/png: .png
+    image/jpeg: .jpeg
+    audio/wav: .wav
+    audio/mpeg: .mp3
+    audio/flac: .flac
+    audio/ogg: .ogg
+    audio/aac: .aac
+    video/x-flv: .flv
+    audio/x-ms-wma: .wma
+    video/mp4: .mp4
+
+  # Env: WHISPER_MODEL, WHISPER_N_WORKERS, WHISPER_NUM_GPUS, WHISPER_CONCURRENCY_PER_WORKER
+  local_whisper:
+    model: base
+    whisper_n_workers: 3
+    whisper_num_gpus: 0.01
+    whisper_concurrency_per_worker: 2
+
+  # Env: PDFLoader, AUDIOLOADER (per-extension overrides)
+  file_loaders:
+    txt: TextLoader
+    pdf: MarkerLoader
+    eml: EmlLoader
+    docx: DocxLoader
+    pptx: PPTXLoader
+    doc: DocLoader
+    png: ImageLoader
+    jpeg: ImageLoader
+    jpg: ImageLoader
+    svg: ImageLoader
+    wav: LocalWhisperLoader
+    mp3: LocalWhisperLoader
+    flac: LocalWhisperLoader
+    ogg: LocalWhisperLoader
+    aac: LocalWhisperLoader
+    flv: LocalWhisperLoader
+    wma: LocalWhisperLoader
+    mp4: LocalWhisperLoader
+    md: MarkdownLoader
+
+  # Env: MARKER_MAX_TASKS_PER_CHILD, MARKER_POOL_SIZE, MARKER_MAX_PROCESSES,
+  #      MARKER_MIN_PROCESSES, MARKER_NUM_GPUS, MARKER_TIMEOUT, MARKER_PDFTEXT_WORKERS
+  marker_max_tasks_per_child: 10
+  marker_pool_size: 1
+  marker_max_processes: 2
+  marker_min_processes: 1
+  marker_num_gpus: 0.01
+  marker_timeout: 3600
+  marker_pdftext_workers: 2
+
+  # Env: DOCLING_NUM_GPUS, DOCLING_POOL_SIZE, DOCLING_MAX_TASKS_PER_WORKER
+  docling_num_gpus: 0.01
+  docling_pool_size: 1
+  docling_max_tasks_per_worker: 2
+
+  # Env: TRANSCRIBER_BASE_URL, TRANSCRIBER_API_KEY, TRANSCRIBER_MODEL,
+  #      TRANSCRIBER_TIMEOUT, TRANSCRIBER_MAX_CONCURRENT_CHUNKS, USE_WHISPER_LANG_DETECTOR
+  transcriber:
+    base_url: http://transcriber:8000/v1
+    api_key: EMPTY
+    model_name: openai/whisper-large-v3-turbo
+    timeout: 3600
+    max_concurrent_chunks: 20
+    use_whisper_lang_detector: true
+
+  # Env: OPENAI_LOADER_BASE_URL, OPENAI_LOADER_API_KEY, OPENAI_LOADER_MODEL,
+  #      OPENAI_LOADER_TEMPERATURE, OPENAI_LOADER_TIMEOUT, OPENAI_LOADER_MAX_RETRIES,
+  #      OPENAI_LOADER_TOP_P, OPENAI_LOADER_CONCURRENCY_LIMIT
+  openai:
+    base_url: http://openai:8000/v1
+    api_key: EMPTY
+    model: dotsocr-model
+    temperature: 0.2
+    timeout: 180
+    max_retries: 2
+    top_p: 0.9
+    concurrency_limit: 20
+
+# --- Ray ---
+ray:
+  # Env: RAY_NUM_GPUS, RAY_POOL_SIZE, RAY_MAX_TASKS_PER_WORKER
+  num_gpus: 0.01
+  pool_size: 1
+  max_tasks_per_worker: 8
+
+  indexer:
+    # Env: RAY_MAX_TASK_RETRIES, INDEXER_SERIALIZE_TIMEOUT, VECTORDB_TIMEOUT
+    max_task_retries: 2
+    serialize_timeout: 3600
+    vectordb_timeout: 30
+    concurrency_groups:
+      # Env: INDEXER_DEFAULT_CONCURRENCY, INDEXER_UPDATE_CONCURRENCY, etc.
+      default: 1000
+      update: 100
+      search: 100
+      delete: 100
+      serialize: 50
+      chunk: 1000
+      insert: 100
+
+  semaphore:
+    # Env: RAY_SEMAPHORE_CONCURRENCY
+    concurrency: 100000
+
+  serve:
+    # Env: ENABLE_RAY_SERVE, RAY_SERVE_NUM_REPLICAS, RAY_SERVE_HOST,
+    #      RAY_SERVE_PORT, CHAINLIT_PORT
+    enable: false
+    num_replicas: 1
+    host: 0.0.0.0
+    port: 8080
+    chainlit_port: 8090
+
+# --- Chunker ---
+# Env: CHUNKER, CONTEXTUAL_RETRIEVAL, CONTEXTUALIZATION_TIMEOUT,
+#      MAX_CONCURRENT_CONTEXTUALIZATION, CHUNK_SIZE, CHUNK_OVERLAP_RATE
+chunker:
+  name: recursive_splitter
+  contextual_retrieval: true
+  contextualization_timeout: 120
+  max_concurrent_contextualization: 10
+  chunk_size: 512
+  chunk_overlap_rate: 0.2
+
+# --- Retriever ---
+# Env: RETRIEVER_TYPE, RETRIEVER_TOP_K, SIMILARITY_THRESHOLD,
+#      WITH_SURROUNDING_CHUNKS, INCLUDE_RELATED, INCLUDE_ANCESTORS,
+#      RELATED_LIMIT, MAX_DEPTH
+retriever:
+  type: single
+  top_k: 50
+  similarity_threshold: 0.6
+  with_surrounding_chunks: false
+  include_related: true
+  include_ancestors: true
+  related_limit: 10
+  max_ancestor_depth: 10
+  k_queries: 3
+  combine: false
+
+# --- RAG ---
+# Env: RAG_MODE
+rag:
+  mode: ChatBotRag
+  chat_history_depth: 4
+  max_contextualized_query_len: 512
+
+# --- Web Search ---
+# Env: WEBSEARCH_PROVIDER, WEBSEARCH_API_TOKEN, WEBSEARCH_BASE_URL,
+#      WEBSEARCH_TOP_K, WEBSEARCH_LANG, WEBSEARCH_MAX_TOKENS,
+#      WEBSEARCH_FETCH_CONTENT, WEBSEARCH_FETCH_MAX_RESULTS,
+#      WEBSEARCH_FETCH_TIMEOUT, WEBSEARCH_FETCH_MAX_TOKENS, WEBSEARCH_FETCH_VERIFY_SSL
+websearch:
+  provider: staan
+  api_token: ""
+  base_url: https://api.staan.ai/search/web
+  top_k: 5
+  lang: fr-FR
+  max_tokens: 2000
+  fetch_content: true
+  fetch_max_results: 3
+  fetch_timeout: 1.0
+  fetch_max_tokens: 500
+  fetch_verify_ssl: false

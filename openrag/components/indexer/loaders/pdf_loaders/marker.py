@@ -17,7 +17,7 @@ logger = get_logger()
 config = load_config()
 
 if torch.cuda.is_available():
-    MARKER_NUM_GPUS = config.loader.get("marker_num_gpus", 0.01)
+    MARKER_NUM_GPUS = config.loader.marker_num_gpus
 else:  # On CPU
     MARKER_NUM_GPUS = 0
 
@@ -34,13 +34,13 @@ class MarkerWorker:
         self.config = load_config()
         self.page_sep = "[PAGE_SEP]"
 
-        self._workers = self.config.loader.get("marker_max_processes")
+        self._workers = self.config.loader.marker_max_processes
 
         self.converter_config = {
             "output_format": "markdown",
             "paginate_output": True,
             "page_separator": self.page_sep,
-            "pdftext_workers": self.config.loader.get("marker_pdftext_workers"),
+            "pdftext_workers": self.config.loader.marker_pdftext_workers,
             "disable_multiprocessing": False,
         }
         os.environ["RAY_ADDRESS"] = "auto"
@@ -89,7 +89,7 @@ class MarkerWorker:
             initializer=self._worker_init,
             initargs=(self.model_dict,),
             mp_context=mp.get_context("spawn"),
-            max_tasks_per_child=self.config.loader.get("marker_max_tasks_per_child", 5),
+            max_tasks_per_child=self.config.loader.marker_max_tasks_per_child,
         )
         self.logger.info("MarkerWorker initialized with ProcessPoolExecutor")
 
@@ -125,7 +125,7 @@ class MarkerWorker:
 
         converter_config = self.converter_config.copy()
         loop = asyncio.get_event_loop()
-        timeout = self.config.loader.get("marker_timeout", 3600)
+        timeout = self.config.loader.marker_timeout
 
         def run_with_timeout():
             future = self.executor.submit(self._process_pdf, file_path, converter_config)
@@ -166,9 +166,9 @@ class MarkerPool:
 
         self.logger = get_logger()
         self.config = load_config()
-        self.min_processes = self.config.loader.get("marker_min_processes")
-        self.max_processes = self.config.loader.get("marker_max_processes")
-        self.pool_size = config.loader.get("marker_pool_size")
+        self.min_processes = self.config.loader.marker_min_processes
+        self.max_processes = self.config.loader.marker_max_processes
+        self.pool_size = self.config.loader.marker_pool_size
         self.actors = [MarkerWorker.remote() for _ in range(self.pool_size)]
         self._queue: asyncio.Queue[ray.actor.ActorHandle] = asyncio.Queue()
 
@@ -199,7 +199,7 @@ class MarkerPool:
             # Ensure the worker pool is healthy
             await self.ensure_worker_pool_healthy(worker)
         try:
-            timeout = self.config.loader.get("marker_timeout", 3600)
+            timeout = self.config.loader.marker_timeout
             future = worker.process_pdf.remote(file_path)
             return await call_ray_actor_with_timeout(
                 future,
@@ -232,7 +232,7 @@ class MarkerLoader(BaseLoader):
         start = time.time()
 
         try:
-            timeout = self.config.loader.get("marker_timeout", 3600)
+            timeout = self.config.loader.marker_timeout
             future = self.worker.process_pdf.remote(file_path_str)
             markdown, images = await call_ray_actor_with_timeout(
                 future,

@@ -15,7 +15,7 @@ from .base import BaseLoader
 logger = get_logger()
 
 
-def get_loader_classes(config: dict) -> dict[str, type[BaseLoader]]:
+def get_loader_classes(config) -> dict[str, type[BaseLoader]]:
     # 1. Discover all subclasses
     root_pkg = "components.indexer.loaders"
     root_path = Path(__file__).parent
@@ -37,7 +37,7 @@ def get_loader_classes(config: dict) -> dict[str, type[BaseLoader]]:
 
     # 2. Read your config map of extensions → class names
     loader_classes: dict[str, type[BaseLoader]] = {}
-    file_loaders = config.get("loader", {}).get("file_loaders", {})
+    file_loaders = config.loader.file_loaders.model_dump()
 
     for ext, cls_name in file_loaders.items():
         cls = discovered.get(cls_name)

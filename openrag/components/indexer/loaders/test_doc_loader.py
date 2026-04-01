@@ -9,6 +9,7 @@ import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from config.models import LoaderConfig, VLMConfig
 from langchain_core.documents.base import Document as LCDocument
 
 
@@ -16,8 +17,8 @@ from langchain_core.documents.base import Document as LCDocument
 def mock_config():
     """Create a minimal mock config for BaseLoader."""
     config = MagicMock()
-    config.vlm = {"model": "mock", "base_url": "http://mock", "api_key": "mock"}
-    config.loader = {"image_captioning": False, "image_captioning_url": False}
+    config.vlm = VLMConfig(model="mock", base_url="http://mock", api_key="mock")
+    config.loader = LoaderConfig(image_captioning=False, image_captioning_url=False)
     return config
 
 

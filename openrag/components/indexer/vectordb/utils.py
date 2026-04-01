@@ -19,7 +19,7 @@ from .models import Base, File, Partition, PartitionMembership, User, Workspace,
 logger = get_logger()
 config = load_config()
 
-DEFAULT_FILE_QUOTA = config.rdb.get("default_file_quota", -1)
+DEFAULT_FILE_QUOTA = config.rdb.default_file_quota
 
 
 class PartitionFileManager:

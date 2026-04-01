@@ -42,8 +42,8 @@ class BaseReranker:
 
 class Reranker(BaseReranker):
     def __init__(self, logger, config):
-        self.model_name = config.reranker["model_name"]
-        self.client = Client(base_url=config.reranker["base_url"])
+        self.model_name = config.reranker.model_name
+        self.client = Client(base_url=config.reranker.base_url)
         self.logger = logger
         self.semaphore = asyncio.Semaphore(5)  # Only allow 5 reranking operation at a time
         self.temporal_reranking = config.reranker.get("temporal_reranking", False)

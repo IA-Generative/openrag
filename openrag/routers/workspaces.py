@@ -16,7 +16,7 @@ router = APIRouter()
 logger = get_logger()
 
 _config = load_config()
-VECTORDB_TIMEOUT = _config.ray.indexer.get("vectordb_timeout", 30)
+VECTORDB_TIMEOUT = _config.ray.indexer.vectordb_timeout
 
 _WORKSPACE_ID_RE = re.compile(r"[a-zA-Z0-9_-]+")
 
