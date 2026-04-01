@@ -239,7 +239,7 @@ The reranker enhances search quality by re-scoring and reordering retrieved docu
 | `RERANKER_TOP_K` | `int` | 10 | Number of top documents to return after reranking. Increase for better results if your LLM has a wider context window |
 | `RERANKER_BASE_URL` | `str` | `http://reranker:7997` | Base URL of the reranker service |
 | `RERANKER_API_KEY` | `str` | `EMPTY` | API key for the reranker service. Required when using the `openai` provider |
-| `RERANKER_SEMAPHORE` | `int` | 40 | Maximum number of concurrent reranking requests. Adjust based on your server capacity |
+| `RERANKER_SEMAPHORE` | `int` | 5 | Maximum number of concurrent reranking requests. Adjust based on your server capacity |
 
 #### Reranker Providers
 
