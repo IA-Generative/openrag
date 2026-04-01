@@ -239,13 +239,6 @@ def _apply_env_overrides(data: dict) -> dict:
         for ext in _AUDIO_EXTENSIONS:
             file_loaders[ext] = audio_loader
 
-    # RERANKER_PORT: build default base_url if RERANKER_BASE_URL not set
-    if not os.environ.get("RERANKER_BASE_URL"):
-        port = os.environ.get("RERANKER_PORT", "7997")
-        reranker = data.setdefault("reranker", {})
-        if not reranker.get("base_url"):
-            reranker["base_url"] = f"http://reranker:{port}"
-
     return data
 
 
