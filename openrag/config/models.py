@@ -8,7 +8,7 @@ in production, values come from conf/config.yaml merged with env var overrides
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -380,8 +380,7 @@ class ChunkerConfig(ConfigMixin):
 # ---------------------------------------------------------------------------
 # Retriever
 # ---------------------------------------------------------------------------
-class RetrieverConfig(ConfigMixin):
-    type: str = "single"
+class _BaseRetrieverConfig(ConfigMixin):
     top_k: int = 50
     similarity_threshold: float = 0.6
     with_surrounding_chunks: bool = False
@@ -389,8 +388,26 @@ class RetrieverConfig(ConfigMixin):
     include_ancestors: bool = True
     related_limit: int = 10
     max_ancestor_depth: int = 10
+
+
+class SingleRetrieverConfig(_BaseRetrieverConfig):
+    type: Literal["single"] = "single"
+
+
+class MultiQueryRetrieverConfig(_BaseRetrieverConfig):
+    type: Literal["multiQuery"] = "multiQuery"
     k_queries: int = 3
+
+
+class HydeRetrieverConfig(_BaseRetrieverConfig):
+    type: Literal["hyde"] = "hyde"
     combine: bool = False
+
+
+RetrieverConfig = Annotated[
+    SingleRetrieverConfig | MultiQueryRetrieverConfig | HydeRetrieverConfig,
+    Field(discriminator="type"),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -405,10 +422,9 @@ class RAGConfig(ConfigMixin):
 # ---------------------------------------------------------------------------
 # WebSearch
 # ---------------------------------------------------------------------------
-class WebSearchConfig(ConfigMixin):
-    provider: str = "staan"
+class _BaseWebSearchConfig(ConfigMixin):
+    base_url: str
     api_token: str = Field(default="", repr=False)
-    base_url: str = "https://api.staan.ai/search/web"
     top_k: int = 5
     lang: str = "fr-FR"
     max_tokens: int = 2000
@@ -417,6 +433,17 @@ class WebSearchConfig(ConfigMixin):
     fetch_timeout: float = 1.0
     fetch_max_tokens: int = 500
     fetch_verify_ssl: bool = False
+
+
+class StaanWebSearchConfig(_BaseWebSearchConfig):
+    provider: Literal["staan"] = "staan"
+    base_url: str = "https://api.staan.ai/search/web"
+
+
+WebSearchConfig = Annotated[
+    StaanWebSearchConfig,
+    Field(discriminator="provider"),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -445,6 +472,6 @@ class Settings(ConfigMixin):
     loader: LoaderConfig = Field(default_factory=LoaderConfig)
     ray: RayConfig = Field(default_factory=RayConfig)
     chunker: ChunkerConfig = Field(default_factory=ChunkerConfig)
-    retriever: RetrieverConfig = Field(default_factory=RetrieverConfig)
+    retriever: RetrieverConfig = Field(default_factory=SingleRetrieverConfig)
     rag: RAGConfig = Field(default_factory=RAGConfig)
-    websearch: WebSearchConfig = Field(default_factory=WebSearchConfig)
+    websearch: WebSearchConfig = Field(default_factory=StaanWebSearchConfig)
