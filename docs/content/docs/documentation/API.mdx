@@ -55,6 +55,18 @@ Get openRAG version
 GET /version
 ```
 
+### ⚙️ Configuration
+
+Get the current application configuration. Sensitive fields (`api_key`, `password`, `token`) are redacted.
+
+```http
+GET /config
+```
+
+**Permissions:** Requires admin role
+
+**Response:** JSON object with all configuration sections (LLM, embedder, vector DB, chunker, retriever, etc.)
+
 ---
 
 ### 📦 Document Indexing
