@@ -13,14 +13,13 @@ logger = get_logger()
 
 class InfinityReranker(BaseReranker):
     def __init__(self, config):
-        self.model_name = config.reranker["model_name"]
+        self.model_name = config.reranker.model_name
         self.client = Client(
-            base_url=config.reranker["base_url"],
-            timeout=config.reranker.get("timeout", 60.0),
-            headers={"Authorization": f"Bearer {config.reranker['api_key']}"},
+            base_url=config.reranker.base_url,
+            timeout=config.reranker.timeout,
+            headers={"Authorization": f"Bearer {config.reranker.api_key}"},
         )
-        semaphore = config.reranker.get("semaphore", 40)
-        self.semaphore = asyncio.Semaphore(semaphore)
+        self.semaphore = asyncio.Semaphore(config.reranker.semaphore)
         logger.debug("Reranker initialized", model_name=self.model_name)
 
     async def rerank(self, query: str, documents: list[Document], top_k: int | None = None) -> list[Document]:

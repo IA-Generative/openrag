@@ -52,7 +52,7 @@ class RetrieverPipeline:
         self.reranker_enabled = config.reranker.enabled
         self.reranker: BaseReranker = RerankerFactory.get_reranker(config)
         logger.debug("Reranker", enabled=self.reranker_enabled, provider=config.reranker.provider)
-        self.reranker_top_k = config.reranker["top_k"]
+        self.reranker_top_k = config.reranker.top_k
 
     async def retrieve_docs(
         self,
