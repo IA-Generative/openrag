@@ -12,12 +12,13 @@ logger = get_logger()
 class OpenAIReranker(BaseReranker):
     def __init__(self, config):
         self.model_name = config.reranker.model_name
-        self.api_key = config.reranker.api_key
         base_url = config.reranker.base_url.rstrip("/")
         self.rerank_url = f"{base_url}/rerank"
-        semaphore = config.reranker.semaphore
-        self.semaphore = asyncio.Semaphore(semaphore)
+        self.semaphore = asyncio.Semaphore(config.reranker.semaphore)
         self.timeout = config.reranker.timeout
+        self.client = httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {config.reranker.api_key}"},
+        )
         logger.debug("OpenAI Reranker initialized", model_name=self.model_name)
 
     async def rerank(self, query: str, documents: list[Document], top_k: int | None = None) -> list[Document]:
@@ -25,20 +26,18 @@ class OpenAIReranker(BaseReranker):
             logger.debug("Reranking documents", documents_count=len(documents), top_k=top_k)
             top_k = min(top_k, len(documents)) if top_k is not None else len(documents)
             try:
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        self.rerank_url,
-                        headers={"Authorization": f"Bearer {self.api_key}"},
-                        json={
-                            "model": self.model_name,
-                            "query": query,
-                            "documents": [doc.page_content for doc in documents],
-                            "top_n": top_k,
-                        },
-                        timeout=self.timeout,
-                    )
-                    response.raise_for_status()
-                    data = response.json()
+                response = await self.client.post(
+                    self.rerank_url,
+                    json={
+                        "model": self.model_name,
+                        "query": query,
+                        "documents": [doc.page_content for doc in documents],
+                        "top_n": top_k,
+                    },
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                data = response.json()
 
                 output = []
                 for result in data["results"]:
