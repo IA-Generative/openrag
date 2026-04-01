@@ -1,13 +1,15 @@
+from abc import ABC, abstractmethod
+
 from langchain_core.documents.base import Document
 
 
-class BaseReranker:
+class BaseReranker(ABC):
+    @abstractmethod
     async def rerank(self, query: str, documents: list[Document], top_k: int | None = None) -> list[Document]:
         """Rerank a list of documents based on a query and an optional top_k parameter"""
-        raise NotImplementedError("Rerank method must be implemented by subclasses")
 
     @staticmethod
-    def rrf_reranking(doc_lists: list[list], k: int = 60) -> list[Document]:
+    def rrf_reranking(doc_lists: list[list[Document]], k: int = 60) -> list[Document]:
         """Reciprocal_rank_fusion that takes multiple lists of ranked documents
         and an optional parameter k used in the RRF formula
         RRF formula: \\sum_{i=1}^{n} \frac{1}{k + rank_i}
