@@ -503,3 +503,8 @@ Always set a strong **`AUTH_TOKEN`** in production environments. Never leave it 
 [See this](/openrag/documentation/setup_chainlit_ui_auth/) for chainlit authentification
 
 [See this](/openrag/documentation/chainlit_data_persistency/) for chainlit data persistency
+
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `CHAINLIT_DEFAULT_LANGUAGE` | `str` | `` | Forces the Chainlit UI language for all users, ignoring the browser's language. When unset, the browser language is used with `en-US` as fallback. Must match a file in `openrag/.chainlit/translations/` (e.g. `en-US`, `fr-FR`). |
