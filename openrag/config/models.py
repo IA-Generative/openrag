@@ -126,11 +126,33 @@ class RDBConfig(ConfigMixin):
 # ---------------------------------------------------------------------------
 # Reranker
 # ---------------------------------------------------------------------------
-class RerankerConfig(ConfigMixin):
-    enable: bool = True
+class _BaseRerankerConfig(ConfigMixin):
     model_name: str = "Alibaba-NLP/gte-multilingual-reranker-base"
     top_k: int = 10
-    base_url: str = ""
+    api_key: str = Field(default="EMPTY", repr=False)
+    timeout: float = 60.0
+    semaphore: int = 5
+    enabled: bool = True
+
+
+class InfinityRerankerConfig(_BaseRerankerConfig):
+    provider: Literal["infinity"] = "infinity"
+    base_url: str = "http://reranker:7997"
+
+
+class OpenAIRerankerConfig(_BaseRerankerConfig):
+    provider: Literal["openai"] = "openai"
+    base_url: str = "http://reranker:8000/v1"
+
+
+RerankerConfig = Annotated[
+    InfinityRerankerConfig | OpenAIRerankerConfig,
+    Field(discriminator="provider"),
+]
+
+
+def _default_reranker_config() -> InfinityRerankerConfig:
+    return InfinityRerankerConfig()
 
 
 # ---------------------------------------------------------------------------
@@ -462,7 +484,7 @@ class Settings(ConfigMixin):
     embedder: EmbedderConfig = Field(default_factory=EmbedderConfig)
     vectordb: VectorDBConfig = Field(default_factory=VectorDBConfig)
     rdb: RDBConfig = Field(default_factory=RDBConfig)
-    reranker: RerankerConfig = Field(default_factory=RerankerConfig)
+    reranker: RerankerConfig = Field(default_factory=_default_reranker_config)
     map_reduce: MapReduceConfig = Field(default_factory=MapReduceConfig)
     verbose: VerboseConfig = Field(default_factory=VerboseConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)

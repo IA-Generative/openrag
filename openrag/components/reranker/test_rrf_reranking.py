@@ -1,7 +1,8 @@
 """Tests for BaseReranker.rrf_reranking static method."""
 
-from components.reranker import BaseReranker
 from langchain_core.documents.base import Document
+
+from .base import BaseReranker
 
 
 def make_doc(doc_id: str, content: str = "", **metadata) -> Document:
