@@ -20,6 +20,7 @@ x-openrag: &openrag_template
     - "host.docker.internal:host-gateway"
   volumes:
     - ${DATA_VOLUME:-./data}:/app/data
+    - ./i8n:/app/openrag/.chainlit/translations
     - ${MODEL_WEIGHTS_VOLUME:-~/.cache/huggingface}:/app/model_weights # Model weights for RAG
     - ./openrag:/app/openrag # For dev mode
     - /$SHARED_ENV:/ray_mount/.env # Shared environment variables

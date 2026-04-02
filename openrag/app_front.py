@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 
 import chainlit as cl
 import httpx
+from chainlit.config import config as cl_config
 from chainlit.context import get_context
 from consts import PARTITION_PREFIX
 from dotenv import load_dotenv
@@ -25,24 +26,28 @@ CHAINLIT_AUTH_SECRET = os.environ.get("CHAINLIT_AUTH_SECRET")
 port = os.environ.get("APP_iPORT", "8080")
 INTERNAL_BASE_URL = f"http://localhost:{port}"  # Default fallback URL
 
-commands = [
-    {
-        "id": "DeepSearch",
-        "icon": "brain-cog",
-        "description": "This uses a custom DeepSearch RAG mechanism (Map & Reduce) to handle complex queries.\nSlower but gives accurate answers.\nUse in an empty context as it consumes more tokens.",
-    },
-    {
-        "id": "SpokenStyleAnswer",
-        "icon": "audio-lines",
-        "description": "Get a conversational text answer suitable for voice assistants.\nThe answer is concise, clear, and factual.",
-        "persistent": True,
-    },
-    {
-        "id": "WebSearch",
-        "icon": "globe",
-        "description": "Augment the RAG context with live web search results.\nCombines document and web sources for more comprehensive answers.",
-    },
-]
+DEFAULT_LANGUAGE = os.environ.get("CHAINLIT_DEFAULT_LANGUAGE")
+
+
+def get_user_language() -> str:
+    """Return the active language: env override if set, otherwise browser's Accept-Language."""
+    if DEFAULT_LANGUAGE:
+        return DEFAULT_LANGUAGE
+    try:
+        context = get_context()
+        accept_language = context.session.environ.get("HTTP_ACCEPT_LANGUAGE", "")
+        if accept_language:
+            # "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7" → "fr-FR"
+            return accept_language.split(",")[0].split(";")[0].strip()
+    except Exception:
+        return "en-US"
+
+
+def t(key: str):
+    """Get a translated app string for the current user's language."""
+    lang = get_user_language()
+    app_strings = cl_config.load_translation(lang).get("app", {})
+    return app_strings[key]
 
 
 def get_headers(api_key):
@@ -167,11 +172,8 @@ async def chat_profile(current_user: cl.User):
         chat_profiles = []
         for i, m in enumerate(models, start=1):
             partition = m.id.split(PARTITION_PREFIX)[1]
-            description_template = "You are interacting with the **{name}** LLM.\n" + (
-                "The LLM's answers will be grounded on **all** partitions."
-                if "all" in m.id
-                else "The LLM's answers will be grounded only on the partition named **{partition}**."
-            )
+            description_key = "profile_description_all" if "all" in m.id else "profile_description_partition"
+            description_template = t(description_key)
             chat_profiles.append(
                 cl.ChatProfile(
                     name=m.id,
@@ -182,7 +184,7 @@ async def chat_profile(current_user: cl.User):
             )
         return chat_profiles
     except Exception as e:
-        await cl.Message(content=f"An error occured: {e!s}").send()
+        await cl.Message(content=t("error_profiles").format(e)).send()
 
 
 @cl.on_chat_start
@@ -198,10 +200,10 @@ async def on_chat_start():
                 headers=get_headers(api_key),
             )
             print(response.text)
-        await cl.context.emitter.set_commands(commands)
+        await cl.context.emitter.set_commands(t("commands"))
     except Exception as e:
         logger.exception("An error occured while checking the API health", error=str(e))
-        await cl.Message(content=f"An error occured while checking the API health: {e!s}").send()
+        await cl.Message(content=t("error_health").format(e)).send()
 
 
 async def __fetch_page_content(chunk_url, headers=None):
@@ -295,7 +297,7 @@ async def on_message(message: cl.Message):
         },
     }
 
-    async with cl.Step(name="Searching for relevant documents..."):
+    async with cl.Step(name=t("searching")):
         response_content = ""
         sources, elements, source_names = None, None, None
         # Create message content to display
@@ -324,9 +326,9 @@ async def on_message(message: cl.Message):
             elements, source_names = await _format_sources(sources, api_key=api_key, only_txt=False)
             msg.elements = elements if elements else []
             if source_names:
-                s = "\n\n" + "-" * 50 + "\n\nSources: \n" + "\n".join(source_names)
+                s = "\n\n" + "-" * 50 + f"\n\n{t('sources_label')}: \n" + "\n".join(source_names)
                 await msg.stream_token(s)
                 await msg.update()
         except Exception as e:
             logger.exception("Error during chat completion", error=str(e))
-            await cl.Message(content=f"An error occurred: {e}").send()
+            await cl.Message(content=t("error_chat").format(e)).send()

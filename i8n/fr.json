@@ -1,0 +1,241 @@
+{
+    "common": {
+        "actions": {
+            "cancel": "Annuler",
+            "confirm": "Confirmer",
+            "continue": "Continuer",
+            "goBack": "Retour",
+            "reset": "Réinitialiser",
+            "submit": "Valider"
+        },
+        "status": {
+            "loading": "Chargement...",
+            "error": {
+                "default": "Une erreur est survenue",
+                "serverConnection": "Impossible de contacter le serveur"
+            }
+        }
+    },
+    "auth": {
+        "login": {
+            "title": "Connectez-vous pour accéder à l'application",
+            "form": {
+                "email": {
+                    "label": "Adresse e-mail",
+                    "required": "L'adresse e-mail est obligatoire"
+                },
+                "password": {
+                    "label": "Mot de passe",
+                    "required": "Le mot de passe est obligatoire"
+                },
+                "actions": {
+                    "signin": "Se connecter"
+                },
+                "alternativeText": {
+                    "or": "OU"
+                }
+            },
+            "errors": {
+                "default": "Impossible de se connecter",
+                "signin": "Essayez avec un autre compte",
+                "oauthSignin": "Essayez avec un autre compte",
+                "redirectUriMismatch": "L'URI de redirection ne correspond pas à la configuration OAuth",
+                "oauthCallback": "Essayez avec un autre compte",
+                "oauthCreateAccount": "Essayez avec un autre compte",
+                "emailCreateAccount": "Essayez avec un autre compte",
+                "callback": "Essayez avec un autre compte",
+                "oauthAccountNotLinked": "Pour confirmer votre identité, connectez-vous avec le compte utilisé initialement",
+                "emailSignin": "L'e-mail n'a pas pu être envoyé",
+                "emailVerify": "Vérifiez votre boîte mail, un nouvel e-mail de confirmation a été envoyé",
+                "credentialsSignin": "Identifiants incorrects. Vérifiez vos informations de connexion",
+                "sessionRequired": "Veuillez vous connecter pour accéder à cette page"
+            }
+        },
+        "provider": {
+            "continue": "Continuer avec {{provider}}"
+        }
+    },
+    "chat": {
+        "input": {
+            "placeholder": "Écrivez votre message...",
+            "actions": {
+                "send": "Envoyer",
+                "stop": "Arrêter",
+                "attachFiles": "Joindre des fichiers"
+            }
+        },
+        "speech": {
+            "start": "Démarrer la dictée",
+            "stop": "Arrêter la dictée",
+            "connecting": "Connexion en cours..."
+        },
+        "fileUpload": {
+            "dragDrop": "Glissez-déposez vos fichiers ici",
+            "browse": "Parcourir",
+            "sizeLimit": "Limite :",
+            "errors": {
+                "failed": "Échec de l'envoi",
+                "cancelled": "Envoi annulé pour"
+            }
+        },
+        "messages": {
+            "status": {
+                "using": "Utilisation de",
+                "used": "Utilisé"
+            },
+            "actions": {
+                "copy": {
+                    "button": "Copier",
+                    "success": "Copié !"
+                }
+            },
+            "feedback": {
+                "positive": "Pertinent",
+                "negative": "Non pertinent",
+                "edit": "Modifier l'avis",
+                "dialog": {
+                    "title": "Laisser un commentaire",
+                    "submit": "Soumettre l'avis"
+                },
+                "status": {
+                    "updating": "Envoi en cours...",
+                    "updated": "Avis enregistré"
+                }
+            }
+        },
+        "history": {
+            "title": "Derniers messages",
+            "empty": "Aucun message récent",
+            "show": "Afficher l'historique"
+        },
+        "settings": {
+            "title": "Paramètres"
+        },
+        "watermark": "Propulsé par"
+    },
+    "threadHistory": {
+        "sidebar": {
+            "title": "Historique des conversations",
+            "filters": {
+                "search": "Rechercher",
+                "placeholder": "Rechercher une conversation..."
+            },
+            "timeframes": {
+                "today": "Aujourd'hui",
+                "yesterday": "Hier",
+                "previous7days": "7 derniers jours",
+                "previous30days": "30 derniers jours"
+            },
+            "empty": "Aucune conversation trouvée",
+            "actions": {
+                "close": "Fermer",
+                "open": "Ouvrir"
+            }
+        },
+        "thread": {
+            "untitled": "Conversation sans titre",
+            "menu": {
+                "rename": "Renommer",
+                "delete": "Supprimer"
+            },
+            "actions": {
+                "delete": {
+                    "title": "Confirmer la suppression",
+                    "description": "Cette conversation et tous ses messages seront définitivement supprimés. Cette action est irréversible.",
+                    "success": "Conversation supprimée",
+                    "inProgress": "Suppression en cours..."
+                },
+                "rename": {
+                    "title": "Renommer la conversation",
+                    "description": "Saisissez un nouveau nom pour cette conversation",
+                    "form": {
+                        "name": {
+                            "label": "Nom",
+                            "placeholder": "Nouveau nom"
+                        }
+                    },
+                    "success": "Conversation renommée",
+                    "inProgress": "Renommage en cours..."
+                }
+            }
+        }
+    },
+    "navigation": {
+        "header": {
+            "chat": "Conversation",
+            "readme": "Documentation",
+            "theme": {
+                "light": "Thème clair",
+                "dark": "Thème sombre",
+                "system": "Thème système"
+            }
+        },
+        "newChat": {
+            "button": "Nouvelle conversation",
+            "dialog": {
+                "title": "Nouvelle conversation",
+                "description": "Votre conversation en cours sera effacée. Voulez-vous continuer ?",
+                "tooltip": "Nouvelle conversation"
+            }
+        },
+        "user": {
+            "menu": {
+                "settings": "Paramètres",
+                "settingsKey": "S",
+                "apiKeys": "Clés API",
+                "logout": "Se déconnecter"
+            }
+        }
+    },
+    "apiKeys": {
+        "title": "Clés API requises",
+        "description": "Les clés API suivantes sont nécessaires pour utiliser cette application. Elles sont stockées localement sur votre appareil.",
+        "success": {
+            "saved": "Clés enregistrées"
+        }
+    },
+    "alerts": {
+        "info": "Info",
+        "note": "Note",
+        "tip": "Astuce",
+        "important": "Important",
+        "warning": "Avertissement",
+        "caution": "Attention",
+        "debug": "Débogage",
+        "example": "Exemple",
+        "success": "Succès",
+        "help": "Aide",
+        "idea": "Idée",
+        "pending": "En attente",
+        "security": "Sécurité",
+        "beta": "Bêta",
+        "best-practice": "Bonne pratique"
+    },
+    "app": {
+        "commands": [
+            {
+                "id": "DeepSearch",
+                "icon": "brain-cog",
+                "description": "Analyse approfondie via le mécanisme RAG DeepSearch (Map & Reduce).\nPlus lent, mais plus précis pour les requêtes complexes.\nÀ utiliser dans une nouvelle conversation, car il consomme davantage de tokens."
+            },
+            {
+                "id": "SpokenStyleAnswer",
+                "icon": "audio-lines",
+                "description": "Génère une réponse dans un style oral, adaptée aux assistants vocaux.\nConcise, claire et factuelle.",
+                "persistent": true
+            },
+            {
+                "id": "WebSearch",
+                "icon": "globe",
+                "description": "Enrichit la recherche documentaire avec des résultats web en temps réel.\nCombine vos documents et le web pour des réponses plus complètes."
+            }
+        ],
+        "searching": "Recherche de documents pertinents...",
+        "sources_label": "Sources",
+        "profile_description_all": "Vous interagissez avec le LLM **{name}**.\nLes réponses du LLM seront basées sur **toutes** les partitions.",
+        "profile_description_partition": "Vous interagissez avec le LLM **{name}**.\nLes réponses du LLM seront basées uniquement sur la partition nommée **{partition}**.",
+        "error_health": "Impossible de joindre l'API : {}",
+        "error_chat": "Une erreur est survenue : {}",
+        "error_profiles": "Une erreur est survenue : {}"
+    }
+}
