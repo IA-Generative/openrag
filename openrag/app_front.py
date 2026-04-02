@@ -125,7 +125,7 @@ async def chat_profile(current_user: cl.User):
                     name=m.id,
                     markdown_description=description_template.format(name=m.id, partition=partition),
                     icon="/public/favicon.svg",
-                    default=m.id == "openrag-all",
+                    default=m.id == f"{PARTITION_PREFIX}all",
                 )
             )
         return chat_profiles

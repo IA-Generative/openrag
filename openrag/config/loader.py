@@ -274,6 +274,11 @@ def load_config(
     # 2. Apply env var overrides
     data = _apply_env_overrides(data)
 
+    # Strip blank reranker.base_url so the provider-specific Pydantic default applies
+    reranker = data.get("reranker")
+    if isinstance(reranker, dict) and not reranker.get("base_url"):
+        reranker.pop("base_url", None)
+
     # 3. Apply programmatic overrides (tests)
     if overrides:
         data = _deep_merge(data, overrides)

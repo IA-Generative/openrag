@@ -30,9 +30,10 @@ class BaseReranker(ABC):
             doc_list: list[Document]
             for rank, doc in enumerate(doc_list, start=1):
                 doc_id = doc.metadata.get("_id")
+                doc_key = ("id", doc_id) if doc_id is not None else ("object", id(doc))
 
-                score, d = fused_scores.get(doc_id, (0, doc))
-                fused_scores[doc_id] = (score + 1 / (rank + k), d)
+                score, d = fused_scores.get(doc_key, (0, doc))
+                fused_scores[doc_key] = (score + 1 / (rank + k), d)
 
         # sort the docs
         reranked_docs = [doc for _, doc in sorted(fused_scores.values(), key=lambda x: x[0], reverse=True)]

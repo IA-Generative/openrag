@@ -151,6 +151,10 @@ RerankerConfig = Annotated[
 ]
 
 
+def _default_reranker_config() -> InfinityRerankerConfig:
+    return InfinityRerankerConfig()
+
+
 # ---------------------------------------------------------------------------
 # MapReduce
 # ---------------------------------------------------------------------------
@@ -480,7 +484,7 @@ class Settings(ConfigMixin):
     embedder: EmbedderConfig = Field(default_factory=EmbedderConfig)
     vectordb: VectorDBConfig = Field(default_factory=VectorDBConfig)
     rdb: RDBConfig = Field(default_factory=RDBConfig)
-    reranker: RerankerConfig = Field(default_factory=RerankerConfig)
+    reranker: RerankerConfig = Field(default_factory=_default_reranker_config)
     map_reduce: MapReduceConfig = Field(default_factory=MapReduceConfig)
     verbose: VerboseConfig = Field(default_factory=VerboseConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
