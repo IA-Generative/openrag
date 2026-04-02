@@ -1,12 +1,13 @@
 import re
 import secrets
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import aiofiles
 import consts
 from components.utils import load_config
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile, status
 
 config = load_config()
 SERIALIZE_TIMEOUT = config.ray.indexer.serialize_timeout
@@ -84,3 +85,25 @@ async def serialize_file(task_id: str, path: str, metadata: dict | None = None):
         timeout=SERIALIZE_TIMEOUT,
         task_description=f"Serialization task {task_id}",
     )
+
+
+def extract_temporal_fields(metadata: dict, temporal_fields: list) -> dict:
+    result = {}
+    for field in temporal_fields:
+        if field not in metadata or metadata[field] is None:
+            continue
+
+        datetime_str = metadata[field]
+        try:
+            # Try parsing the provided datetime to ensure it's valid
+            d = datetime.fromisoformat(datetime_str)
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=UTC)
+            result[field] = d.isoformat()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid ISO 8601 datetime field ({datetime_str}) for field '{field}'.",
+            )
+
+    return result

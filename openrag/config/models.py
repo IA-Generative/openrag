@@ -110,6 +110,7 @@ class VectorDBConfig(ConfigMixin):
     collection_name: str = "vdb_test"
     hybrid_search: bool = True
     enable: bool = True
+    schema_version: int = 1
 
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 import json
 import time
 import uuid
+from datetime import datetime
 
 import pytest
 
@@ -496,12 +497,42 @@ This content is intentionally repeated across multiple files to test filtering.
     def filter_test_files(self, tmp_path):
         """Create 6 files with the same content but different metadata."""
         files_config = [
-            {"file_id": "filter-file-1", "origin": "source_A", "file_number": 1},
-            {"file_id": "filter-file-2", "origin": "source_A", "file_number": 2},
-            {"file_id": "filter-file-3", "origin": "source_B", "file_number": 3},
-            {"file_id": "filter-file-4", "origin": "source_B", "file_number": 4},
-            {"file_id": "filter-file-5", "origin": "source_C", "file_number": 5},
-            {"file_id": "filter-file-6", "origin": "source_C", "file_number": 6},
+            {
+                "file_id": "filter-file-1",
+                "origin": "source_A",
+                "file_number": 1,
+                "created_at": "2020-06-15T00:00:00+00:00",
+            },
+            {
+                "file_id": "filter-file-2",
+                "origin": "source_A",
+                "file_number": 2,
+                "created_at": "2021-06-15T00:00:00+00:00",
+            },
+            {
+                "file_id": "filter-file-3",
+                "origin": "source_B",
+                "file_number": 3,
+                "created_at": "2022-06-15T00:00:00+00:00",
+            },
+            {
+                "file_id": "filter-file-4",
+                "origin": "source_B",
+                "file_number": 4,
+                "created_at": "2023-06-15T00:00:00+00:00",
+            },
+            {
+                "file_id": "filter-file-5",
+                "origin": "source_C",
+                "file_number": 5,
+                "created_at": "2024-06-15T00:00:00+00:00",
+            },
+            {
+                "file_id": "filter-file-6",
+                "origin": "source_C",
+                "file_number": 6,
+                "created_at": "2024-07-15T00:00:00+00:00",
+            },
         ]
 
         file_paths = {}
@@ -709,3 +740,91 @@ This content is intentionally repeated across multiple files to test filtering.
         file_ids = {doc["metadata"].get("file_id") for doc in documents}
         expected_ids = {"filter-file-1", "filter-file-2", "filter-file-6"}
         assert file_ids == expected_ids, f"Expected {expected_ids}, got {file_ids}"
+
+    # =========================================================================
+    # Temporal filtering tests (datetime field, ISO 8601)
+    # =========================================================================
+
+    def test_temporal_fields_present_in_metadata(self, api_client, indexed_filter_partition):
+        """Test temporal fields are present in the metadata."""
+        response = api_client.get(
+            f"/search/partition/{indexed_filter_partition}",
+            params={
+                "text": self.COMMON_CONTENT,
+                "top_k": 10,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "documents" in data
+
+        documents = data["documents"]
+        assert len(documents) > 0, "Should find at least one document"
+
+        # Verify that each document has temporal fields in metadata
+        for doc in documents:
+            metadata = doc.get("metadata", {})
+            for temp_field in ["created_at"]:
+                k = metadata.get(temp_field)
+                assert k is not None, (
+                    f"Document {doc['metadata'].get('file_id')} is missing temporal field '{temp_field}'"
+                )
+                # Verify it's a valid ISO 8601 datetime string
+                try:
+                    datetime.fromisoformat(k)
+                except ValueError:
+                    assert False, (
+                        f"Document {doc['metadata'].get('file_id')} has invalid datetime format in field '{temp_field}': {k}"
+                    )
+
+    def test_temporal_filter_with_iso_format(self, api_client, indexed_filter_partition):
+        """Test that temporal filtering on the created_at field works with ISO 8601 strings."""
+        partition = indexed_filter_partition
+
+        # --- before 2022: should return files 1 and 2 ---
+        resp = api_client.get(
+            f"/search/partition/{partition}",
+            params={
+                "text": self.COMMON_CONTENT,
+                "top_k": 10,
+                "filter": 'created_at < ISO "2022-01-01T00:00:00+00:00"',
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "documents" in data
+        file_ids = {doc["metadata"].get("file_id") for doc in data["documents"]}
+
+        assert file_ids == {"filter-file-1", "filter-file-2"}, f"Expected files before 2022, got {file_ids}"
+
+        # --- after 2024-01-01: should return files 5 and 6 ---
+        resp = api_client.get(
+            f"/search/partition/{partition}",
+            params={
+                "text": self.COMMON_CONTENT,
+                "top_k": 10,
+                "filter": 'created_at > ISO "2024-01-01T00:00:00+00:00"',
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "documents" in data
+        file_ids = {doc["metadata"].get("file_id") for doc in data["documents"]}
+        assert file_ids == {"filter-file-5", "filter-file-6"}, f"Expected files after 2024, got {file_ids}"
+
+        # --- range [2022, 2024]: should return files 3 and 4 ---
+        resp = api_client.get(
+            f"/search/partition/{partition}",
+            params={
+                "text": self.COMMON_CONTENT,
+                "top_k": 10,
+                "filter": 'created_at >= ISO "2022-01-01T00:00:00+00:00" AND created_at <= ISO "2024-01-01T00:00:00+00:00"',
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "documents" in data
+        file_ids = {doc["metadata"].get("file_id") for doc in data["documents"]}
+        assert file_ids == {"filter-file-3", "filter-file-4"}, (
+            f"Expected filter-file-3 and filter-file-4 in range [2022, 2024], got {file_ids}"
+        )
