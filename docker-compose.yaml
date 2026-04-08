@@ -1,7 +1,7 @@
 include:
   - vdb/milvus.yaml
   - ${CHAINLIT_DATALAYER_COMPOSE:-extern/dummy.yaml}
-  - extern/infinity.yaml
+  - extern/reranker/${RERANKER_PROVIDER:-infinity}.yaml
   - ${TRANSCRIBER_COMPOSE:-extern/dummy.yaml}
 
 x-openrag: &openrag_template

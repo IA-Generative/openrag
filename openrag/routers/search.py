@@ -27,9 +27,11 @@ class RelatedDocSearchParams:
         self,
         include_related: bool = Query(False, description="Include chunks from files with same relationship_id"),
         include_ancestors: bool = Query(False, description="Include chunks from ancestor files in hierarchy"),
-        related_limit: int = Query(20, description="Maximum number of related/ancestor chunks to fetch per result"),
+        related_limit: int = Query(
+            20, ge=0, description="Maximum number of related/ancestor chunks to fetch per result"
+        ),
         max_ancestor_depth: int | None = Query(
-            None, description="Maximum depth of ancestor files to include. None means unlimited."
+            None, ge=0, description="Maximum depth of ancestor files to include. None means unlimited."
         ),
     ):
         self.include_related = include_related
@@ -42,8 +44,10 @@ class CommonSearchParams:
     def __init__(
         self,
         text: str = Query(..., description="Text to search semantically"),
-        top_k: int = Query(5, description="Number of top results to return"),
-        similarity_threshold: float = Query(0.6, description="Minimum similarity score for results (0 to 1)"),
+        top_k: int = Query(5, ge=1, description="Number of top results to return"),
+        similarity_threshold: float = Query(
+            0.75, ge=0, le=1, description="Minimum similarity score for results (0 to 1)"
+        ),
         filter: str | None = Query(
             default=None,
             description="""Milvus filter expression string.""",
@@ -75,7 +79,7 @@ class CommonSearchParams:
     - Logical: AND, OR, NOT (see https://milvus.io/docs/boolean.md)
     Examples:
     - `file_id == "abc123"`
-    - `created_at > "2024-01-01"`
+    - `created_at > ISO "2024-01-01T00:00:00+00:00"`
     - `page >= 5 AND page <= 10`
     - `file_id in ["id1", "id2", "id3"]`
 
@@ -176,7 +180,6 @@ async def search_multiple_partitions(
         }
         for doc in results
     ]
-
     return JSONResponse(status_code=status.HTTP_200_OK, content={"documents": documents})
 
 
@@ -202,7 +205,7 @@ async def search_multiple_partitions(
     - Logical: AND, OR, NOT (see https://milvus.io/docs/boolean.md)
     Examples:
     - `file_id == "abc123"`
-    - `created_at > "2024-01-01"`
+    - `created_at > ISO "2024-01-01T00:00:00+00:00"`
     - `page >= 5 AND page <= 10`
     - `file_id in ["id1", "id2", "id3"]`
 
@@ -284,7 +287,6 @@ async def search_one_partition(
         }
         for doc in results
     ]
-
     return JSONResponse(status_code=status.HTTP_200_OK, content={"documents": documents})
 
 
@@ -307,7 +309,7 @@ async def search_one_partition(
     - Logical: AND, OR, NOT (see https://milvus.io/docs/boolean.md)
     Examples:
     - `file_id == "abc123"`
-    - `created_at > "2024-01-01"`
+    - `created_at > ISO "2024-01-01T00:00:00+00:00"`
     - `page >= 5 AND page <= 10`
     - `file_id in ["id1", "id2", "id3"]`
 
@@ -356,5 +358,4 @@ async def search_file(
         }
         for doc in results
     ]
-
     return JSONResponse(status_code=status.HTTP_200_OK, content={"documents": documents})

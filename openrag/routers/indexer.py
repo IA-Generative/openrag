@@ -1,10 +1,9 @@
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import ray
-from components.indexer.utils.files import sanitize_filename, save_file_to_disk
+from components.indexer.utils.files import extract_temporal_fields, sanitize_filename, save_file_to_disk
 from components.ray_utils import call_ray_actor_with_timeout
 from config import load_config
 from fastapi import (
@@ -50,6 +49,9 @@ DICT_MIMETYPES = config.loader.mimetypes.to_dict()
 
 # URL scheme configuration
 PREFERRED_URL_SCHEME = config.server.preferred_url_scheme
+
+# DATETIME FIELDS: Fields provided by the client
+TEMPORAL_FIELDS = ["created_at"]
 
 
 def build_url(request: Request, route_name: str, **path_params) -> str:
@@ -102,8 +104,13 @@ JSON string containing file metadata. Example:
     "mimetype": "text/plain",
     "author": "John Doe",
     ...
+    "created_at": "2025-01-03T00:00:00+08:00"  // Optional temporal field (ISO 8601)
 }
 ```
+
+**Temporal Fields:**
+- You can provide a temporal fields such as `created_at` in the metadata for time-based queries and filtering.
+- Datetime values must be in ISO 8601 format (e.g., `2025-01-03T00:00:00+08:00`).
 
 **Common Mimetypes:**
 - `text/plain` - Plain text files
@@ -157,8 +164,11 @@ async def add_file(
 
     # Append extra metadata
     metadata["file_size"] = human_readable_size(file_stat.st_size)
-    metadata["created_at"] = datetime.fromtimestamp(file_stat.st_ctime).isoformat()
     metadata["file_id"] = file_id
+
+    ## Add temporal fields to metadata, using provided values if available, otherwise extracting from file system
+    temporal_fields = extract_temporal_fields(metadata, temporal_fields=TEMPORAL_FIELDS)
+    metadata.update(temporal_fields)
 
     # Validate and parse workspace_ids
     parsed_workspace_ids = None
@@ -247,8 +257,13 @@ JSON string containing file metadata. Example:
     "mimetype": "text/plain",
     "author": "John Doe",
     ...
+    "created_at": "2024-01-01T12:00:00+00:00"  // Optional temporal field (ISO 8601)
 }
 ```
+
+**Temporal Fields:**
+- You can provide the temporal fields `created_at` in the metadata for time-based queries and filtering.
+- Datetime values must be in ISO 8601 format (e.g., `2024-01-01T12:00:00+00:00`).
 
 **Response:**
 Returns 202 Accepted with a task status URL for tracking indexing progress.
@@ -292,8 +307,11 @@ async def put_file(
 
     # Append extra metadata
     metadata["file_size"] = human_readable_size(file_stat.st_size)
-    metadata["created_at"] = datetime.fromtimestamp(file_stat.st_ctime).isoformat()
     metadata["file_id"] = file_id
+
+    ## Add temporal fields to metadata, using provided values if available, otherwise extracting from file system
+    temporal_fields = extract_temporal_fields(metadata, temporal_fields=TEMPORAL_FIELDS)
+    metadata.update(temporal_fields)
 
     # Re-index: serialize → chunk → embed → insert into Milvus + update PG row in-place.
     # replace=True tells add_file to update the existing PG File row rather than creating a new one.

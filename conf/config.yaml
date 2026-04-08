@@ -55,6 +55,7 @@ vectordb:
   collection_name: vdb_test
   hybrid_search: true
   enable: true
+  schema_version: 1 # Increment when the collection schema changes and a migration is required
 
 # --- Relational Database (PostgreSQL) ---
 # Env: POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD, DEFAULT_FILE_QUOTA
@@ -66,12 +67,16 @@ rdb:
   default_file_quota: -1
 
 # --- Reranker ---
-# Env: RERANKER_ENABLED, RERANKER_MODEL, RERANKER_TOP_K, RERANKER_BASE_URL, RERANKER_PORT
+# Env: RERANKER_PROVIDER, RERANKER_ENABLED, RERANKER_MODEL, RERANKER_TOP_K, RERANKER_BASE_URL, RERANKER_API_KEY, RERANKER_TIMEOUT, RERANKER_SEMAPHORE
 reranker:
-  enable: true
+  provider: infinity
+  enabled: true
   model_name: Alibaba-NLP/gte-multilingual-reranker-base
   top_k: 10
-  base_url: ""   # Default built from RERANKER_PORT if empty
+  api_key: EMPTY
+  timeout: 60.0
+  semaphore: 5
+  base_url: ""   # Provider-specific default: infinity → http://reranker:7997, openai → http://reranker:8000/v1
 
 # --- Map-Reduce ---
 # Env: MAP_REDUCE_INITIAL_BATCH_SIZE, MAP_REDUCE_EXPANSION_BATCH_SIZE,

@@ -229,19 +229,24 @@ The retriever fetches relevant documents from the vector database based on query
 
 ### Reranker Configuration
 
-The reranker enhances search quality by re-scoring and reordering retrieved documents according to their relevance to the user's query. Currently, the system uses [Infinity server](https://github.com/michaelfeil/infinity) for reranking functionality.
-
-:::info[Future Improvements]
-The current Infinity server interface is not OpenAI-compatible, which limits integration flexibility. We plan to improve this by supporting OpenAI-compatible reranker interfaces in future releases.
-:::
+The reranker enhances search quality by re-scoring and reordering retrieved documents according to their relevance to the user's query. Two providers are supported: **Infinity** (default) and **OpenAI-compatible** endpoints.
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `RERANKER_ENABLED` | `bool` | true | Enable or disable the reranking mechanism |
+| `RERANKER_PROVIDER` | `str` | `infinity` | Reranker backend to use. Accepted values: `infinity`, `openai` |
 | `RERANKER_MODEL` | `str` | Alibaba-NLP/gte-multilingual-reranker-base | Model used for reranking documents.|
-| `RERANKER_TOP_K` | `int` | 5 | Number of top documents to return after reranking. Increase to 8 for better results if your LLM has a wider context window |
+| `RERANKER_TOP_K` | `int` | 10 | Number of top documents to return after reranking. Increase for better results if your LLM has a wider context window |
 | `RERANKER_BASE_URL` | `str` | `http://reranker:7997` | Base URL of the reranker service |
-| `RERANKER_PORT` | `int` | 7997 | Port on which the reranker service listens |
+| `RERANKER_API_KEY` | `str` | `EMPTY` | API key for the reranker service. Required when using the `openai` provider |
+| `RERANKER_SEMAPHORE` | `int` | 5 | Maximum number of concurrent reranking requests. Adjust based on your server capacity |
+
+#### Reranker Providers
+
+| Provider | `RERANKER_PROVIDER` value | Description |
+|----------|--------------------------|-------------|
+| **Infinity** | `infinity` | Uses the [Infinity server](https://github.com/michaelfeil/infinity) via its native client. Default port: `7997` |
+| **OpenAI-compatible** | `openai` | Uses any OpenAI-compatible reranker endpoint (e.g. vLLM, LiteLLM, TEI). Default port: `8000` |
 
 ## Extra
 ### Prompts

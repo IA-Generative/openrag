@@ -6,7 +6,7 @@ x-reranker: &reranker_template
   volumes:
     - ${VLLM_CACHE:-/root/.cache/huggingface}:/app/.cache/huggingface # Model weights for RAG
   # ports:
-  #   - ${RERANKER_PORT:-7997}:${RERANKER_PORT:-7997}
+  #   - ${RERANKER_PORT:-7997}:7997
 
 services:
   reranker:
@@ -23,7 +23,8 @@ services:
     command: >
       v2
       --model-id ${RERANKER_MODEL:-Alibaba-NLP/gte-multilingual-reranker-base}
-      --port ${RERANKER_PORT:-7997}
+      --api-key ${RERANKER_API_KEY:-"EMPTY"}
+      --port 7997
     profiles:
       - ''
 
@@ -35,7 +36,8 @@ services:
       v2
       --engine torch
       --model-id ${RERANKER_MODEL:-Alibaba-NLP/gte-multilingual-reranker-base}
-      --port ${RERANKER_PORT:-7997}
+      --api-key ${RERANKER_API_KEY:-"EMPTY"}
+      --port 7997
     profiles:
       - 'cpu'
 

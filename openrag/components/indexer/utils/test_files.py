@@ -2,9 +2,9 @@ import io
 from pathlib import Path
 
 import pytest
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 
-from .files import sanitize_filename, save_file_to_disk
+from .files import extract_temporal_fields, sanitize_filename, save_file_to_disk
 
 
 @pytest.mark.asyncio
@@ -83,3 +83,30 @@ async def test_save_file_to_disk_with_random_prefix(tmp_path, monkeypatch):
 )
 def test_sanitize_filename(input_name, expected):
     assert sanitize_filename(input_name) == expected
+
+
+# --- extract_temporal_fields ---
+
+
+def test_extract_temporal_fields_field_not_in_metadata():
+    assert extract_temporal_fields({}, ["created_at"]) == {}
+
+
+def test_extract_temporal_fields_naive_datetime_defaults_to_utc():
+    metadata = {"created_at": "2024-06-15T12:30:00"}
+    result = extract_temporal_fields(metadata, ["created_at"])
+    assert result == {"created_at": "2024-06-15T12:30:00+00:00"}
+
+
+def test_extract_temporal_fields_with_timezone():
+    metadata = {"created_at": "2024-06-15T12:30:00+02:00"}
+    result = extract_temporal_fields(metadata, ["created_at"])
+    assert result == {"created_at": "2024-06-15T12:30:00+02:00"}
+
+
+def test_extract_temporal_fields_invalid_datetime_raises_400():
+    with pytest.raises(HTTPException) as exc_info:
+        extract_temporal_fields({"created_at": "not-a-date"}, ["created_at"])
+    assert exc_info.value.status_code == 400
+    assert "not-a-date" in exc_info.value.detail
+    assert "created_at" in exc_info.value.detail

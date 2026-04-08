@@ -53,10 +53,14 @@ _ENV_OVERRIDES: list[tuple[str, str, type]] = [
     ("POSTGRES_PASSWORD", "rdb.password", str),
     ("DEFAULT_FILE_QUOTA", "rdb.default_file_quota", int),
     # Reranker
-    ("RERANKER_ENABLED", "reranker.enable", bool),
+    ("RERANKER_PROVIDER", "reranker.provider", str),
+    ("RERANKER_ENABLED", "reranker.enabled", bool),
     ("RERANKER_MODEL", "reranker.model_name", str),
     ("RERANKER_TOP_K", "reranker.top_k", int),
     ("RERANKER_BASE_URL", "reranker.base_url", str),
+    ("RERANKER_API_KEY", "reranker.api_key", str),
+    ("RERANKER_TIMEOUT", "reranker.timeout", float),
+    ("RERANKER_SEMAPHORE", "reranker.semaphore", int),
     # Map-Reduce
     ("MAP_REDUCE_INITIAL_BATCH_SIZE", "map_reduce.initial_batch_size", int),
     ("MAP_REDUCE_EXPANSION_BATCH_SIZE", "map_reduce.expansion_batch_size", int),
@@ -235,13 +239,6 @@ def _apply_env_overrides(data: dict) -> dict:
         for ext in _AUDIO_EXTENSIONS:
             file_loaders[ext] = audio_loader
 
-    # RERANKER_PORT: build default base_url if RERANKER_BASE_URL not set
-    if not os.environ.get("RERANKER_BASE_URL"):
-        port = os.environ.get("RERANKER_PORT", "7997")
-        reranker = data.setdefault("reranker", {})
-        if not reranker.get("base_url"):
-            reranker["base_url"] = f"http://reranker:{port}"
-
     return data
 
 
@@ -276,6 +273,11 @@ def load_config(
 
     # 2. Apply env var overrides
     data = _apply_env_overrides(data)
+
+    # Strip blank reranker.base_url so the provider-specific Pydantic default applies
+    reranker = data.get("reranker")
+    if isinstance(reranker, dict) and not reranker.get("base_url"):
+        reranker.pop("base_url", None)
 
     # 3. Apply programmatic overrides (tests)
     if overrides:
