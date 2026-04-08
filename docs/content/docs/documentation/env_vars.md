@@ -37,9 +37,17 @@ The `MarkerLoader` is the default PDF parsing engine. It can be configured using
 | `MARKER_POOL_SIZE` | int | 1 | Number of workers (typically 1 worker per cluster node) |
 | `MARKER_MAX_PROCESSES` | int | 2 | Number of subprocesses <-> Number of concurrent PDFs per worker (to increase depending on your available GPU resources)|
 | `MARKER_MAX_TASKS_PER_CHILD` | int | 10 | Number of tasks a child (PDF worker) has to process before it gets restarted to clean up memory leaks |
-| `MARKER_MIN_PROCESSES` | int | 1 | Minimum number of subprocesses available before triggering a process pool reset |
 | `MARKER_TIMEOUT` | int | 3600 | Timeout in seconds for marker processes |
 | `MARKER_PDFTEXT_WORKERS` | int | 2 | Number of PDF text extractor workers inside marker. |
+| `MARKER_CHUNK_SIZE` | int | 10 | Split large PDFs into chunks of this many pages for parallel processing across workers. Use <= 0 to deactivate chunking. |
+
+:::note[Page chunking with `MARKER_CHUNK_SIZE`]
+Enabling page chunking allows processing large PDFs **significantly faster** by dispatching page ranges to all available workers in parallel rather than sending the entire file to a single worker. The main benefit is the ability to safely scale `MARKER_MAX_PROCESSES` without risking OOM.
+
+It also **reduces per-worker GPU memory spikes** on large files. With a reasonable chunk size (around 10 pages), spikes are shorter and lower, making it safer to run more concurrent workers. See `benchmarks/marker/marker_page_chunking.md` for measured results.
+
+**NB:** Consider increasing `MARKER_MAX_TASKS_PER_CHILD` when using page chunking, as worker utilization increases significantly and you may observe frequent subprocess restarts with the default value.
+:::
 
 
 

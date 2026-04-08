@@ -4,6 +4,7 @@ import re
 import time
 from pathlib import Path
 
+import pypdfium2
 import ray
 import torch
 from config import load_config
@@ -103,8 +104,14 @@ class MarkerWorker:
     def _process_pdf(file_path, config):
         global worker_model_dict
 
+        page_range = config.get("page_range")
+        if page_range is not None:
+            label = f"[p{page_range[0]}-{page_range[-1]}]"
+        else:
+            label = "(all pages)"
+
         try:
-            logger.debug("Processing PDF", path=file_path)
+            logger.debug("Processing PDF", path=file_path, label=label)
             converter = PdfConverter(
                 artifact_dict=worker_model_dict,
                 config=config,
@@ -112,7 +119,7 @@ class MarkerWorker:
             render = converter(file_path)
             return render
         except Exception as e:
-            logger.exception("Error processing PDF", path=file_path, error=str(e))
+            logger.exception("Error processing PDF", path=file_path, label=label, error=str(e))
             raise
         finally:
             gc.collect()
@@ -120,10 +127,13 @@ class MarkerWorker:
                 torch.cuda.empty_cache()
                 torch.cuda.ipc_collect()
 
-    async def process_pdf(self, file_path: str):
+    async def process_pdf(self, file_path: str, page_range: list[int] | None = None):
         from concurrent.futures import TimeoutError as FuturesTimeoutError
 
         converter_config = self.converter_config.copy()
+        if page_range is not None:
+            converter_config["page_range"] = page_range
+
         loop = asyncio.get_event_loop()
         timeout = self.config.loader.marker_timeout
 
@@ -142,12 +152,11 @@ class MarkerWorker:
         result = await loop.run_in_executor(None, run_with_timeout)
         return result.markdown, result.images
 
-    def get_current_pool_size(self):
-        # ProcessPoolExecutor manages worker lifecycle automatically
-        # Return count of alive worker processes
-        if self.executor is None:
-            return 0
-        return len([p for p in self.executor._processes.values() if p.is_alive()])
+    def is_pool_broken(self):
+        # ProcessPoolExecutor auto-replaces dead/finished workers on next
+        # submit(), so counting live processes is unreliable and unnecessary.
+        # Only a None or shut-down executor requires reinitialization.
+        return self.executor is None or bool(getattr(self.executor, "_broken", False))
 
     def __del__(self):
         """Clean up ProcessPoolExecutor on actor destruction"""
@@ -166,7 +175,6 @@ class MarkerPool:
 
         self.logger = get_logger()
         self.config = load_config()
-        self.min_processes = self.config.loader.marker_min_processes
         self.max_processes = self.config.loader.marker_max_processes
         self.pool_size = self.config.loader.marker_pool_size
         self.actors = [MarkerWorker.remote() for _ in range(self.pool_size)]
@@ -181,34 +189,85 @@ class MarkerPool:
             f"{self.pool_size * self.max_processes} PDF concurrency"
         )
 
+    @staticmethod
+    def _get_page_count(file_path: str) -> int:
+        pdf = pypdfium2.PdfDocument(file_path)
+        count = len(pdf)
+        pdf.close()
+        return count
+
+    @staticmethod
+    def _create_chunks(page_count: int, chunk_size: int) -> list[tuple[list[int], str]]:
+        if page_count <= chunk_size:
+            return [(list(range(page_count)), f"({page_count}p)")]
+        chunks = []
+        for start in range(0, page_count, chunk_size):
+            end = min(start + chunk_size, page_count)
+            page_range = list(range(start, end))
+            label = f"[p{start}-{end - 1}]"
+            chunks.append((page_range, label))
+        return chunks
+
     async def ensure_worker_pool_healthy(self, worker):
-        current_alive = await worker.get_current_pool_size.remote()
-        if current_alive < self.min_processes:
-            self.logger.warning(
-                f"Only {current_alive}/{self.min_processes} worker processes alive. Reinitializing pool..."
-            )
+        broken = await worker.is_pool_broken.remote()
+        if broken:
+            self.logger.warning("Worker ProcessPoolExecutor is broken. Reinitializing pool...")
             await worker.setup_mp.remote()
 
-    async def process_pdf(self, file_path: str):
+    async def _process_chunk(self, file_path: str, page_range: list[int] | None, label: str):
+        """Acquire a worker slot, process a PDF chunk, and release the slot."""
         from components.ray_utils import call_ray_actor_with_timeout
 
-        # Wait until any slot is free
         worker = await self._queue.get()
-        if worker:
-            self.logger.info("MarkerWorker allocated")
-            # Ensure the worker pool is healthy
-            await self.ensure_worker_pool_healthy(worker)
+        self.logger.info(f"MarkerWorker allocated for {label}")
+        await self.ensure_worker_pool_healthy(worker)
         try:
             timeout = self.config.loader.marker_timeout
-            future = worker.process_pdf.remote(file_path)
+            future = worker.process_pdf.remote(file_path, page_range=page_range)
             return await call_ray_actor_with_timeout(
                 future,
                 timeout=timeout,
-                task_description=f"MarkerPool PDF processing ({file_path})",
+                task_description=f"MarkerPool PDF {label} ({file_path})",
             )
         finally:
             await self._queue.put(worker)
-            self.logger.debug("MarkerWorker returned to pool")
+            self.logger.debug(f"MarkerWorker returned to pool for {label}")
+
+    async def process_pdf(self, file_path: str):
+        chunk_size = self.config.loader.marker_chunk_size
+
+        if chunk_size <= 0:
+            return await self._process_chunk(file_path, page_range=None, label="(all pages)")
+
+        page_count = self._get_page_count(file_path)
+        chunks = self._create_chunks(page_count, chunk_size)
+
+        if len(chunks) == 1:
+            page_range, label = chunks[0]
+            return await self._process_chunk(file_path, page_range=None, label=label)
+
+        self.logger.info(
+            f"Splitting {page_count}-page PDF into {len(chunks)} chunks of ~{chunk_size} pages for parallel processing"
+        )
+
+        tasks = [asyncio.create_task(self._process_chunk(file_path, page_range, label)) for page_range, label in chunks]
+        try:
+            results = await asyncio.gather(*tasks)
+        except Exception:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+
+        # Reassemble: concatenate markdown in order, merge image dicts
+        all_markdown = []
+        all_images = {}
+        for markdown, images in results:
+            all_markdown.append(markdown)
+            all_images.update(images)
+
+        combined_markdown = "\n\n".join(all_markdown)
+        return combined_markdown, all_images
 
 
 class MarkerLoader(BaseLoader):

@@ -308,7 +308,6 @@ env:
     XDG_CACHE_HOME: "/app/model_weights"
     MARKER_MAX_TASKS_PER_CHILD: "10"
     MARKER_MAX_PROCESSES: "15"
-    MARKER_MIN_PROCESSES: "3"
     MARKER_POOL_SIZE: "3"
     MARKER_NUM_GPUS: "0.6"
     TRANSCRIBER_BASE_URL: "http://{{ .Release.Name }}-whisper-engine-service/v1"
