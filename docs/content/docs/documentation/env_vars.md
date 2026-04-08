@@ -173,6 +173,7 @@ The vector database stores embeddings and is configured using the following envi
 | `VDB_CONNECTOR_NAME` | str | milvus | Connector/driver to use for the vector DB. Currently only `milvus` is implemented |
 | `VDB_COLLECTION_NAME` | str | vdb_test | Name of the collection storing embeddings |
 |`VDB_HYBRID_SEARCH`| `bool` | true |To activate hybrid search (semantic similarity + Keyword search)|
+| `VDB_ENABLE_INSERTION` | bool | true | Enable or disable vector database insertion. When disabled, documents are processed but not inserted into Milvus. Useful for testing. |
 
 These variables can be overridden when using an external vector database service.
 

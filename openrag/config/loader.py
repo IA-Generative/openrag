@@ -46,6 +46,7 @@ _ENV_OVERRIDES: list[tuple[str, str, type]] = [
     ("VDB_CONNECTOR_NAME", "vectordb.connector_name", str),
     ("VDB_COLLECTION_NAME", "vectordb.collection_name", str),
     ("VDB_HYBRID_SEARCH", "vectordb.hybrid_search", bool),
+    ("VDB_ENABLE_INSERTION", "vectordb.enable", bool),
     # RDB (Postgres)
     ("POSTGRES_HOST", "rdb.host", str),
     ("POSTGRES_PORT", "rdb.port", int),
