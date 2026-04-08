@@ -191,10 +191,8 @@ class MarkerPool:
 
     @staticmethod
     def _get_page_count(file_path: str) -> int:
-        pdf = pypdfium2.PdfDocument(file_path)
-        count = len(pdf)
-        pdf.close()
-        return count
+        with pypdfium2.PdfDocument(file_path) as pdf:
+            return len(pdf)
 
     @staticmethod
     def _create_chunks(page_count: int, chunk_size: int) -> list[tuple[list[int], str]]:
@@ -209,19 +207,30 @@ class MarkerPool:
         return chunks
 
     async def ensure_worker_pool_healthy(self, worker):
-        broken = await worker.is_pool_broken.remote()
+        from components.ray_utils import call_ray_actor_with_timeout
+
+        timeout = self.config.loader.marker_timeout
+        broken = await call_ray_actor_with_timeout(
+            worker.is_pool_broken.remote(),
+            timeout=timeout,
+            task_description="MarkerWorker pool health check",
+        )
         if broken:
             self.logger.warning("Worker ProcessPoolExecutor is broken. Reinitializing pool...")
-            await worker.setup_mp.remote()
+            await call_ray_actor_with_timeout(
+                worker.setup_mp.remote(),
+                timeout=timeout,
+                task_description="MarkerWorker pool reset",
+            )
 
     async def _process_chunk(self, file_path: str, page_range: list[int] | None, label: str):
         """Acquire a worker slot, process a PDF chunk, and release the slot."""
         from components.ray_utils import call_ray_actor_with_timeout
 
         worker = await self._queue.get()
-        self.logger.info(f"MarkerWorker allocated for {label}")
-        await self.ensure_worker_pool_healthy(worker)
         try:
+            self.logger.info(f"MarkerWorker allocated for {label}")
+            await self.ensure_worker_pool_healthy(worker)
             timeout = self.config.loader.marker_timeout
             future = worker.process_pdf.remote(file_path, page_range=page_range)
             return await call_ray_actor_with_timeout(

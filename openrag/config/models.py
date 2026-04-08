@@ -331,7 +331,7 @@ class LoaderConfig(ConfigMixin):
     mimetypes: MimetypesConfig = Field(default_factory=MimetypesConfig)
     local_whisper: LocalWhisperConfig = Field(default_factory=LocalWhisperConfig)
     file_loaders: FileLoadersConfig = Field(default_factory=FileLoadersConfig)
-    marker_max_tasks_per_child: int = 10
+    marker_max_tasks_per_child: int = 20
     marker_pool_size: int = 1
     marker_max_processes: int = 2
     marker_num_gpus: float = 0.01

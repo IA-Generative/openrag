@@ -36,7 +36,7 @@ The `MarkerLoader` is the default PDF parsing engine. It can be configured using
 |----------|------|---------|-------------|
 | `MARKER_POOL_SIZE` | int | 1 | Number of workers (typically 1 worker per cluster node) |
 | `MARKER_MAX_PROCESSES` | int | 2 | Number of subprocesses <-> Number of concurrent PDFs per worker (to increase depending on your available GPU resources)|
-| `MARKER_MAX_TASKS_PER_CHILD` | int | 10 | Number of tasks a child (PDF worker) has to process before it gets restarted to clean up memory leaks |
+| `MARKER_MAX_TASKS_PER_CHILD` | int | 20 | Number of tasks a child (PDF worker) has to process before it gets restarted to clean up memory leaks |
 | `MARKER_TIMEOUT` | int | 3600 | Timeout in seconds for marker processes |
 | `MARKER_PDFTEXT_WORKERS` | int | 2 | Number of PDF text extractor workers inside marker. |
 | `MARKER_CHUNK_SIZE` | int | 10 | Split large PDFs into chunks of this many pages for parallel processing across workers. Use <= 0 to deactivate chunking. |
