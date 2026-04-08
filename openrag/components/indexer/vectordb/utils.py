@@ -176,6 +176,79 @@ class PartitionFileManager:
                 log.error(f"Error removing file: {e}")
                 raise e
 
+    def update_file_metadata_in_db(self, file_id: str, partition: str, file_metadata: dict) -> bool:
+        """Update the file_metadata JSON column and structured fields for an existing file.
+
+        Returns True if the file was found and updated, False otherwise.
+        Unlike remove_file_from_partition + add_file_to_partition, this preserves
+        the files.id primary key so that workspace FK references remain valid.
+
+        If file_metadata contains keys that correspond to structured File columns
+        (relationship_id, parent_id), those columns are updated too so they stay
+        in sync with the JSON blob.
+        """
+        log = self.logger.bind(file_id=file_id, partition=partition)
+        with self.Session() as session:
+            try:
+                file = session.query(File).filter(File.file_id == file_id, File.partition_name == partition).first()
+                if not file:
+                    log.warning("File not found for metadata update")
+                    return False
+                file.file_metadata = file_metadata
+                # Sync structured columns when the corresponding keys are present
+                # in the metadata payload, so PG columns never diverge from the JSON.
+                if "relationship_id" in file_metadata:
+                    file.relationship_id = file_metadata["relationship_id"]
+                if "parent_id" in file_metadata:
+                    file.parent_id = file_metadata["parent_id"]
+                session.commit()
+                log.info("Updated file metadata in-place")
+                return True
+            except Exception:
+                session.rollback()
+                log.exception("Error updating file metadata")
+                raise
+
+    # Sentinel object to distinguish "not provided" from explicit None.
+    _UNSET = object()
+
+    def update_file_in_partition(
+        self,
+        file_id: str,
+        partition: str,
+        file_metadata: dict | None = None,
+        relationship_id: str | None | object = _UNSET,
+        parent_id: str | None | object = _UNSET,
+    ) -> bool:
+        """Update an existing file record in-place (for PUT: new content, same file_id).
+
+        Preserves files.id so workspace FK references stay intact.
+        Unlike delete+re-add, this never touches file_count or created_by.
+
+        Pass relationship_id=None or parent_id=None explicitly to clear a stale
+        link. Omit the argument entirely to leave the column unchanged.
+        """
+        log = self.logger.bind(file_id=file_id, partition=partition)
+        with self.Session() as session:
+            try:
+                file = session.query(File).filter(File.file_id == file_id, File.partition_name == partition).first()
+                if not file:
+                    log.warning("File not found for update")
+                    return False
+                if file_metadata is not None:
+                    file.file_metadata = file_metadata
+                if relationship_id is not self._UNSET:
+                    file.relationship_id = relationship_id
+                if parent_id is not self._UNSET:
+                    file.parent_id = parent_id
+                session.commit()
+                log.info("Updated file record in-place")
+                return True
+            except Exception:
+                session.rollback()
+                log.exception("Error updating file in partition")
+                raise
+
     def delete_partition(self, partition: str):
         """Delete a partition and all its files"""
         with self.Session() as session:
