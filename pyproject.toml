@@ -33,7 +33,7 @@ dependencies = [
     "asyncpg>=0.30.0",
     "boto3>=1.38.33",
     "eml-parser>=2.0.0",
-    "psutil>=7.0.0",
+    "prometheus-client>=0.21.0",
     "sqlalchemy_utils",
     "psycopg2>=2.9.10",
     "llvmlite>=0.44.0",
