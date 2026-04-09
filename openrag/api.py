@@ -26,6 +26,8 @@ ray.init(dashboard_host="0.0.0.0")
 from routers.actors import router as actors_router
 from routers.extract import router as extract_router
 from routers.indexer import router as indexer_router
+from routers.monitoring import MonitoringMiddleware
+from routers.monitoring import router as monitoring_router
 from routers.openai import router as openai_router
 from routers.partition import router as partition_router
 from routers.queue import router as queue_router
@@ -67,6 +69,7 @@ class Tags(Enum):
     USERS = ("User management",)
     WORKSPACES = ("Workspaces",)
     TOOLS = ("Tools",)
+    MONITORING = ("Monitoring",)
 
 
 class AppState:
@@ -150,7 +153,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/redoc",
             "/health_check",
             "/version",
-        ] or request.url.path.startswith("/chainlit"):  # Allow all chainlit subroutes
+        ] or request.url.path.startswith("/chainlit"):  # Allow chainlit without auth
             return await call_next(request)
 
         # Extract token
@@ -188,6 +191,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 # Register middlewares (order matters - last added runs first)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(TokenRedactingMiddleware)
+app.add_middleware(MonitoringMiddleware)
 
 
 # Exception handlers
@@ -259,6 +263,8 @@ app.include_router(actors_router, prefix="/actors", tags=[Tags.ACTORS])
 app.include_router(users_router, prefix="/users", tags=[Tags.USERS])
 # Mount the workspaces router
 app.include_router(workspaces_router, tags=[Tags.WORKSPACES])
+# Mount the monitoring router
+app.include_router(monitoring_router, tags=[Tags.MONITORING])
 
 app.include_router(tools_router, prefix="/v1", tags=[Tags.TOOLS])
 
