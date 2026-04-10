@@ -331,13 +331,13 @@ class LoaderConfig(ConfigMixin):
     mimetypes: MimetypesConfig = Field(default_factory=MimetypesConfig)
     local_whisper: LocalWhisperConfig = Field(default_factory=LocalWhisperConfig)
     file_loaders: FileLoadersConfig = Field(default_factory=FileLoadersConfig)
-    marker_max_tasks_per_child: int = 10
+    marker_max_tasks_per_child: int = 20
     marker_pool_size: int = 1
     marker_max_processes: int = 2
-    marker_min_processes: int = 1
     marker_num_gpus: float = 0.01
     marker_timeout: int = 3600
     marker_pdftext_workers: int = 2
+    marker_chunk_size: int = 10
     docling_num_gpus: float = Field(default=0.01, ge=0)
     docling_pool_size: int = Field(default=1, ge=1)
     docling_max_tasks_per_worker: int = Field(default=2, ge=1)
