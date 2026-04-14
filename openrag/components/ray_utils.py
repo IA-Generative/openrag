@@ -83,8 +83,7 @@ async def retry_with_backoff(
                 raise
             delay = base_delay * (2**attempt)
             logger.warning(
-                f"{task_description} failed (attempt {attempt + 1}/{max_retries + 1}): "
-                f"{e}. Retrying in {delay:.1f}s..."
+                f"{task_description} failed (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {delay:.1f}s..."
             )
             await asyncio.sleep(delay)
 
