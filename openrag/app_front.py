@@ -36,6 +36,11 @@ commands = [
         "description": "Get a conversational text answer suitable for voice assistants.\nThe answer is concise, clear, and factual.",
         "persistent": True,
     },
+    {
+        "id": "WebSearch",
+        "icon": "globe",
+        "description": "Augment the RAG context with live web search results.\nCombines document and web sources for more comprehensive answers.",
+    },
 ]
 
 
@@ -84,8 +89,11 @@ if AUTH_TOKEN:
                 },
             )
 
+        except httpx.HTTPStatusError:
+            logger.info("Authentication failed", username=username)
+            return None
         except Exception as e:
-            logger.exception("Authentication failed", error=str(e))
+            logger.exception("Unexpected error during authentication", error=str(e))
             return None
 
 
@@ -117,6 +125,7 @@ async def chat_profile(current_user: cl.User):
                     name=m.id,
                     markdown_description=description_template.format(name=m.id, partition=partition),
                     icon="/public/favicon.svg",
+                    default=m.id == f"{PARTITION_PREFIX}all",
                 )
             )
         return chat_profiles
@@ -159,6 +168,17 @@ async def _format_sources(metadata_sources, only_txt=False, api_key=None):
     d = {}
     headers = get_headers(api_key)
     for i, s in enumerate(metadata_sources):
+        if s.get("source_type") == "web":
+            title = s.get("title") or s.get("url", f"Web source {i + 1}")
+            url = s.get("url", "")
+            snippet = s.get("snippet", "")
+            content = f"**[{title}]({url})**\n\n{snippet}"
+            source_name = title
+            if source_name in d:
+                source_name = f"{title} ({i})"
+            d[source_name] = cl.Text(content=content, name=source_name, display="side")
+            continue
+
         filename = Path(s["filename"])
         file_url = s["file_url"]
         file_url = file_url.replace(INTERNAL_BASE_URL, external_url)  # put the correct base url
@@ -219,6 +239,7 @@ async def on_message(message: cl.Message):
         "metadata": {
             "use_map_reduce": message.command == "DeepSearch",
             "spoken_style_answer": message.command == "SpokenStyleAnswer",
+            "websearch": message.command == "WebSearch",
         },
     }
 
@@ -256,4 +277,4 @@ async def on_message(message: cl.Message):
                 await msg.update()
         except Exception as e:
             logger.exception("Error during chat completion", error=str(e))
-            await cl.Message(content=f"An error occurred: {e!s}").send()
+            await cl.Message(content=f"An error occurred: {e}").send()

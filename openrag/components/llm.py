@@ -10,7 +10,7 @@ logger = get_logger()
 class LLM:
     def __init__(self, llm_config, logger=None):
         self.logger = logger
-        default_llm_config = dict(llm_config)
+        default_llm_config = llm_config.model_dump()
         self._api_key = default_llm_config.pop("api_key", None)
         self._base_url = default_llm_config.pop("base_url", None)
         self.default_llm_config = default_llm_config

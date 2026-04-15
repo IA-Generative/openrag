@@ -1,16 +1,17 @@
 import pytest
 from components.llm import LLM
+from config.models import LLMConfig
 
 
 @pytest.fixture
 def llm():
     return LLM(
-        {
-            "base_url": "http://default-llm:8000/v1",
-            "api_key": "default-key",
-            "model": "default-model",
-            "temperature": 0.3,
-        }
+        LLMConfig(
+            base_url="http://default-llm:8000/v1",
+            api_key="default-key",
+            model="default-model",
+            temperature=0.3,
+        )
     )
 
 

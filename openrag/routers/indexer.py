@@ -1,10 +1,10 @@
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import ray
-from components.indexer.utils.files import sanitize_filename, save_file_to_disk
+from components.indexer.utils.files import extract_temporal_fields, sanitize_filename, save_file_to_disk
+from components.ray_utils import call_ray_actor_with_timeout
 from config import load_config
 from fastapi import (
     APIRouter,
@@ -38,16 +38,20 @@ logger = get_logger()
 # load config
 config = load_config()
 DATA_DIR = config.paths.data_dir
+VECTORDB_TIMEOUT = config.ray.indexer.vectordb_timeout
 
 FORBIDDEN_CHARS_IN_FILE_ID = set("/")  # set('"<>#%{}|\\^`[]')
 LOG_FILE = Path(config.paths.log_dir or "logs") / "app.json"
 
 # supported file formats or mimetypes
-ACCEPTED_FILE_FORMATS = dict(config.loader["file_loaders"]).keys()
-DICT_MIMETYPES = dict(config.loader["mimetypes"])
+ACCEPTED_FILE_FORMATS = config.loader.file_loaders.model_dump().keys()
+DICT_MIMETYPES = config.loader.mimetypes.to_dict()
 
 # URL scheme configuration
 PREFERRED_URL_SCHEME = config.server.preferred_url_scheme
+
+# DATETIME FIELDS: Fields provided by the client
+TEMPORAL_FIELDS = ["created_at"]
 
 
 def build_url(request: Request, route_name: str, **path_params) -> str:
@@ -100,8 +104,13 @@ JSON string containing file metadata. Example:
     "mimetype": "text/plain",
     "author": "John Doe",
     ...
+    "created_at": "2025-01-03T00:00:00+08:00"  // Optional temporal field (ISO 8601)
 }
 ```
+
+**Temporal Fields:**
+- You can provide a temporal fields such as `created_at` in the metadata for time-based queries and filtering.
+- Datetime values must be in ISO 8601 format (e.g., `2025-01-03T00:00:00+08:00`).
 
 **Common Mimetypes:**
 - `text/plain` - Plain text files
@@ -119,6 +128,7 @@ async def add_file(
     file_id: str = Depends(validate_file_id),
     file: UploadFile = Depends(validate_file_format),
     metadata: dict = Depends(validate_metadata),
+    workspace_ids: str | None = Form(None, description="JSON array of workspace IDs to add the file to"),
     indexer=Depends(get_indexer),
     task_state_manager=Depends(get_task_state_manager),
     vectordb=Depends(get_vectordb),
@@ -134,7 +144,14 @@ async def add_file(
     save_dir = Path(DATA_DIR)
     original_filename = file.filename
     file.filename = sanitize_filename(file.filename)
-    file_path = await save_file_to_disk(file, save_dir, with_random_prefix=True)
+    try:
+        file_path = await save_file_to_disk(file, save_dir, with_random_prefix=True)
+    except Exception as e:
+        logger.exception("Failed to save file to disk.", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
 
     metadata.update(
         {
@@ -147,13 +164,43 @@ async def add_file(
 
     # Append extra metadata
     metadata["file_size"] = human_readable_size(file_stat.st_size)
-    metadata["created_at"] = datetime.fromtimestamp(file_stat.st_ctime).isoformat()
     metadata["file_id"] = file_id
 
-    # Indexing the file
-    task = indexer.add_file.remote(path=file_path, metadata=metadata, partition=partition, user=user)
+    ## Add temporal fields to metadata, using provided values if available, otherwise extracting from file system
+    temporal_fields = extract_temporal_fields(metadata, temporal_fields=TEMPORAL_FIELDS)
+    metadata.update(temporal_fields)
+
+    # Validate and parse workspace_ids
+    parsed_workspace_ids = None
+    if workspace_ids:
+        try:
+            parsed_workspace_ids = json.loads(workspace_ids)
+            if not isinstance(parsed_workspace_ids, list):
+                raise ValueError
+        except (json.JSONDecodeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="workspace_ids must be a JSON array of strings",
+            )
+        for ws_id in parsed_workspace_ids:
+            ws = await call_ray_actor_with_timeout(
+                vectordb.get_workspace.remote(ws_id),
+                timeout=VECTORDB_TIMEOUT,
+                task_description=f"get_workspace({ws_id})",
+            )
+            if not ws or ws["partition_name"] != partition:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Workspace '{ws_id}' not found in partition '{partition}'",
+                )
+
+    # Indexing the file (workspace association happens inside add_file after successful indexing)
+    task = indexer.add_file.remote(
+        path=file_path, metadata=metadata, partition=partition, user=user, workspace_ids=parsed_workspace_ids
+    )
     await task_state_manager.set_state.remote(task.task_id().hex(), "QUEUED")
     await task_state_manager.set_object_ref.remote(task.task_id().hex(), {"ref": task})
+
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
         content={"task_status_url": build_url(request, "get_task_status", task_id=task.task_id().hex())},
@@ -210,8 +257,13 @@ JSON string containing file metadata. Example:
     "mimetype": "text/plain",
     "author": "John Doe",
     ...
+    "created_at": "2024-01-01T12:00:00+00:00"  // Optional temporal field (ISO 8601)
 }
 ```
+
+**Temporal Fields:**
+- You can provide the temporal fields `created_at` in the metadata for time-based queries and filtering.
+- Datetime values must be in ISO 8601 format (e.g., `2024-01-01T12:00:00+00:00`).
 
 **Response:**
 Returns 202 Accepted with a task status URL for tracking indexing progress.
@@ -234,8 +286,9 @@ async def put_file(
             detail=f"'{file_id}' not found in partition '{partition}'",
         )
 
-    # Delete the existing file from the vector database
-    await indexer.delete_file.remote(file_id, partition)
+    # No Milvus deletion here. The Indexer's add_file(replace=True) flow uses
+    # insert-before-delete: it snapshots old chunk IDs, inserts new chunks,
+    # then deletes old ones — so the file is never left in a half-replaced state.
 
     save_dir = Path(DATA_DIR)
     original_filename = file.filename
@@ -254,11 +307,21 @@ async def put_file(
 
     # Append extra metadata
     metadata["file_size"] = human_readable_size(file_stat.st_size)
-    metadata["created_at"] = datetime.fromtimestamp(file_stat.st_ctime).isoformat()
     metadata["file_id"] = file_id
 
-    # Indexing the file
-    task = indexer.add_file.remote(path=file_path, metadata=metadata, partition=partition, user=user)
+    ## Add temporal fields to metadata, using provided values if available, otherwise extracting from file system
+    temporal_fields = extract_temporal_fields(metadata, temporal_fields=TEMPORAL_FIELDS)
+    metadata.update(temporal_fields)
+
+    # Re-index: serialize → chunk → embed → insert into Milvus + update PG row in-place.
+    # replace=True tells add_file to update the existing PG File row rather than creating a new one.
+    task = indexer.add_file.remote(
+        path=file_path,
+        metadata=metadata,
+        partition=partition,
+        user=user,
+        replace=True,
+    )
     await task_state_manager.set_state.remote(task.task_id().hex(), "QUEUED")
     await task_state_manager.set_object_ref.remote(task.task_id().hex(), {"ref": task})
 

@@ -3,6 +3,7 @@
 import json
 import time
 import uuid
+from datetime import datetime
 
 import pytest
 
@@ -479,4 +480,351 @@ class TestEmailThreadAncestors:
         actual_order_limited = [a["file_id"] for a in ancestors_limited]
         assert actual_order_limited == expected_order_limited, (
             f"Expected {expected_order_limited}, got {actual_order_limited}"
+        )
+
+
+class TestSearchFiltering:
+    """Test search filtering functionality on search_one_partition endpoint."""
+
+    COMMON_CONTENT = """This is a test document for filter testing.
+It contains information about machine learning and artificial intelligence.
+The document is used to verify that search filtering works correctly.
+Key topics include: neural networks, deep learning, and natural language processing.
+This content is intentionally repeated across multiple files to test filtering.
+"""
+
+    @pytest.fixture
+    def filter_test_files(self, tmp_path):
+        """Create 6 files with the same content but different metadata."""
+        files_config = [
+            {
+                "file_id": "filter-file-1",
+                "origin": "source_A",
+                "file_number": 1,
+                "created_at": "2020-06-15T00:00:00+00:00",
+            },
+            {
+                "file_id": "filter-file-2",
+                "origin": "source_A",
+                "file_number": 2,
+                "created_at": "2021-06-15T00:00:00+00:00",
+            },
+            {
+                "file_id": "filter-file-3",
+                "origin": "source_B",
+                "file_number": 3,
+                "created_at": "2022-06-15T00:00:00+00:00",
+            },
+            {
+                "file_id": "filter-file-4",
+                "origin": "source_B",
+                "file_number": 4,
+                "created_at": "2023-06-15T00:00:00+00:00",
+            },
+            {
+                "file_id": "filter-file-5",
+                "origin": "source_C",
+                "file_number": 5,
+                "created_at": "2024-06-15T00:00:00+00:00",
+            },
+            {
+                "file_id": "filter-file-6",
+                "origin": "source_C",
+                "file_number": 6,
+                "created_at": "2024-07-15T00:00:00+00:00",
+            },
+        ]
+
+        file_paths = {}
+        for config in files_config:
+            file_id = config.pop("file_id")
+            file_path = tmp_path / f"{file_id}.txt"
+            file_path.write_text(self.COMMON_CONTENT)
+            config["path"] = file_path
+            file_paths[file_id] = config
+
+        return file_paths
+
+    @pytest.fixture
+    def indexed_filter_partition(self, api_client, created_partition, filter_test_files):
+        """Create partition and index all 6 files with metadata."""
+        for file_id, file_info in filter_test_files.items():
+            file_path = file_info.pop("path")
+            with open(file_path, "rb") as f:
+                response = api_client.post(
+                    f"/indexer/partition/{created_partition}/file/{file_id}",
+                    files={"file": (f"{file_id}.txt", f, "text/plain")},
+                    data={"metadata": json.dumps(file_info)},
+                )
+
+            data = response.json()
+
+            # Wait for indexing to complete
+            if "task_status_url" in data:
+                task_url = data["task_status_url"]
+                task_path = "/" + "/".join(task_url.split("/")[3:])
+            elif "task_id" in data:
+                task_path = f"/indexer/task/{data['task_id']}"
+            else:
+                time.sleep(3)
+                continue
+
+            for _ in range(30):
+                task_response = api_client.get(task_path)
+                task_data = task_response.json()
+                state = task_data.get("task_state", "")
+                if state in ["SUCCESS", "COMPLETED", "success", "completed"]:
+                    break
+                elif state in ["FAILED", "failed", "FAILURE", "failure"]:
+                    pytest.skip(f"Indexing failed for {file_id}: {task_data}")
+                time.sleep(2)
+
+        return created_partition
+
+    # =========================================================================
+    # Comparison filtering tests
+    # =========================================================================
+
+    def test_comparison_filter_with_str(self, api_client, indexed_filter_partition):
+        """Test filtering with origin == 'source_A' returns only files with that origin."""
+        response = api_client.get(
+            f"/search/partition/{indexed_filter_partition}",
+            params={
+                "text": self.COMMON_CONTENT,  # to ensure results as embeddings are random but deterministic based on content
+                "top_k": 10,
+                "filter": "origin == 'source_A'",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "documents" in data
+
+        documents = data["documents"]
+        assert len(documents) > 0, "Should find at least one document with origin='source_A'"
+
+        # Verify all results have origin='source_A'
+        assert all(doc["metadata"].get("origin") == "source_A" for doc in documents), (
+            "All documents should have origin='source_A'"
+        )
+
+        # Verify we got the expected file_ids
+        file_ids = {doc["metadata"].get("file_id") for doc in documents}
+        assert file_ids.issubset({"filter-file-1", "filter-file-2"}), f"Expected file_ids from source_A, got {file_ids}"
+
+    def test_comparison_filter_with_int(self, api_client, indexed_filter_partition):
+        """Test filtering with file_number >= 3 returns files 3, 4, 5, 6."""
+        response = api_client.get(
+            f"/search/partition/{indexed_filter_partition}",
+            params={
+                "text": self.COMMON_CONTENT,
+                "top_k": 10,
+                "filter": "file_number >= 3",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "documents" in data
+
+        documents = data["documents"]
+        assert len(documents) > 0, "Should find at least one document with file_number >= 3"
+
+        assert all(doc["metadata"].get("file_number") >= 3 for doc in documents), (
+            "All documents should have file_number >= 3"
+        )
+
+    # =========================================================================
+    # Range filtering tests (IN and LIKE)
+    # =========================================================================
+
+    def test_filter_with_IN_operator(self, api_client, indexed_filter_partition):
+        """Test filtering with origin IN ['source_A', 'source_B']."""
+        response = api_client.get(
+            f"/search/partition/{indexed_filter_partition}",
+            params={
+                "text": self.COMMON_CONTENT,
+                "top_k": 10,
+                "filter": 'origin IN ["source_A", "source_B"]',
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "documents" in data
+
+        documents = data["documents"]
+        assert len(documents) > 0, "Should find documents from source_A or source_B"
+
+        assert all(doc["metadata"].get("origin") in ["source_A", "source_B"] for doc in documents), (
+            "All documents should have origin in ['source_A', 'source_B']"
+        )
+
+        # Verify we got expected file_ids
+        file_ids = {doc["metadata"].get("file_id") for doc in documents}
+        expected_ids = {"filter-file-1", "filter-file-2", "filter-file-3", "filter-file-4"}
+        assert file_ids.issubset(expected_ids), f"Expected file_ids from source_A/B, got {file_ids}"
+
+    def test_filter_with_LIKE_operator(self, api_client, indexed_filter_partition):
+        """Test filtering with origin LIKE 'source_%' (matches all)."""
+        response = api_client.get(
+            f"/search/partition/{indexed_filter_partition}",
+            params={
+                "text": self.COMMON_CONTENT,
+                "top_k": 10,
+                "filter": 'origin LIKE "source_%"',
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "documents" in data
+
+        documents = data["documents"]
+        assert len(documents) > 0, "Should find documents with origin matching 'source_%'"
+
+        # Verify all results have origin starting with 'source_'
+        for doc in documents:
+            origin = doc["metadata"].get("origin", "")
+            assert origin.startswith("source_"), f"Expected origin starting with 'source_', got {origin}"
+
+    # =========================================================================
+    # Logical operator tests (AND, OR)
+    # =========================================================================
+
+    def test_logical_operator_AND(self, api_client, indexed_filter_partition):
+        """Test filtering with origin == 'source_B' AND file_number >= 4."""
+        response = api_client.get(
+            f"/search/partition/{indexed_filter_partition}",
+            params={
+                "text": self.COMMON_CONTENT,
+                "top_k": 10,
+                "filter": 'origin == "source_B" AND file_number >= 4',
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "documents" in data
+
+        documents = data["documents"]
+        assert len(documents) > 0, "Should find documents matching both conditions"
+
+        # Verify all results match both conditions
+        assert all(
+            doc["metadata"].get("origin") == "source_B" and doc["metadata"].get("file_number") >= 4 for doc in documents
+        ), "All documents should have origin='source_B' and file_number >= 4"
+
+        # Only filter-file-4 should match (source_B and file_number=4)
+        file_ids = {doc["metadata"].get("file_id") for doc in documents}
+        assert file_ids == {"filter-file-4"}, f"Expected only filter-file-4, got {file_ids}"
+
+    def test_logical_operator_OR(self, api_client, indexed_filter_partition):
+        """Test filtering with origin == 'source_A' OR file_number == 6."""
+        response = api_client.get(
+            f"/search/partition/{indexed_filter_partition}",
+            params={
+                "text": self.COMMON_CONTENT,
+                "top_k": 10,
+                "filter": 'origin == "source_A" OR file_number == 6',
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "documents" in data
+
+        documents = data["documents"]
+        assert len(documents) > 0, "Should find documents matching either condition"
+
+        assert all(
+            doc["metadata"].get("origin") == "source_A" or doc["metadata"].get("file_number") == 6 for doc in documents
+        ), "All documents should have origin='source_A' or file_number=6"
+
+        # Should get filter-file-1, filter-file-2 (source_A) and filter-file-6 (file_number=6)
+        file_ids = {doc["metadata"].get("file_id") for doc in documents}
+        expected_ids = {"filter-file-1", "filter-file-2", "filter-file-6"}
+        assert file_ids == expected_ids, f"Expected {expected_ids}, got {file_ids}"
+
+    # =========================================================================
+    # Temporal filtering tests (datetime field, ISO 8601)
+    # =========================================================================
+
+    def test_temporal_fields_present_in_metadata(self, api_client, indexed_filter_partition):
+        """Test temporal fields are present in the metadata."""
+        response = api_client.get(
+            f"/search/partition/{indexed_filter_partition}",
+            params={
+                "text": self.COMMON_CONTENT,
+                "top_k": 10,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "documents" in data
+
+        documents = data["documents"]
+        assert len(documents) > 0, "Should find at least one document"
+
+        # Verify that each document has temporal fields in metadata
+        for doc in documents:
+            metadata = doc.get("metadata", {})
+            for temp_field in ["created_at"]:
+                k = metadata.get(temp_field)
+                assert k is not None, (
+                    f"Document {doc['metadata'].get('file_id')} is missing temporal field '{temp_field}'"
+                )
+                # Verify it's a valid ISO 8601 datetime string
+                try:
+                    datetime.fromisoformat(k)
+                except ValueError:
+                    assert False, (
+                        f"Document {doc['metadata'].get('file_id')} has invalid datetime format in field '{temp_field}': {k}"
+                    )
+
+    def test_temporal_filter_with_iso_format(self, api_client, indexed_filter_partition):
+        """Test that temporal filtering on the created_at field works with ISO 8601 strings."""
+        partition = indexed_filter_partition
+
+        # --- before 2022: should return files 1 and 2 ---
+        resp = api_client.get(
+            f"/search/partition/{partition}",
+            params={
+                "text": self.COMMON_CONTENT,
+                "top_k": 10,
+                "filter": 'created_at < ISO "2022-01-01T00:00:00+00:00"',
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "documents" in data
+        file_ids = {doc["metadata"].get("file_id") for doc in data["documents"]}
+
+        assert file_ids == {"filter-file-1", "filter-file-2"}, f"Expected files before 2022, got {file_ids}"
+
+        # --- after 2024-01-01: should return files 5 and 6 ---
+        resp = api_client.get(
+            f"/search/partition/{partition}",
+            params={
+                "text": self.COMMON_CONTENT,
+                "top_k": 10,
+                "filter": 'created_at > ISO "2024-01-01T00:00:00+00:00"',
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "documents" in data
+        file_ids = {doc["metadata"].get("file_id") for doc in data["documents"]}
+        assert file_ids == {"filter-file-5", "filter-file-6"}, f"Expected files after 2024, got {file_ids}"
+
+        # --- range [2022, 2024]: should return files 3 and 4 ---
+        resp = api_client.get(
+            f"/search/partition/{partition}",
+            params={
+                "text": self.COMMON_CONTENT,
+                "top_k": 10,
+                "filter": 'created_at >= ISO "2022-01-01T00:00:00+00:00" AND created_at <= ISO "2024-01-01T00:00:00+00:00"',
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "documents" in data
+        file_ids = {doc["metadata"].get("file_id") for doc in data["documents"]}
+        assert file_ids == {"filter-file-3", "filter-file-4"}, (
+            f"Expected filter-file-3 and filter-file-4 in range [2022, 2024], got {file_ids}"
         )

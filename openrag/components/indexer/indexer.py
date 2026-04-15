@@ -17,20 +17,20 @@ from .utils import serialize_file
 config = load_config()
 save_uploaded_files = os.environ.get("SAVE_UPLOADED_FILES", "true").lower() == "true"
 
-POOL_SIZE = config.ray.get("pool_size")
-MAX_TASKS_PER_WORKER = config.ray.get("max_tasks_per_worker")
+POOL_SIZE = config.ray.pool_size
+MAX_TASKS_PER_WORKER = config.ray.max_tasks_per_worker
 
 
 @ray.remote(
     max_concurrency=config.ray.indexer.concurrency_groups.default,
     max_task_retries=config.ray.indexer.max_task_retries,
     concurrency_groups={
-        "update": config.ray.indexer.concurrency_groups["update"],
-        "search": config.ray.indexer.concurrency_groups["search"],
-        "delete": config.ray.indexer.concurrency_groups["delete"],
-        "insert": config.ray.indexer.concurrency_groups["insert"],
-        "chunk": config.ray.indexer.concurrency_groups["chunk"],
-        "serialize": config.ray.indexer.concurrency_groups["serialize"],
+        "update": config.ray.indexer.concurrency_groups.update,
+        "search": config.ray.indexer.concurrency_groups.search,
+        "delete": config.ray.indexer.concurrency_groups.delete,
+        "insert": config.ray.indexer.concurrency_groups.insert,
+        "chunk": config.ray.indexer.concurrency_groups.chunk,
+        "serialize": config.ray.indexer.concurrency_groups.serialize,
     },
 )
 class Indexer:
@@ -44,7 +44,7 @@ class Indexer:
         self.chunker: BaseChunker = ChunkerFactory.create_chunker(self.config)
 
         self.default_partition = "_default"
-        self.enable_insertion = self.config.vectordb["enable"]
+        self.enable_insertion = self.config.vectordb.enable
         self.handle = ray.get_actor("Indexer", namespace="openrag")
 
         self.logger.info("Indexer actor initialized.")
@@ -71,6 +71,8 @@ class Indexer:
         metadata: dict | None = None,
         partition: str | None = None,
         user: dict | None = None,
+        workspace_ids: list[str] | None = None,
+        replace: bool = False,
     ):
         task_state_manager = ray.get_actor("TaskStateManager", namespace="openrag")
         task_id = ray.get_runtime_context().get_task_id()
@@ -109,19 +111,40 @@ class Indexer:
             if self.enable_insertion:
                 if chunks:
                     await task_state_manager.set_state.remote(task_id, "INSERTING")
-                    await self.handle.insert_documents.remote(chunks, user=user)
+                    if replace:
+                        # PUT flow: PG File row already exists; insert new Milvus chunks
+                        # and update PG metadata in-place (no File row creation).
+                        await self.handle.replace_file_documents.remote(chunks, user=user)
+                    else:
+                        await self.handle.insert_documents.remote(chunks, user=user)
                     log.info(f"Document {path} indexed successfully")
                 else:
                     log.debug("No chunks to insert !!! Potentially the uploaded file is empty")
             else:
                 log.info(f"Vectordb insertion skipped (enable_insertion={self.enable_insertion}).")
 
-            # Mark task as completed
+            # Mark task as completed before workspace association so the file
+            # record exists in the DB before we reference it from workspace_files.
             await task_state_manager.set_state.remote(task_id, "COMPLETED")
 
+            # Associate with workspaces only after successful indexing (best-effort).
+            # Not needed for replace=True since the PG row (and its workspace FKs) is preserved.
+            if workspace_ids and not replace:
+                vectordb = ray.get_actor("Vectordb", namespace="openrag")
+                try:
+                    await asyncio.gather(
+                        *[vectordb.add_files_to_workspace.remote(ws_id, [file_id]) for ws_id in workspace_ids]
+                    )
+                except Exception as ws_err:
+                    log.warning(
+                        "Failed to associate file with workspaces; file is indexed but workspace links may be incomplete",
+                        error=str(ws_err),
+                        workspace_ids=workspace_ids,
+                    )
+
         except Exception as e:
-            log.exception(f"Task {task_id} failed in add_file")
             tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+            log.error(f"Task {task_id} failed in add_file\n{tb}")
             await task_state_manager.set_failed_if_not_cancelled.remote(task_id, tb)
             raise
 
@@ -144,6 +167,16 @@ class Indexer:
         vectordb = ray.get_actor("Vectordb", namespace="openrag")
         await vectordb.async_add_documents.remote(chunks, user)
 
+    @ray.method(concurrency_group="insert")
+    async def replace_file_documents(self, chunks, user):
+        """Insert chunks for an existing file after its old Milvus chunks have been deleted.
+
+        Unlike insert_documents, this calls add_documents_for_existing_file which
+        updates the PostgreSQL File row in-place instead of creating a new one.
+        """
+        vectordb = ray.get_actor("Vectordb", namespace="openrag")
+        await vectordb.add_documents_for_existing_file.remote(chunks, user)
+
     @ray.method(concurrency_group="delete")
     async def delete_file(self, file_id: str, partition: str) -> bool:
         log = self.logger.bind(file_id=file_id, partition=partition)
@@ -157,7 +190,7 @@ class Indexer:
             log.info("Deleted file from partition.", file_id=file_id, partition=partition)
 
         except Exception as e:
-            log.exception("Error in delete_file", error=str(e))
+            log.error("Error in delete_file", error=str(e))
             raise
 
     @ray.method(concurrency_group="update")
@@ -175,16 +208,13 @@ class Indexer:
             return
 
         try:
-            docs = await vectordb.get_file_chunks.remote(file_id, partition)
-            for doc in docs:
-                doc.metadata.update(metadata)
-
-            await self.delete_file(file_id, partition)
-            await vectordb.async_add_documents.remote(docs, user=user)
-
+            # Upsert metadata in-place: updates Milvus chunks (preserving vectors,
+            # no re-embedding) and the PostgreSQL file record. No delete step, so
+            # workspace FK references and file_count are never disturbed.
+            await vectordb.upsert_file_metadata.remote(file_id, partition, metadata)
             log.info("Metadata updated for file.")
         except Exception as e:
-            log.exception("Error in update_file_metadata", error=str(e))
+            log.error("Error in update_file_metadata", error=str(e))
             raise
 
     @ray.method(concurrency_group="update")
@@ -198,7 +228,7 @@ class Indexer:
         log = self.logger.bind(file_id=file_id, partition=partition)
         vectordb = ray.get_actor("Vectordb", namespace="openrag")
         if not self.enable_insertion:
-            log.error("Vector database is not enabled, but update_file_metadata was called.")
+            log.error("Vector database is not enabled, but copy_file was called.")
             return
 
         try:
@@ -216,7 +246,7 @@ class Indexer:
                 new_partition=metadata.get("partition"),
             )
         except Exception as e:
-            log.exception("Error in copy_file", error=str(e))
+            log.error("Error in copy_file", error=str(e))
             raise
 
     @ray.method(concurrency_group="search")
@@ -224,12 +254,12 @@ class Indexer:
         self,
         query: str,
         top_k: int = 5,
-        similarity_threshold: float = 0.80,
+        similarity_threshold: float = 0.60,
         partition: str | list[str] | None = None,
-        filter: dict | None = None,
+        filter: str | None = None,
+        filter_params: dict | None = None,
     ) -> list[Document]:
         partition_list = self._check_partition_list(partition)
-        filter = filter or {}
         vectordb = ray.get_actor("Vectordb", namespace="openrag")
         return await vectordb.async_search.remote(
             query=query,
@@ -237,6 +267,7 @@ class Indexer:
             top_k=top_k,
             similarity_threshold=similarity_threshold,
             filter=filter,
+            filter_params=filter_params,
         )
 
     def _check_partition_str(self, partition: str | None) -> str:

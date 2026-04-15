@@ -205,7 +205,7 @@ def main():
         int: Exit code (0 on success, non-zero on failure).
     """
 
-    def load_openrag_config(logger: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    def load_openrag_config(logger: Any):
         """
         Loads OpenRAG configuration.
 
@@ -213,9 +213,7 @@ def main():
             logger: Logger instance.
 
         Returns:
-            tuple:
-                rdb (dict): Relational database configuration.
-                vdb (dict): Vector database configuration.
+            tuple: (RDBConfig, VectorDBConfig) Pydantic config models.
         """
         from config import load_config
 
@@ -225,7 +223,7 @@ def main():
             logger.error(f"Failed while trying to obtain OpenRAG config: {e}")
             raise
 
-        return config["rdb"], config["vectordb"]
+        return config.rdb, config.vectordb
 
     # Arguments and configs
     import argparse
@@ -269,20 +267,18 @@ def main():
     rdb, vdb = load_openrag_config(logger)
 
     if args.verbose:
-        logger.info(
-            f"rdb @ {rdb['host']}:{rdb['port']} | vdb @ {vdb['host']}:{vdb['port']} | collection: {vdb['collection_name']}"
-        )
+        logger.info(f"rdb @ {rdb.host}:{rdb.port} | vdb @ {vdb.host}:{vdb.port} | collection: {vdb.collection_name}")
 
     # List existing partitions
     try:
         pfm = PartitionFileManager(
-            database_url=f"postgresql://{rdb['user']}:{rdb['password']}@{rdb['host']}:{rdb['port']}/partitions_for_collection_{vdb['collection_name']}",
+            database_url=f"postgresql://{rdb.user}:{rdb.password}@{rdb.host}:{rdb.port}/partitions_for_collection_{vdb.collection_name}",
             logger=logger,
         )
 
         existing_partitions = {item["partition"]: item for item in pfm.list_partitions()}
     except Exception as e:
-        logger.error(f"Failed while accessing PartitionFileManager at {rdb['host']}:{rdb['port']}\n{e}")
+        logger.error(f"Failed while accessing PartitionFileManager at {rdb.host}:{rdb.port}\n{e}")
         raise
 
     if args.include_only:
@@ -291,7 +287,7 @@ def main():
                 logger.error(f'Partition "{part_name}" already exists')
                 return 1
 
-    client = MilvusClient(uri=f"http://{vdb['host']}:{vdb['port']}")
+    client = MilvusClient(uri=f"http://{vdb.host}:{vdb.port}")
 
     try:
         with open_backup_file(args.input, logger) as fh:
@@ -316,7 +312,7 @@ def main():
                 if line in ["vdb"]:
                     read_vdb_section(
                         fh,
-                        vdb["collection_name"],
+                        vdb.collection_name,
                         added_documents,
                         client,
                         args.batch_size,

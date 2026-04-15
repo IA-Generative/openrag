@@ -36,10 +36,18 @@ The `MarkerLoader` is the default PDF parsing engine. It can be configured using
 |----------|------|---------|-------------|
 | `MARKER_POOL_SIZE` | int | 1 | Number of workers (typically 1 worker per cluster node) |
 | `MARKER_MAX_PROCESSES` | int | 2 | Number of subprocesses <-> Number of concurrent PDFs per worker (to increase depending on your available GPU resources)|
-| `MARKER_MAX_TASKS_PER_CHILD` | int | 10 | Number of tasks a child (PDF worker) has to process before it gets restarted to clean up memory leaks |
-| `MARKER_MIN_PROCESSES` | int | 1 | Minimum number of subprocesses available before triggering a process pool reset |
+| `MARKER_MAX_TASKS_PER_CHILD` | int | 20 | Number of tasks a child (PDF worker) has to process before it gets restarted to clean up memory leaks |
 | `MARKER_TIMEOUT` | int | 3600 | Timeout in seconds for marker processes |
 | `MARKER_PDFTEXT_WORKERS` | int | 2 | Number of PDF text extractor workers inside marker. |
+| `MARKER_CHUNK_SIZE` | int | 10 | Split large PDFs into chunks of this many pages for parallel processing across workers. Use <= 0 to deactivate chunking. |
+
+:::note[Page chunking with `MARKER_CHUNK_SIZE`]
+Enabling page chunking allows processing large PDFs **significantly faster** by dispatching page ranges to all available workers in parallel rather than sending the entire file to a single worker. The main benefit is the ability to safely scale `MARKER_MAX_PROCESSES` without risking OOM.
+
+It also **reduces per-worker GPU memory spikes** on large files. With a reasonable chunk size (around 10 pages), spikes are shorter and lower, making it safer to run more concurrent workers. See `benchmarks/marker/marker_page_chunking.md` for measured results.
+
+**NB:** Consider increasing `MARKER_MAX_TASKS_PER_CHILD` when using page chunking, as worker utilization increases significantly and you may observe frequent subprocess restarts with the default value.
+:::
 
 
 
@@ -165,6 +173,7 @@ The vector database stores embeddings and is configured using the following envi
 | `VDB_CONNECTOR_NAME` | str | milvus | Connector/driver to use for the vector DB. Currently only `milvus` is implemented |
 | `VDB_COLLECTION_NAME` | str | vdb_test | Name of the collection storing embeddings |
 |`VDB_HYBRID_SEARCH`| `bool` | true |To activate hybrid search (semantic similarity + Keyword search)|
+| `VDB_ENABLE_INSERTION` | bool | true | Enable or disable vector database insertion. When disabled, documents are processed but not inserted into Milvus. Useful for testing. |
 
 These variables can be overridden when using an external vector database service.
 
@@ -229,19 +238,24 @@ The retriever fetches relevant documents from the vector database based on query
 
 ### Reranker Configuration
 
-The reranker enhances search quality by re-scoring and reordering retrieved documents according to their relevance to the user's query. Currently, the system uses [Infinity server](https://github.com/michaelfeil/infinity) for reranking functionality.
-
-:::info[Future Improvements]
-The current Infinity server interface is not OpenAI-compatible, which limits integration flexibility. We plan to improve this by supporting OpenAI-compatible reranker interfaces in future releases.
-:::
+The reranker enhances search quality by re-scoring and reordering retrieved documents according to their relevance to the user's query. Two providers are supported: **Infinity** (default) and **OpenAI-compatible** endpoints.
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `RERANKER_ENABLED` | `bool` | true | Enable or disable the reranking mechanism |
+| `RERANKER_PROVIDER` | `str` | `infinity` | Reranker backend to use. Accepted values: `infinity`, `openai` |
 | `RERANKER_MODEL` | `str` | Alibaba-NLP/gte-multilingual-reranker-base | Model used for reranking documents.|
-| `RERANKER_TOP_K` | `int` | 5 | Number of top documents to return after reranking. Increase to 8 for better results if your LLM has a wider context window |
+| `RERANKER_TOP_K` | `int` | 10 | Number of top documents to return after reranking. Increase for better results if your LLM has a wider context window |
 | `RERANKER_BASE_URL` | `str` | `http://reranker:7997` | Base URL of the reranker service |
-| `RERANKER_PORT` | `int` | 7997 | Port on which the reranker service listens |
+| `RERANKER_API_KEY` | `str` | `EMPTY` | API key for the reranker service. Required when using the `openai` provider |
+| `RERANKER_SEMAPHORE` | `int` | 5 | Maximum number of concurrent reranking requests. Adjust based on your server capacity |
+
+#### Reranker Providers
+
+| Provider | `RERANKER_PROVIDER` value | Description |
+|----------|--------------------------|-------------|
+| **Infinity** | `infinity` | Uses the [Infinity server](https://github.com/michaelfeil/infinity) via its native client. Default port: `7997` |
+| **OpenAI-compatible** | `openai` | Uses any OpenAI-compatible reranker endpoint (e.g. vLLM, LiteLLM, TEI). Default port: `8000` |
 
 ## Extra
 ### Prompts
@@ -382,6 +396,28 @@ Ray Serve enables deployment of the FastAPI as a scalable service. For simple de
 | `RAY_SERVE_PORT` | int | 8080 | Port for the Ray Serve FastAPI endpoint |
 | `CHAINLIT_PORT` | int | 8090 | Port for the Chainlit UI interface if ray serve is enable `ENABLE_RAY_SERVE`. If not chainlit UI is simply a subroute (`/chainlit` [see this](/openrag/getting_started/usage/#default-ports)) of the FastAPI **`base_url`**|
 
+
+### Web Search Configuration
+
+Web search allows the LLM to augment RAG document context with live web results. It is disabled by default — set `WEBSEARCH_API_TOKEN` to enable it.
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `WEBSEARCH_PROVIDER` | `str` | `staan` | Web search provider to use. Currently supported: `staan`. |
+| `WEBSEARCH_API_TOKEN` | `str` | `""` | API token for the web search provider. If empty, web search is disabled. |
+| `WEBSEARCH_BASE_URL` | `str` | (provider default) | Base URL of the web search provider API. |
+| `WEBSEARCH_TOP_K` | `int` | `5` | Number of web search results to return. |
+| `WEBSEARCH_LANG` | `str` | `fr-FR` | Language/market code for web search queries. |
+| `WEBSEARCH_MAX_TOKENS` | `int` | `2000` | Maximum token budget for all web sources combined in the LLM context. This budget is reserved from the global context window when web results are present. |
+| `WEBSEARCH_FETCH_CONTENT` | `bool` | `true` | When enabled, fetches actual page content from the top URLs instead of relying on short search snippets. |
+| `WEBSEARCH_FETCH_MAX_RESULTS` | `int` | `3` | Number of top URLs to fetch content from (the remaining results use their search snippet). |
+| `WEBSEARCH_FETCH_TIMEOUT` | `float` | `1.0` | Per-URL timeout in seconds for content fetching. URLs that don't respond within this time fall back to their snippet. |
+| `WEBSEARCH_FETCH_MAX_TOKENS` | `int` | `500` | Maximum approximate tokens of content to extract per page. Content is truncated at word boundaries. |
+| `WEBSEARCH_FETCH_VERIFY_SSL` | `bool` | `false` | Whether to verify SSL certificates when fetching page content. |
+
+:::tip[How to Enable Web Search?]
+When chatting, you can enable web search through the OpenAI-compatible API by setting `"websearch": true` in the `metadata` field of the request body. See the [API documentation](/openrag/documentation/api/#extra-arguments) for examples.
+:::
 
 ### Map & Reduce Configuration
 The map & reduce mechanism processes documents by fetching chunks (map phase), filtering out irrelevant ones and summarizing relevant content (reduce phase) with respect to the user's query. The algorithm works as follows:

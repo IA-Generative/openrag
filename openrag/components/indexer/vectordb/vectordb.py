@@ -1,11 +1,13 @@
 import asyncio
 import time
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 
 import numpy as np
 import ray
 from config import load_config
 from langchain_core.documents.base import Document
+from models.user import UserCreate, UserUpdate
 from pymilvus import (
     AnnSearchRequest,
     AsyncMilvusClient,
@@ -71,9 +73,10 @@ class BaseVectorDB(ABC):
         self,
         query: str,
         top_k: int = 5,
-        similarity_threshold: int = 0.60,
+        similarity_threshold: float = 0.60,
         partition: list[str] = None,
-        filter: dict | None = None,
+        filter: str | None = None,
+        filter_params: dict | None = None,
         with_surrounding_chunks: bool = False,
     ) -> list[Document]:
         pass
@@ -84,8 +87,9 @@ class BaseVectorDB(ABC):
         partition: list[str],
         queries: list[str],
         top_k_per_query: int = 5,
-        similarity_threshold: int = 0.6,
-        filter: dict | None = None,
+        similarity_threshold: float = 0.6,
+        filter: str | None = None,
+        filter_params: dict | None = None,
         with_surrounding_chunks: bool = False,
     ) -> list[Document]:
         pass
@@ -95,19 +99,16 @@ class BaseVectorDB(ABC):
         pass
 
     @abstractmethod
-    async def get_file_chunks(self, file_id: str, partition: str, include_id: bool = False, limit: int = 100):
+    async def get_file_chunks(self, file_id: str, partition: str, include_id: bool = False, limit: int = 2000):
         pass
 
     @abstractmethod
     async def get_chunk_by_id(self, chunk_id: str):
         pass
 
-    # @abstractmethod
-    # def sample_chunk_ids(
-    #     self, partition: str, n_ids: int = 100, seed: int | None = None
-    # ):
-    #     pass
 
+SCHEMA_VERSION_PROPERTY_KEY = "openrag.schema_version"
+INDEXED_TIME_FIELDS = ["created_at"]
 
 MAX_LENGTH = 65_535
 
@@ -142,8 +143,8 @@ class MilvusDB(BaseVectorDB):
             self.logger = get_logger()
 
             # init milvus clients
-            self.port = self.config.vectordb.get("port")
-            self.host = self.config.vectordb.get("host")
+            self.port = self.config.vectordb.port
+            self.host = self.config.vectordb.host
             uri = f"http://{self.host}:{self.port}"
             self.uri = uri
             try:
@@ -159,7 +160,7 @@ class MilvusDB(BaseVectorDB):
             # embedder
             self.embedder: BaseEmbedding = EmbeddingFactory.get_embedder(embeddings_config=self.config.embedder)
 
-            self.hybrid_search = self.config.vectordb.get("hybrid_search", True)
+            self.hybrid_search = self.config.vectordb.hybrid_search
             # partition related params
             self.rdb_host = self.config.rdb.host
             self.rdb_port = self.config.rdb.port
@@ -168,7 +169,7 @@ class MilvusDB(BaseVectorDB):
             self.partition_file_manager: PartitionFileManager = None
 
             # Initialize collection-related attributes
-            self.collection_name = self.config.vectordb.get("collection_name", "vdb_test")
+            self.collection_name = self.config.vectordb.collection_name
             self.collection_loaded = False
             self.load_collection()
 
@@ -189,6 +190,7 @@ class MilvusDB(BaseVectorDB):
             try:
                 if self._client.has_collection(self.collection_name):
                     self.logger.warning(f"Collection `{self.collection_name}` already exists. Loading it.")
+                    self._check_schema_version()
                 else:
                     self.logger.info("Creating empty collection")
                     index_params = self._create_index()
@@ -212,6 +214,7 @@ class MilvusDB(BaseVectorDB):
                             collection_name=self.collection_name,
                             operation="create_collection",
                         )
+                    self._store_schema_version()
                 try:
                     self._client.load_collection(self.collection_name)
                     self.collection_loaded = True
@@ -283,6 +286,9 @@ class MilvusDB(BaseVectorDB):
             dim=self.embedder.embedding_dimension,
         )
 
+        for time_field in INDEXED_TIME_FIELDS:
+            schema.add_field(field_name=time_field, datatype=DataType.TIMESTAMPTZ, nullable=True)
+
         if self.hybrid_search:
             # Add sparse field for BM25 - this will be auto-generated
             schema.add_field(
@@ -336,8 +342,53 @@ class MilvusDB(BaseVectorDB):
                 "bm25_b": 0.75,
             },
         )
+        # indexes for dates TIMESTAMPTZ field
+        for time_field in INDEXED_TIME_FIELDS:
+            index_params.add_index(
+                field_name=time_field,
+                index_type="STL_SORT",  # Index for TIMESTAMPTZ
+                index_name=f"{time_field}_idx",
+            )
 
         return index_params
+
+    def _store_schema_version(self) -> None:
+        """Persist the configured schema_version as a collection property after collection creation."""
+        schema_version = self.config.vectordb.schema_version
+        self._client.alter_collection_properties(
+            collection_name=self.collection_name,
+            properties={SCHEMA_VERSION_PROPERTY_KEY: str(schema_version)},
+        )
+        self.logger.info(f"Schema version {schema_version} stored on collection `{self.collection_name}`.")
+
+    def _check_schema_version(self) -> None:
+        """
+        Read the stored schema version from collection properties and compare it
+        against the configured schema_version.  Raises VDBSchemaMigrationRequiredError
+        if they diverge so the application fails fast instead of silently working on a
+        stale schema.
+        """
+        expected_version = self.config.vectordb.schema_version
+        desc = self._client.describe_collection(self.collection_name)
+        props = desc.get("properties", {})
+        raw = props.get(SCHEMA_VERSION_PROPERTY_KEY)
+
+        try:
+            stored_version = int(raw) if raw is not None else 0
+        except (ValueError, TypeError):
+            stored_version = 0
+
+        if stored_version != expected_version:
+            raise VDBSchemaMigrationRequiredError(
+                f"Collection `{self.collection_name}` is at schema version {stored_version} "
+                f"but the application requires version {expected_version}. "
+                "Please perform the migration script.",
+                collection_name=self.collection_name,
+                stored_version=stored_version,
+                expected_version=expected_version,
+            )
+
+        self.logger.info(f"Collection `{self.collection_name}` schema version {stored_version} — OK.")
 
     async def list_collections(self) -> list[str]:
         return self._client.list_collections()
@@ -379,11 +430,14 @@ class MilvusDB(BaseVectorDB):
             entities = []
             vectors = await self.embedder.aembed_documents(chunks)
             order_metadata_l: list[dict] = _gen_chunk_order_metadata(n=len(chunks))
+            indexed_at = datetime.now(UTC).isoformat()
+
             for chunk, vector, order_metadata in zip(chunks, vectors, order_metadata_l):
                 entities.append(
                     {
                         "text": chunk.page_content,
                         "vector": vector,
+                        "indexed_at": indexed_at,
                         **order_metadata,
                         **chunk.metadata,
                     }
@@ -395,6 +449,7 @@ class MilvusDB(BaseVectorDB):
             )
 
             # insert file_id and partition into partition_file_manager
+            file_metadata.update({"indexed_at": indexed_at})
             self.partition_file_manager.add_file_to_partition(
                 file_id=file_id,
                 partition=partition,
@@ -425,6 +480,7 @@ class MilvusDB(BaseVectorDB):
         top_k_per_query=5,
         similarity_threshold=0.6,
         filter=None,
+        filter_params=None,
         with_surrounding_chunks=False,
     ) -> list[Document]:
         # Gather all search tasks concurrently
@@ -435,6 +491,7 @@ class MilvusDB(BaseVectorDB):
                 similarity_threshold=similarity_threshold,
                 partition=partition,
                 filter=filter,
+                filter_params=filter_params,
                 with_surrounding_chunks=with_surrounding_chunks,
             )
             for query in queries
@@ -452,9 +509,10 @@ class MilvusDB(BaseVectorDB):
         self,
         query: str,
         top_k: int = 5,
-        similarity_threshold: int = 0.80,
+        similarity_threshold: float = 0.60,
         partition: list[str] = None,
-        filter: dict | None = None,
+        filter: str | None = None,
+        filter_params: dict | None = None,
         with_surrounding_chunks: bool = False,
     ) -> list[Document]:
         expr_parts = []
@@ -462,8 +520,34 @@ class MilvusDB(BaseVectorDB):
             expr_parts.append(f"partition in {partition}")
 
         if filter:
-            for key, value in filter.items():
-                expr_parts.append(f"{key} == '{value}'")
+            expr_parts.append(filter)
+
+        if filter_params:
+            # Don't mutate the caller's dict — concurrent calls may share it
+            filter_params = dict(filter_params)
+            if "workspace_id" in filter_params:
+                workspace_id = filter_params.pop(
+                    "workspace_id"
+                )  # workspace_id is only used for filtering in the partition_file_manager, not in Milvus directly
+                ws = self.partition_file_manager.get_workspace(workspace_id)
+                if not ws:
+                    return []  # Workspace not found → no results
+
+                file_ids = self.partition_file_manager.list_workspace_files(workspace_id)
+                if not file_ids:
+                    return []  # Empty workspace → no results
+
+                # Pin to the workspace's own partition regardless of the requested
+                # partition set — file_id is only unique per (file_id, partition_name)
+                # so a cross-partition search could otherwise return chunks from a
+                # different partition that reuses the same file_id.
+                ws_partition = ws["partition_name"]
+                # Replace any outer partition filter with the workspace's partition
+                expr_parts = [p for p in expr_parts if not p.startswith("partition in ")]
+                expr_parts.append(f'partition == "{ws_partition}"')
+
+                id_list = ", ".join(f'"{fid}"' for fid in file_ids)
+                expr_parts.append(f"file_id IN [{id_list}]")
 
         # Join all parts with " and " only if there are multiple conditions
         expr = " and ".join(expr_parts) if expr_parts else ""
@@ -507,10 +591,23 @@ class MilvusDB(BaseVectorDB):
                     limit=top_k,
                 )
             else:
+                vector_param = {
+                    "data": [query_vector],
+                    "anns_field": "vector",
+                    "search_params": {
+                        "metric_type": "COSINE",
+                        "params": {
+                            "ef": 64,
+                            "radius": similarity_threshold,
+                            "range_filter": 1.0,
+                        },
+                    },
+                    "limit": top_k,
+                }
                 response = await self._async_client.search(
                     collection_name=self.collection_name,
                     output_fields=["*"],
-                    limit=top_k,
+                    filter=expr,
                     **vector_param,
                 )
 
@@ -595,6 +692,7 @@ class MilvusDB(BaseVectorDB):
                 filter=f"partition == '{partition}' and file_id == '{file_id}'",
             )
 
+            self.partition_file_manager.remove_file_from_all_workspaces(file_id, partition)
             self.partition_file_manager.remove_file_from_partition(file_id=file_id, partition=partition)
             log.info("Deleted file chunks from partition.", count=res.get("delete_count", 0))
 
@@ -617,33 +715,251 @@ class MilvusDB(BaseVectorDB):
                 file_id=file_id,
             )
 
-    async def get_file_chunks(self, file_id: str, partition: str, include_id: bool = False, limit: int = 100):
+    async def delete_chunks_by_ids(self, chunk_ids: list[int]):
+        """Delete specific Milvus chunks by their _id primary keys."""
+        if not chunk_ids:
+            return
+        try:
+            await self._async_client.delete(
+                collection_name=self.collection_name,
+                ids=chunk_ids,
+            )
+            self.logger.info("Deleted old chunks by ID.", count=len(chunk_ids))
+        except MilvusException as e:
+            self.logger.exception("Failed to delete old chunks by ID", error=str(e))
+            raise VDBDeleteError(
+                f"Failed to delete old chunks by ID: {e!s}",
+                collection_name=self.collection_name,
+            )
+        except Exception as e:
+            self.logger.exception("Unexpected error while deleting chunks by ID", error=str(e))
+            raise UnexpectedVDBError(
+                f"Unexpected error while deleting chunks by ID: {e!s}",
+                collection_name=self.collection_name,
+            )
+
+    async def get_file_chunk_ids(self, file_id: str, partition: str) -> list[int]:
+        """Return the Milvus _id values for all chunks of a file."""
         log = self.logger.bind(file_id=file_id, partition=partition)
         try:
-            self._check_file_exists(file_id, partition)
-            # Adjust filter expression based on the type of value
-            filter_expression = "partition == {partition} and file_id == {file_id}"
-            filter_params = {"partition": partition, "file_id": file_id}
-
-            # Pagination parameters
-            offset = 0
             results = []
-            excluded_keys = ["text", "vector", "_id"] if not include_id else ["text", "vector"]
-
+            offset = 0
+            limit = 100
             while True:
                 response = await self._async_client.query(
                     collection_name=self.collection_name,
-                    filter=filter_expression,
-                    filter_params=filter_params,
+                    filter="partition == {partition} and file_id == {file_id}",
+                    filter_params={"partition": partition, "file_id": file_id},
+                    output_fields=["_id"],
                     limit=limit,
                     offset=offset,
                 )
-
                 if not response:
-                    break  # No more results
+                    break
+                results.extend(r["_id"] for r in response)
+                offset += len(response)
+            return results
+        except MilvusException as e:
+            log.exception("Failed to get file chunk IDs", error=str(e))
+            raise VDBSearchError(
+                f"Failed to get file chunk IDs for {file_id}: {e!s}",
+                collection_name=self.collection_name,
+                partition=partition,
+                file_id=file_id,
+            )
+        except Exception as e:
+            log.exception("Unexpected error while getting file chunk IDs", error=str(e))
+            raise UnexpectedVDBError(
+                f"Unexpected error while getting file chunk IDs for {file_id}: {e!s}",
+                collection_name=self.collection_name,
+                partition=partition,
+                file_id=file_id,
+            )
 
-                results.extend(response)
-                offset += len(response)  # Move offset forward
+    async def upsert_file_metadata(self, file_id: str, partition: str, metadata: dict):
+        """Update metadata on all chunks of a file in-place via Milvus upsert.
+
+        Fetches existing chunks (with _id and vectors), merges new metadata,
+        then upserts back into Milvus. No re-embedding is performed.
+        Also updates the PostgreSQL file record metadata in-place.
+        """
+        log = self.logger.bind(file_id=file_id, partition=partition)
+        try:
+            # Fetch all chunks with their _id and vector so we can upsert without re-embedding.
+            docs = await self.get_file_chunks(file_id, partition, include_id=True, include_vectors=True)
+            if not docs:
+                log.warning("No chunks found for metadata upsert")
+                return
+
+            entities = []
+            for doc in docs:
+                chunk_metadata = dict(doc.metadata)
+                # Merge new metadata into the chunk metadata.
+                # _id and vector are already in chunk_metadata (via include_id/include_vectors).
+                chunk_metadata.update(metadata)
+                entities.append(
+                    {
+                        "text": doc.page_content,
+                        **chunk_metadata,
+                    }
+                )
+
+            await self._async_client.upsert(
+                collection_name=self.collection_name,
+                data=entities,
+            )
+
+            # Build file-level metadata from the first chunk (same as async_add_documents).
+            # Strip per-chunk fields that don't belong in the file-level PG record.
+            file_metadata = dict(docs[0].metadata)
+            for key in ("_id", "vector", "page", "section_id", "prev_section_id", "next_section_id"):
+                file_metadata.pop(key, None)
+            file_metadata.update(metadata)
+            if not self.partition_file_manager.update_file_metadata_in_db(file_id, partition, file_metadata):
+                # PG row was concurrently deleted; Milvus upsert already succeeded.
+                # Log warning but don't fail — Milvus data will be orphaned until
+                # next cleanup, but the user-facing operation should still succeed.
+                log.warning("PG file row not found during metadata upsert; Milvus updated but PG skipped")
+
+            log.info("Upserted file metadata in-place.", chunk_count=len(entities))
+
+        except MilvusException as e:
+            log.exception("Milvus upsert failed", error=str(e))
+            raise VDBInsertError(
+                f"Couldn't upsert metadata for file {file_id}: {e!s}",
+                collection_name=self.collection_name,
+                partition=partition,
+                file_id=file_id,
+            )
+        except VDBError:
+            raise
+        except Exception as e:
+            log.exception("Unexpected error during metadata upsert", error=str(e))
+            raise UnexpectedVDBError(
+                f"Unexpected error during metadata upsert for {file_id}: {e!s}",
+                collection_name=self.collection_name,
+            )
+
+    async def add_documents_for_existing_file(self, chunks: list[Document], user: dict) -> None:
+        """Replace Milvus chunks for a file that already exists in PostgreSQL.
+
+        Used by PUT (file replace). The flow is insert-before-delete so the file
+        is never left in a half-replaced state:
+        1. Snapshot old chunk _id values
+        2. Embed and insert new chunks
+        3. Delete old chunks by _id
+        4. Update the PostgreSQL File row in-place
+
+        If step 2 fails, old chunks remain intact. If step 3 fails, we have
+        duplicates temporarily but no data loss — a retry or manual cleanup
+        can resolve it.
+
+        Note: this implements strict PUT semantics — the new chunk metadata
+        fully replaces the old. Fields like ``relationship_id`` and ``parent_id``
+        are taken from the new chunks' metadata; if the caller omits them, the
+        PG columns are cleared. To preserve old values across a PUT, the caller
+        must re-supply them in the request metadata.
+        """
+        log = self.logger  # Fallback; rebound with context below
+        try:
+            file_metadata = dict(chunks[0].metadata)
+            file_metadata.pop("page")
+            file_id, partition = file_metadata.get("file_id"), file_metadata.get("partition")
+            relationship_id = file_metadata.get("relationship_id")
+            parent_id = file_metadata.get("parent_id")
+
+            log = self.logger.bind(partition=partition, file_id=file_id, filename=file_metadata.get("filename"))
+
+            # 1. Snapshot old chunk _id values before inserting new ones.
+            old_chunk_ids = await self.get_file_chunk_ids(file_id, partition)
+
+            # 2. Embed and insert new chunks.
+            entities = []
+            vectors = await self.embedder.aembed_documents(chunks)
+            order_metadata_l: list[dict] = _gen_chunk_order_metadata(n=len(chunks))
+            for chunk, vector, order_metadata in zip(chunks, vectors, order_metadata_l):
+                entities.append(
+                    {
+                        "text": chunk.page_content,
+                        "vector": vector,
+                        **order_metadata,
+                        **chunk.metadata,
+                    }
+                )
+
+            await self._async_client.insert(
+                collection_name=self.collection_name,
+                data=entities,
+            )
+
+            # 3. Delete old chunks by _id (new ones are already durable).
+            await self.delete_chunks_by_ids(old_chunk_ids)
+
+            # 4. Update existing PostgreSQL file record in-place (preserves files.id PK)
+            if not self.partition_file_manager.update_file_in_partition(
+                file_id=file_id,
+                partition=partition,
+                file_metadata=file_metadata,
+                relationship_id=relationship_id,
+                parent_id=parent_id,
+            ):
+                # PG row was concurrently deleted after we inserted new Milvus chunks.
+                # Log warning — Milvus has new orphaned chunks but data is consistent
+                # (old chunks deleted, new chunks inserted, no PG record).
+                log.warning("PG file row not found during replace; Milvus updated but PG skipped")
+            log.info(f"File '{file_id}' chunks replaced in partition '{partition}'")
+
+        except EmbeddingError as e:
+            log.exception("Embedding failed", error=str(e))
+            raise
+        except VDBError as e:
+            log.exception("VectorDB operation failed", error=str(e))
+            raise
+        except Exception as e:
+            log.exception("Unexpected error while adding chunks for existing file", error=str(e))
+            raise UnexpectedVDBError(
+                f"Unexpected error while adding chunks for existing file: {e!s}",
+                collection_name=self.collection_name,
+            )
+
+    async def get_file_chunks(
+        self,
+        file_id: str,
+        partition: str,
+        include_id: bool = False,
+        include_vectors: bool = False,
+        limit: int = 2000,
+    ):
+        log = self.logger.bind(file_id=file_id, partition=partition)
+        try:
+            self._check_file_exists(file_id, partition)
+            filter_expr = f'partition == "{partition}" and file_id == "{file_id}"'
+            excluded_keys = {"text"}
+            if not include_id:
+                excluded_keys.add("_id")
+            if not include_vectors:
+                excluded_keys.add("vector")
+
+            # Milvus query with output_fields=["*"] returns all scalar fields
+            # but excludes vector fields. To include vectors, request them explicitly.
+            output_fields = ["*", "vector"] if include_vectors else ["*"]
+
+            results = []
+            iterator = self._client.query_iterator(
+                collection_name=self.collection_name,
+                filter=filter_expr,
+                limit=limit,
+                batch_size=min(limit, 16000),
+                output_fields=output_fields,
+            )
+            try:
+                while True:
+                    batch = iterator.next()
+                    if not batch:
+                        break
+                    results.extend(batch)
+            finally:
+                iterator.close()
 
             docs = [
                 Document(
@@ -839,20 +1155,22 @@ class MilvusDB(BaseVectorDB):
                 output_fields=["*"],
             )
 
-            while True:
-                result = iterator.next()
-                if not result:
-                    iterator.close()
-                    break
-                chunks.extend(
-                    [
-                        Document(
-                            page_content=res["text"],
-                            metadata=prepare_metadata(res),
-                        )
-                        for res in result
-                    ]
-                )
+            try:
+                while True:
+                    result = iterator.next()
+                    if not result:
+                        break
+                    chunks.extend(
+                        [
+                            Document(
+                                page_content=res["text"],
+                                metadata=prepare_metadata(res),
+                            )
+                            for res in result
+                        ]
+                    )
+            finally:
+                iterator.close()
 
             return chunks
 
@@ -877,14 +1195,8 @@ class MilvusDB(BaseVectorDB):
                 partition=partition,
             )
 
-    async def create_user(
-        self,
-        display_name: str | None = None,
-        external_user_id: str | None = None,
-        is_admin: bool = False,
-        file_quota: int | None = None,
-    ):
-        return self.partition_file_manager.create_user(display_name, external_user_id, is_admin, file_quota)
+    async def create_user(self, body: UserCreate):
+        return self.partition_file_manager.create_user(body)
 
     async def get_user(self, user_id: int):
         self._check_user_exists(user_id)
@@ -909,9 +1221,9 @@ class MilvusDB(BaseVectorDB):
         self._check_user_exists(user_id)
         return self.partition_file_manager.regenerate_user_token(user_id)
 
-    def update_user_quota(self, user_id: int, file_quota: int | None):
+    async def update_user(self, user_id: int, body: UserUpdate):
         self._check_user_exists(user_id)
-        return self.partition_file_manager.update_user_quota(user_id, file_quota)
+        return self.partition_file_manager.update_user(user_id, body)
 
     async def list_user_partitions(self, user_id: int):
         self._check_user_exists(user_id)
@@ -1086,6 +1398,40 @@ class MilvusDB(BaseVectorDB):
             for res in results
         ]
 
+    # --- Workspace methods ---
+
+    async def create_workspace(
+        self, workspace_id: str, partition: str, user_id: int | None = None, display_name: str | None = None
+    ):
+        self.partition_file_manager.create_workspace(workspace_id, partition, user_id, display_name)
+
+    async def list_workspaces(self, partition: str) -> list[dict]:
+        return self.partition_file_manager.list_workspaces(partition)
+
+    async def get_workspace(self, workspace_id: str) -> dict | None:
+        return self.partition_file_manager.get_workspace(workspace_id)
+
+    async def delete_workspace(self, workspace_id: str) -> list[str]:
+        """Delete workspace and return orphaned file_ids. Caller must delete those files from Milvus."""
+        return self.partition_file_manager.delete_workspace(workspace_id)
+
+    async def get_existing_file_ids(self, partition: str, file_ids: list[str]) -> list[str]:
+        """Return the subset of file_ids that exist in the given partition."""
+        return list(self.partition_file_manager.get_existing_file_ids(partition, file_ids))
+
+    async def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]) -> list[str]:
+        return self.partition_file_manager.add_files_to_workspace(workspace_id, file_ids)
+
+    async def remove_file_from_workspace(self, workspace_id: str, file_id: str) -> bool:
+        return self.partition_file_manager.remove_file_from_workspace(workspace_id, file_id)
+
+    async def list_workspace_files(self, workspace_id: str) -> list[str]:
+        return self.partition_file_manager.list_workspace_files(workspace_id)
+
+    async def get_file_workspaces(self, file_id: str, partition: str) -> list[str]:
+        """Return workspace IDs that contain the given file, scoped to the partition."""
+        return self.partition_file_manager.get_file_workspaces(file_id, partition)
+
 
 def _gen_chunk_order_metadata(n: int = 20) -> list[dict]:
     # Use base timestamp + index to ensure uniqueness
@@ -1131,7 +1477,7 @@ class ConnectorFactory:
 
     @staticmethod
     def get_vectordb_cls():
-        name = config.vectordb.get("connector_name")
+        name = config.vectordb.connector_name
         vdb_cls = ConnectorFactory.CONNECTORS.get(name)
         if not vdb_cls:
             raise ValueError(f"VECTORDB '{name}' is not supported.")

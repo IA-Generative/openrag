@@ -15,11 +15,11 @@ config = load_config()
 
 
 if torch.cuda.is_available():
-    WHISPER_NUM_GPUS = config.loader.local_whisper.get("whisper_num_gpus", 0.01)
+    WHISPER_NUM_GPUS = config.loader.local_whisper.whisper_num_gpus
 else:  # On CPU
     WHISPER_NUM_GPUS = 0
 
-WHISPER_CONCURRENCY_PER_WORKER = config.loader.local_whisper.get("whisper_concurency_per_worker", 2)
+WHISPER_CONCURRENCY_PER_WORKER = config.loader.local_whisper.whisper_concurrency_per_worker
 
 
 @ray.remote(
@@ -36,7 +36,7 @@ class WhisperActor:
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         compute_type = "float16" if device == "cuda" else "int8"
-        model_name = self.config.loader.local_whisper.get("model", "base")
+        model_name = self.config.loader.local_whisper.model
 
         self.logger.info("Loading Whisper model", model_name=model_name, device=device, compute_type=compute_type)
         self.model = WhisperModel(model_name, device=device, compute_type=compute_type)
@@ -74,7 +74,7 @@ class WhisperPool:
 
         self.logger = get_logger()
 
-        n_workers = config.loader.local_whisper.get("whisper_n_workers")
+        n_workers = config.loader.local_whisper.whisper_n_workers
         self.logger.info(f"Starting WhisperPool with {n_workers} workers")
         self.workers = [WhisperActor.remote() for _ in range(n_workers)]
         self._pending = [0] * n_workers

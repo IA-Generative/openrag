@@ -7,11 +7,14 @@ from collections import deque
 from typing import ClassVar
 
 import ray
+from components.indexer.utils.text_sanitizer import sanitize_text
 from config import load_config
 from fast_langdetect import LangDetectConfig, LangDetector
 from langchain_core.documents.base import Document
 from langchain_openai import ChatOpenAI
 from utils.logger import get_logger
+
+SOURCE_SEPARATOR = "-" * 10 + "\n\n"
 
 # Global variables
 config = load_config()
@@ -87,7 +90,7 @@ _cached_length_function = None
 def get_num_tokens():
     global _cached_length_function
     if _cached_length_function is None:
-        llm = ChatOpenAI(**config.llm)
+        llm = ChatOpenAI(**config.llm.model_dump())
         _cached_length_function = llm.get_num_tokens
     return _cached_length_function
 
@@ -115,9 +118,50 @@ def format_context(
         included_indices.append(i)
         total_tokens += n_tokens
 
-    sep = "-" * 10 + "\n\n"
     logger.debug("Context formatted", total_tokens=total_tokens, doc_count=len(reduced_docs))
-    return f"{sep}".join(reduced_docs), included_indices
+    return SOURCE_SEPARATOR.join(reduced_docs), included_indices
+
+
+def format_web_context(
+    web_results: list,
+    start_index: int = 1,
+    max_tokens: int = 2000,
+) -> tuple[str, list[int], int]:
+    """Format web results as numbered [Source N] blocks within a token budget.
+
+    Uses fetched page content when available, falling back to the search snippet.
+
+    Args:
+        web_results: Results from web search provider (list of WebResult)
+        start_index: First source number (continues numbering after RAG sources)
+        max_tokens: Maximum token budget for all web sources combined
+
+    Returns:
+        (formatted_string, list_of_source_numbers_used, total_tokens_used)
+    """
+    if not web_results:
+        return "", [], 0
+
+    _length_function = get_num_tokens()
+
+    parts = []
+    source_numbers = []
+    total_tokens = 0
+
+    for i, result in enumerate(web_results):
+        n = start_index + i
+        title = sanitize_text(result.title)
+        body = sanitize_text(result.content) if result.content else sanitize_text(result.snippet)
+        block = f"[Source {n}]\n{title}\n{body}"
+        block_tokens = _length_function(block)
+        if total_tokens + block_tokens > max_tokens and parts:
+            break
+        parts.append(block)
+        source_numbers.append(n)
+        total_tokens += block_tokens
+
+    logger.debug("Web context formatted", total_tokens=total_tokens, source_count=len(parts))
+    return SOURCE_SEPARATOR.join(parts), source_numbers, total_tokens
 
 
 _SOURCES_NONE_RE = re.compile(r"\n?\[?Sources?\]?\s*:\s*\[?\s*none\s*\]?\s*$", re.IGNORECASE)

@@ -4,7 +4,7 @@ from config import load_config
 from pydantic import BaseModel, Field
 
 config = load_config()
-default_max_tokens = int(config.llm_context.get("max_output_tokens", 1024))
+default_max_tokens = config.llm_context.max_output_tokens
 
 
 # Classes pour la compatibilité OpenAI
@@ -29,6 +29,8 @@ class OpenAIChatCompletionRequest(BaseModel):
         {
             "use_map_reduce": False,
             "spoken_style_answer": False,
+            "websearch": False,
+            "llm_override": None,
         },
         description="Extra custom parameters. Supports 'llm_override' object with optional 'base_url', 'api_key', and 'model' to override the downstream LLM endpoint.",
     )

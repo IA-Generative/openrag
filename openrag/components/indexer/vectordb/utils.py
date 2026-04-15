@@ -1,29 +1,12 @@
 import hashlib
 import os
 import secrets
-from datetime import datetime
 
 from config import load_config
-from sqlalchemy import (
-    JSON,
-    Boolean,
-    CheckConstraint,
-    Column,
-    DateTime,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    UniqueConstraint,
-    create_engine,
-    func,
-    text,
-)
-from sqlalchemy.orm import (
-    declarative_base,
-    relationship,
-    sessionmaker,
-)
+from models.user import UserCreate, UserUpdate
+from sqlalchemy import create_engine, delete, func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy_utils import (
     create_database,
     database_exists,
@@ -31,120 +14,12 @@ from sqlalchemy_utils import (
 from utils.exceptions.vectordb import *
 from utils.logger import get_logger
 
+from .models import Base, File, Partition, PartitionMembership, User, Workspace, WorkspaceFile
+
 logger = get_logger()
 config = load_config()
 
-DEFAULT_FILE_QUOTA = config.rdb.get("default_file_quota", -1)
-
-Base = declarative_base()
-
-
-class File(Base):
-    __tablename__ = "files"
-
-    id = Column(Integer, primary_key=True)
-    file_id = Column(String, nullable=False, index=True)  # Added index for file_id lookups
-    # Foreign key points directly to the partition string
-    partition_name = Column(String, ForeignKey("partitions.partition"), nullable=False, index=True)  # Added index
-    file_metadata = Column(JSON, nullable=True, default={})
-
-    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-
-    # Document relationship fields
-    relationship_id = Column(
-        String, nullable=True, index=True
-    )  # Groups related documents (e.g., email thread ID, folder path)
-    parent_id = Column(
-        String, nullable=True, index=True
-    )  # Hierarchical parent reference (e.g., parent email, parent folder)
-
-    # relationship to the Partition object
-    partition = relationship("Partition", back_populates="files")
-
-    # Enforce uniqueness of (file_id, partition_name) - this also creates an index
-    __table_args__ = (
-        UniqueConstraint("file_id", "partition_name", name="uix_file_id_partition"),
-        # Additional composite index for common query patterns (partition first for better selectivity)
-        Index("ix_partition_file", "partition_name", "file_id"),
-        # Indexes for relationship queries
-        Index("ix_relationship_partition", "relationship_id", "partition_name"),
-        Index("ix_parent_partition", "parent_id", "partition_name"),
-    )
-
-    def to_dict(self):
-        metadata = self.file_metadata or {}
-        d = {
-            "partition": self.partition_name,
-            "file_id": self.file_id,
-            "relationship_id": self.relationship_id,
-            "parent_id": self.parent_id,
-            **metadata,
-        }
-        return d
-
-    def __repr__(self):
-        return f"<File(id={self.id}, file_id='{self.file_id}', partition='{self.partition}')>"
-
-
-# In the Partition model
-class Partition(Base):
-    __tablename__ = "partitions"
-
-    id = Column(Integer, primary_key=True)
-    partition = Column(String, unique=True, nullable=False, index=True)  # Index already exists due to unique constraint
-    created_at = Column(
-        DateTime, default=datetime.now, nullable=False, index=True
-    )  # Added index for time-based queries
-    files = relationship("File", back_populates="partition", cascade="all, delete-orphan")
-    memberships = relationship("PartitionMembership", back_populates="partition", cascade="all, delete-orphan")
-
-    def to_dict(self):
-        d = {
-            "partition": self.partition,
-            "created_at": self.created_at.isoformat(),
-        }
-        return d
-
-    def __repr__(self):
-        return f"<Partition(key='{self.partition}', created_at='{self.created_at}')>"
-
-
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True)
-    external_user_id = Column(String, unique=True, nullable=True, index=True)
-    display_name = Column(String, nullable=True)
-    token = Column(String, unique=True, nullable=True, index=True)
-    is_admin = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-    file_quota = Column(Integer, nullable=True, default=None)
-    file_count = Column(Integer, nullable=False, default=0)
-    memberships = relationship("PartitionMembership", back_populates="user", cascade="all, delete-orphan")
-
-
-class PartitionMembership(Base):
-    __tablename__ = "partition_memberships"
-
-    id = Column(Integer, primary_key=True)
-    partition_name = Column(
-        String,
-        ForeignKey("partitions.partition", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    role = Column(String, nullable=False)  # 'owner' | 'editor' | 'viewer'
-    added_at = Column(DateTime, default=datetime.now, nullable=False)
-
-    __table_args__ = (
-        UniqueConstraint("partition_name", "user_id", name="uix_partition_user"),
-        CheckConstraint("role IN ('owner','editor','viewer')", name="ck_membership_role"),
-        Index("ix_user_partition", "user_id", "partition_name"),
-    )
-
-    partition = relationship("Partition", back_populates="memberships")
-    user = relationship("User", back_populates="memberships")
+DEFAULT_FILE_QUOTA = config.rdb.default_file_quota
 
 
 class PartitionFileManager:
@@ -301,6 +176,79 @@ class PartitionFileManager:
                 log.error(f"Error removing file: {e}")
                 raise e
 
+    def update_file_metadata_in_db(self, file_id: str, partition: str, file_metadata: dict) -> bool:
+        """Update the file_metadata JSON column and structured fields for an existing file.
+
+        Returns True if the file was found and updated, False otherwise.
+        Unlike remove_file_from_partition + add_file_to_partition, this preserves
+        the files.id primary key so that workspace FK references remain valid.
+
+        If file_metadata contains keys that correspond to structured File columns
+        (relationship_id, parent_id), those columns are updated too so they stay
+        in sync with the JSON blob.
+        """
+        log = self.logger.bind(file_id=file_id, partition=partition)
+        with self.Session() as session:
+            try:
+                file = session.query(File).filter(File.file_id == file_id, File.partition_name == partition).first()
+                if not file:
+                    log.warning("File not found for metadata update")
+                    return False
+                file.file_metadata = file_metadata
+                # Sync structured columns when the corresponding keys are present
+                # in the metadata payload, so PG columns never diverge from the JSON.
+                if "relationship_id" in file_metadata:
+                    file.relationship_id = file_metadata["relationship_id"]
+                if "parent_id" in file_metadata:
+                    file.parent_id = file_metadata["parent_id"]
+                session.commit()
+                log.info("Updated file metadata in-place")
+                return True
+            except Exception:
+                session.rollback()
+                log.exception("Error updating file metadata")
+                raise
+
+    # Sentinel object to distinguish "not provided" from explicit None.
+    _UNSET = object()
+
+    def update_file_in_partition(
+        self,
+        file_id: str,
+        partition: str,
+        file_metadata: dict | None = None,
+        relationship_id: str | None | object = _UNSET,
+        parent_id: str | None | object = _UNSET,
+    ) -> bool:
+        """Update an existing file record in-place (for PUT: new content, same file_id).
+
+        Preserves files.id so workspace FK references stay intact.
+        Unlike delete+re-add, this never touches file_count or created_by.
+
+        Pass relationship_id=None or parent_id=None explicitly to clear a stale
+        link. Omit the argument entirely to leave the column unchanged.
+        """
+        log = self.logger.bind(file_id=file_id, partition=partition)
+        with self.Session() as session:
+            try:
+                file = session.query(File).filter(File.file_id == file_id, File.partition_name == partition).first()
+                if not file:
+                    log.warning("File not found for update")
+                    return False
+                if file_metadata is not None:
+                    file.file_metadata = file_metadata
+                if relationship_id is not self._UNSET:
+                    file.relationship_id = relationship_id
+                if parent_id is not self._UNSET:
+                    file.parent_id = parent_id
+                session.commit()
+                log.info("Updated file record in-place")
+                return True
+            except Exception:
+                session.rollback()
+                log.exception("Error updating file in partition")
+                raise
+
     def delete_partition(self, partition: str):
         """Delete a partition and all its files"""
         with self.Session() as session:
@@ -359,26 +307,20 @@ class PartitionFileManager:
 
     # Users
 
-    def create_user(
-        self,
-        display_name: str | None = None,
-        external_user_id: str | None = None,
-        is_admin: bool = False,
-        file_quota: int | None = None,
-    ) -> dict:
+    def create_user(self, body: UserCreate) -> dict:
         """Create a user and generate an API token for them."""
         with self.Session() as s:
             token = f"or-{secrets.token_hex(16)}"
             hashed_token = self.hash_token(token)
-
+            file_quota = body.file_quota
             if self.file_quota_per_user > 0 and file_quota is None:
                 file_quota = self.file_quota_per_user  # default to default quota
 
             user = User(
-                display_name=display_name,
-                external_user_id=external_user_id,
+                display_name=body.display_name,
+                external_user_id=body.external_user_id,
                 token=hashed_token,
-                is_admin=is_admin,
+                is_admin=body.is_admin,
                 file_quota=file_quota,
             )
             s.add(user)
@@ -579,25 +521,21 @@ class PartitionFileManager:
         with self.Session() as s:
             return s.query(PartitionMembership).filter_by(user_id=user_id, partition_name=partition).first() is not None
 
-    def update_user_quota(self, user_id: int, file_quota: int | None) -> dict:
-        """
-        Update a user's file quota.
-        - None: Use global default (DEFAULT_FILE_QUOTA env var)
-        - <0: Unlimited
-        - >=0: Specific limit
-        """
+    def update_user(self, user_id: int, body: UserUpdate) -> dict:
+        """Update user's profile fields. Only provided (non-None) fields are updated."""
         with self.Session() as s:
             user = s.query(User).filter(User.id == user_id).first()
-            user.file_quota = file_quota
-            s.commit()
-            self.logger.info(f"Updated file_quota for user {user_id} to {file_quota}")
-            s.refresh(user)
+            for field, value in body.model_dump(exclude_unset=True).items():
+                setattr(user, field, value)
 
+            s.commit()
+            s.refresh(user)
             return {
                 "id": user.id,
                 "display_name": user.display_name,
                 "external_user_id": user.external_user_id,
                 "is_admin": user.is_admin,
+                "created_at": user.created_at.isoformat(),
                 "file_quota": user.file_quota,
                 "file_count": user.file_count,
             }
@@ -674,6 +612,7 @@ class PartitionFileManager:
                         relationship_id, 0 as depth
                     FROM files
                     WHERE file_id = :file_id AND partition_name = :partition
+                        AND relationship_id IS NOT NULL
 
                     UNION ALL
 
@@ -683,6 +622,7 @@ class PartitionFileManager:
                     FROM files f
                     INNER JOIN ancestors a ON f.file_id = a.parent_id
                         AND f.partition_name = a.partition_name
+                        AND f.relationship_id IS NOT NULL
                     {depth_condition}
                 )
                 SELECT * FROM ancestors ORDER BY depth DESC
@@ -719,4 +659,168 @@ class PartitionFileManager:
             List of file_id strings ordered from root to the specified file
         """
         ancestors = self.get_file_ancestors(partition, file_id, max_ancestor_depth)
-        return [a["file_id"] for a in ancestors if a["file_id"] != file_id]
+        return [a["file_id"] for a in ancestors]
+
+    # --- Workspace methods ---
+
+    def create_workspace(self, workspace_id: str, partition: str, user_id: int | None, display_name: str | None = None):
+        with self.Session() as session:
+            ws = Workspace(
+                workspace_id=workspace_id, partition_name=partition, created_by=user_id, display_name=display_name
+            )
+            session.add(ws)
+            session.commit()
+
+    def list_workspaces(self, partition: str) -> list[dict]:
+        with self.Session() as session:
+            result = session.execute(select(Workspace).where(Workspace.partition_name == partition))
+            return [
+                {
+                    "workspace_id": w.workspace_id,
+                    "partition_name": w.partition_name,
+                    "display_name": w.display_name,
+                    "created_by": w.created_by,
+                    "created_at": str(w.created_at),
+                }
+                for w in result.scalars()
+            ]
+
+    def get_workspace(self, workspace_id: str) -> dict | None:
+        with self.Session() as session:
+            result = session.execute(select(Workspace).where(Workspace.workspace_id == workspace_id))
+            w = result.scalar_one_or_none()
+            if not w:
+                return None
+            return {
+                "workspace_id": w.workspace_id,
+                "partition_name": w.partition_name,
+                "display_name": w.display_name,
+                "created_by": w.created_by,
+                "created_at": str(w.created_at),
+            }
+
+    def delete_workspace(self, workspace_id: str) -> list[str]:
+        """Delete workspace, return list of orphaned file_ids.
+
+        A file is orphaned if it belongs to this workspace and no other.
+        Since WorkspaceFile.file_id is now an integer FK to files.id, every
+        workspace file has a backing files row, so the only condition is
+        "not present in any other workspace".
+        """
+        with self.Session() as session:
+            # File PKs present in at least one other workspace
+            subq_other_ws = select(WorkspaceFile.file_id).where(WorkspaceFile.workspace_id != workspace_id)
+            # Orphaned = in this workspace, not in any other
+            result = session.execute(
+                select(File.file_id)
+                .join(WorkspaceFile, WorkspaceFile.file_id == File.id)
+                .where(WorkspaceFile.workspace_id == workspace_id)
+                .where(WorkspaceFile.file_id.notin_(subq_other_ws))
+            )
+            orphaned_file_ids = [r[0] for r in result.all()]
+
+            # Delete workspace (cascades workspace_files)
+            session.execute(delete(Workspace).where(Workspace.workspace_id == workspace_id))
+            session.commit()
+            return orphaned_file_ids
+
+    def get_existing_file_ids(self, partition: str, file_ids: list[str]) -> set[str]:
+        """Return the subset of *file_ids* that actually exist in *partition*."""
+        with self.Session() as session:
+            result = session.execute(
+                select(File.file_id).where(
+                    File.partition_name == partition,
+                    File.file_id.in_(file_ids),
+                )
+            )
+            return {r[0] for r in result.all()}
+
+    def add_files_to_workspace(self, workspace_id: str, file_ids: list[str]) -> list[str]:
+        """Add files to a workspace. Returns list of file_ids that could not be resolved."""
+        with self.Session() as session:
+            # Resolve the workspace's partition to scope the File lookup
+            workspace = session.execute(
+                select(Workspace).where(Workspace.workspace_id == workspace_id)
+            ).scalar_one_or_none()
+            if workspace is None:
+                return file_ids
+            partition = workspace.partition_name
+
+            # Bulk-resolve all file_ids → File.id in a single query
+            rows = session.execute(
+                select(File.file_id, File.id).where(File.file_id.in_(file_ids), File.partition_name == partition)
+            ).all()
+            id_map = {r[0]: r[1] for r in rows}
+            missing = [fid for fid in file_ids if fid not in id_map]
+
+            for fid, file_pk in id_map.items():
+                stmt = pg_insert(WorkspaceFile).values(workspace_id=workspace_id, file_id=file_pk)
+                stmt = stmt.on_conflict_do_nothing(constraint="uix_workspace_file")
+                session.execute(stmt)
+            session.commit()
+            return missing
+
+    def remove_file_from_workspace(self, workspace_id: str, file_id: str) -> bool:
+        """Remove a file from a workspace. Returns True if the association existed, False otherwise."""
+        with self.Session() as session:
+            workspace = session.execute(
+                select(Workspace).where(Workspace.workspace_id == workspace_id)
+            ).scalar_one_or_none()
+            if workspace is None:
+                return False
+            file_pk = session.execute(
+                select(File.id).where(File.file_id == file_id, File.partition_name == workspace.partition_name)
+            ).scalar_one_or_none()
+            if file_pk is None:
+                return False
+            result = session.execute(
+                delete(WorkspaceFile).where(
+                    WorkspaceFile.workspace_id == workspace_id,
+                    WorkspaceFile.file_id == file_pk,
+                )
+            )
+            session.commit()
+            return result.rowcount > 0
+
+    def list_workspace_files(self, workspace_id: str) -> list[str]:
+        with self.Session() as session:
+            result = session.execute(
+                select(File.file_id)
+                .join(WorkspaceFile, WorkspaceFile.file_id == File.id)
+                .where(WorkspaceFile.workspace_id == workspace_id)
+            )
+            return [r[0] for r in result.all()]
+
+    def get_file_workspaces(self, file_id: str, partition: str) -> list[str]:
+        """Return the workspace IDs that contain the given file, scoped to the given partition."""
+        with self.Session() as session:
+            file_pk = session.execute(
+                select(File.id).where(File.file_id == file_id, File.partition_name == partition)
+            ).scalar_one_or_none()
+            if file_pk is None:
+                return []
+            ws_ids = select(Workspace.workspace_id).where(Workspace.partition_name == partition)
+            result = session.execute(
+                select(WorkspaceFile.workspace_id).where(
+                    WorkspaceFile.file_id == file_pk,
+                    WorkspaceFile.workspace_id.in_(ws_ids),
+                )
+            )
+            return [r[0] for r in result.all()]
+
+    def remove_file_from_all_workspaces(self, file_id: str, partition: str):
+        """Remove file from all workspaces in the given partition — called during file deletion."""
+        with self.Session() as session:
+            file_pk = session.execute(
+                select(File.id).where(File.file_id == file_id, File.partition_name == partition)
+            ).scalar_one_or_none()
+            if file_pk is None:
+                return
+            ws_ids = select(Workspace.workspace_id).where(Workspace.partition_name == partition)
+            session.execute(
+                delete(WorkspaceFile).where(
+                    WorkspaceFile.file_id == file_pk,
+                    WorkspaceFile.workspace_id.in_(ws_ids),
+                )
+            )
+            session.commit()

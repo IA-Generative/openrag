@@ -9,7 +9,6 @@ from langchain_core.documents.base import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from omegaconf import OmegaConf
 from utils.dependencies import get_vectordb
 from utils.logger import get_logger
 
@@ -33,7 +32,9 @@ class ABCRetriever(ABC):
         pass
 
     @abstractmethod
-    async def retrieve(self, partition: list[str], query: str) -> list[Document]:
+    async def retrieve(
+        self, partition: list[str], query: str, filter: str | None = None, filter_params: dict | None = None
+    ) -> list[Document]:
         pass
 
     async def expand_search_results(self, results: list[Document]) -> list[Document]:
@@ -75,12 +76,16 @@ class BaseRetriever(ABCRetriever):
         self,
         partition: list[str],
         query: str,
+        filter: str | None = None,
+        filter_params: dict | None = None,
     ) -> list[Document]:
         db = get_vectordb()
         chunks = await db.async_search.remote(
             query=query,
             partition=partition,
             top_k=self.top_k,
+            filter=filter,
+            filter_params=filter_params,
             similarity_threshold=self.similarity_threshold,
             with_surrounding_chunks=self.with_surrounding_chunks,
         )
@@ -137,7 +142,9 @@ class MultiQueryRetriever(BaseRetriever):
         prompt: ChatPromptTemplate = ChatPromptTemplate.from_template(MULTI_QUERY_PROMPT)
         self.generate_queries = prompt | llm | StrOutputParser() | (lambda x: x.split("[SEP]"))
 
-    async def retrieve(self, partition: list[str], query: str) -> list[Document]:
+    async def retrieve(
+        self, partition: list[str], query: str, filter: str | None = None, filter_params: dict | None = None
+    ):
         db = get_vectordb()
         logger.debug("Generating multiple queries", k_queries=self.k_queries)
         generated_queries = await self.generate_queries.ainvoke(
@@ -150,6 +157,8 @@ class MultiQueryRetriever(BaseRetriever):
             queries=generated_queries,
             partition=partition,
             top_k_per_query=self.top_k,
+            filter=filter,
+            filter_params=filter_params,
             similarity_threshold=self.similarity_threshold,
             with_surrounding_chunks=self.with_surrounding_chunks,
         )
@@ -196,7 +205,9 @@ class HyDeRetriever(BaseRetriever):
         hyde_document = await self.hyde_generator.ainvoke({"query": query})
         return hyde_document
 
-    async def retrieve(self, partition: list[str], query: str) -> list[Document]:
+    async def retrieve(
+        self, partition: list[str], query: str, filter: str | None = None, filter_params: dict | None = None
+    ) -> list[Document]:
         db = get_vectordb()
         hyde = await self.get_hyde(query)
         queries = [hyde]
@@ -207,6 +218,8 @@ class HyDeRetriever(BaseRetriever):
             queries=queries,
             partition=partition,
             top_k_per_query=self.top_k,
+            filter=filter,
+            filter_params=filter_params,
             similarity_threshold=self.similarity_threshold,
             with_surrounding_chunks=self.with_surrounding_chunks,
         )
@@ -307,14 +320,14 @@ class RetrieverFactory:
     }
 
     @classmethod
-    def create_retriever(cls, config: OmegaConf) -> ABCRetriever:
-        retreiverConfig = OmegaConf.to_container(config.retriever, resolve=True)
+    def create_retriever(cls, config) -> ABCRetriever:
+        retrieverConfig = config.retriever.model_dump()
 
-        retriever_type = retreiverConfig.pop("type")
+        retriever_type = retrieverConfig.pop("type")
         retriever_cls = RetrieverFactory.RETRIEVERS.get(retriever_type, None)
 
         if retriever_cls is None:
             raise ValueError(f"Unknown retriever type: {retriever_type}")
 
-        retreiverConfig["llm"] = ChatOpenAI(**config.llm)
-        return retriever_cls(**retreiverConfig)
+        retrieverConfig["llm"] = ChatOpenAI(**config.llm.model_dump())
+        return retriever_cls(**retrieverConfig)

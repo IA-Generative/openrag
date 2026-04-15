@@ -54,6 +54,8 @@ class ChatCompletionRequest(BaseModel):
     top_p: float | None = 1.0
     n: int | None = 1
     stop: str | list[str] | None = None
+    tools: list[Any] | None = None
+    tool_choice: Any | None = None
 
 
 class ChatCompletionChoice(BaseModel):
@@ -222,9 +224,66 @@ async def stream_chat_completion(request: ChatCompletionRequest):
     yield "data: [DONE]\n\n"
 
 
+def generate_tool_call_response(request: ChatCompletionRequest) -> dict:
+    """Generate a mock tool_calls response for structured output requests."""
+    tool = request.tools[0]
+    fn = tool.get("function", tool)
+    fn_name = fn.get("name", "unknown")
+    parameters = fn.get("parameters", {})
+    properties = parameters.get("properties", {})
+
+    # Build mock arguments based on property types
+    last_user_msg = next((m for m in reversed(request.messages) if m.role == "user"), None)
+    user_text = str(last_user_msg.content)[:100] if last_user_msg else "mock query"
+
+    mock_args: dict = {}
+    for prop_name, prop_schema in properties.items():
+        if prop_schema.get("type") == "array":
+            mock_args[prop_name] = [user_text]
+        elif prop_schema.get("type") == "string":
+            mock_args[prop_name] = user_text
+        else:
+            mock_args[prop_name] = None
+
+    prompt_tokens = sum(count_tokens(str(msg.content)) for msg in request.messages)
+    args_json = json.dumps(mock_args)
+    return {
+        "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": request.model,
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": f"call_{uuid.uuid4().hex[:8]}",
+                            "type": "function",
+                            "function": {"name": fn_name, "arguments": args_json},
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": count_tokens(args_json),
+            "total_tokens": prompt_tokens + count_tokens(args_json),
+        },
+    }
+
+
 @app.post("/v1/chat/completions")
 async def create_chat_completion(request: ChatCompletionRequest):
     """Mock chat completion endpoint for LLM/VLM requests."""
+    # Handle function/tool calling (used by structured output)
+    if request.tools:
+        return generate_tool_call_response(request)
+
     if request.stream:
         return StreamingResponse(
             stream_chat_completion(request),

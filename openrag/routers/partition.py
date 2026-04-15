@@ -129,6 +129,7 @@ async def list_files(
 **Parameters:**
 - `partition`: The partition name
 - `file_id`: The unique file identifier
+- `limit`: Maximum number of chunks to return (default: 2000)
 
 **Response:**
 Returns file information including:
@@ -143,6 +144,7 @@ async def get_file(
     request: Request,
     partition: str,
     file_id: str,
+    limit: int = 2000,
     vectordb=Depends(get_vectordb),
     partition_viewer=Depends(require_partition_viewer),
 ):
@@ -151,7 +153,7 @@ async def get_file(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"'{file_id}' not found in partition '{partition}'",
         )
-    results = await vectordb.get_file_chunks.remote(partition=partition, file_id=file_id, include_id=True)
+    results = await vectordb.get_file_chunks.remote(partition=partition, file_id=file_id, include_id=True, limit=limit)
 
     documents = [{"link": str(request.url_for("get_extract", extract_id=doc.metadata["_id"]))} for doc in results]
 
