@@ -75,6 +75,12 @@ services:
     build:
       context: ./extern/indexer-ui
       dockerfile: Dockerfile
+      args:
+        # Mount indexer-ui under a subpath (e.g. /indexerui/) on a shared
+        # vhost with the backend. Empty = root-level (default). See
+        # docs/oidc.md §"Single vhost deployment" for the matching nginx
+        # rules.
+        BASE_PATH: ${INDEXERUI_BASE_PATH:-}
     environment:
       - API_BASE_URL=${API_BASE_URL:-http://localhost:${APP_PORT:-8080}}
       - INCLUDE_CREDENTIALS=${INCLUDE_CREDENTIALS:-false}
