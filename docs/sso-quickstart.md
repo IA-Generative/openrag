@@ -8,19 +8,24 @@ Configure OpenRag to delegate authentication to your corporate SSO (LemonLDAP::N
 
 ## Step 1 — Ask your SSO admin to register a client
 
-Give them the following information (replace `<openrag-host>` with the public URL of your OpenRag instance, e.g. `https://rag.mycorp.com` or `http://localhost:8080`):
+Give them the following information.
 
-| Field                         | Value to give                                              |
-| ----------------------------- | ---------------------------------------------------------- |
-| **Client type**               | `confidential` (server-to-server token exchange)           |
-| **Grant type**                | `authorization_code`                                       |
-| **Response type**             | `code`                                                     |
-| **Valid redirect URIs**       | `<openrag-host>/auth/callback`                             |
-| **Back-channel logout URI**   | `<openrag-host>/auth/backchannel-logout`                   |
-| **Post-logout redirect URIs** | an optional URL **outside** OpenRag (see §Step 4 below)    |
-| **Allowed scopes**            | `openid`, `email`, `profile`, `offline_access`             |
-| **Include `sid` in tokens**   | ✅ enabled (required for back-channel logout)              |
-| **Send refresh token**        | ✅ enabled (so the session doesn't drop every few minutes) |
+> ⚠ **`<openrag-host>` is the OpenRag _backend_ URL, NOT the indexer-ui front.**
+> The OIDC callback and back-channel-logout endpoints are hosted **only** on the backend (the container running `openrag/api.py`). If you point the IdP at the front URL instead, you get an **infinite redirect loop**: the front has no `/auth/callback` route, returns 404/401, which is interpreted as "not authenticated", triggering a new OIDC flow, which again lands on the front, etc.
+>
+> In a typical deployment: `https://rag.mycorp.com` (the backend) vs `https://ui.mycorp.com` (the front). **Use the backend URL** for the OIDC endpoints below.
+
+| Field                         | Value to give                                                  |
+| ----------------------------- | -------------------------------------------------------------- |
+| **Client type**               | `confidential` (server-to-server token exchange)               |
+| **Grant type**                | `authorization_code`                                           |
+| **Response type**             | `code`                                                         |
+| **Valid redirect URIs**       | `<openrag-backend-host>/auth/callback` _(backend, not front!)_ |
+| **Back-channel logout URI**   | `<openrag-backend-host>/auth/backchannel-logout` _(backend!)_  |
+| **Post-logout redirect URIs** | an optional URL **outside** OpenRag (see §Step 4 below)        |
+| **Allowed scopes**            | `openid`, `email`, `profile`, `offline_access`                 |
+| **Include `sid` in tokens**   | ✅ enabled (required for back-channel logout)                  |
+| **Send refresh token**        | ✅ enabled (so the session doesn't drop every few minutes)     |
 
 Then ask the admin for **three pieces of information**:
 
