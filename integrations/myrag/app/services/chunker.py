@@ -84,23 +84,49 @@ def chunk_by_article(text: str) -> list[dict]:
         start = match.end()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
 
-        content = text[start:end].strip()
+        raw_content = text[start:end].strip()
         text_before = text[:match.start()]
         hierarchy = _track_hierarchy(text_before)
-        references = _extract_references(content)
+        references = _extract_references(raw_content)
 
         # Remove self-references
         references = [r for r in references if r != article_id]
+
+        # Prefix content with article ID and hierarchy for LLM citation
+        header_parts = [f"Article {article_id}"]
+        if hierarchy["livre"]:
+            header_parts.append(f"Livre {hierarchy['livre']}")
+        if hierarchy["titre"]:
+            header_parts.append(f"Titre {hierarchy['titre']}")
+        if hierarchy["chapitre"]:
+            header_parts.append(f"Chapitre {hierarchy['chapitre']}")
+        header = " — ".join(header_parts)
+
+        content = f"{header}\n\n{raw_content}"
+
+        # Build parent path for hierarchy navigation
+        parent_path = "/".join(
+            p for p in [
+                f"Livre-{hierarchy['livre']}" if hierarchy["livre"] else "",
+                f"Titre-{hierarchy['titre']}" if hierarchy["titre"] else "",
+                f"Chapitre-{hierarchy['chapitre']}" if hierarchy["chapitre"] else "",
+            ] if p
+        )
 
         chunks.append({
             "content": content,
             "filename": f"Article-{article_id}.md",
             "metadata": {
                 "article": article_id,
+                "page": i + 1,
                 "livre": hierarchy["livre"],
                 "titre": hierarchy["titre"],
                 "chapitre": hierarchy["chapitre"],
+                "section": hierarchy["section"],
+                "parent_path": parent_path,
                 "references": references,
+                "referenced_by": [],  # populated in post-processing (graph build)
+                "graph_ready": False,  # set to True after graph build
             },
         })
 

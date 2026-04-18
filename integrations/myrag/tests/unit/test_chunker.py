@@ -120,6 +120,17 @@ class TestChunkByArticle:
         l110_1 = next(c for c in chunks if c["metadata"]["article"] == "L110-1")
         assert "l'entree, le sejour" in l110_1["content"]
 
+    def test_chunk_content_starts_with_article_header(self):
+        chunks = chunk_by_article(CESEDA_SAMPLE)
+        l110_1 = next(c for c in chunks if c["metadata"]["article"] == "L110-1")
+        assert l110_1["content"].startswith("Article L110-1")
+
+    def test_chunk_content_includes_hierarchy(self):
+        chunks = chunk_by_article(CESEDA_SAMPLE)
+        l121_1 = next(c for c in chunks if c["metadata"]["article"] == "L121-1")
+        assert "Livre I" in l121_1["content"]
+        assert "Titre II" in l121_1["content"]
+
     def test_chunk_has_hierarchy(self):
         chunks = chunk_by_article(CESEDA_SAMPLE)
         l110_1 = next(c for c in chunks if c["metadata"]["article"] == "L110-1")
@@ -135,6 +146,29 @@ class TestChunkByArticle:
         chunks = chunk_by_article(CESEDA_SAMPLE)
         l121_1 = next(c for c in chunks if c["metadata"]["article"] == "L121-1")
         assert "L110-1" in l121_1["metadata"]["references"]
+
+    def test_has_page_number(self):
+        chunks = chunk_by_article(CESEDA_SAMPLE)
+        for i, c in enumerate(chunks):
+            assert c["metadata"]["page"] == i + 1
+
+    def test_has_parent_path(self):
+        chunks = chunk_by_article(CESEDA_SAMPLE)
+        l121_1 = next(c for c in chunks if c["metadata"]["article"] == "L121-1")
+        assert "Livre-I" in l121_1["metadata"]["parent_path"]
+        assert "Titre-II" in l121_1["metadata"]["parent_path"]
+        assert "Chapitre-Ier" in l121_1["metadata"]["parent_path"]
+
+    def test_has_referenced_by_placeholder(self):
+        chunks = chunk_by_article(CESEDA_SAMPLE)
+        for c in chunks:
+            assert "referenced_by" in c["metadata"]
+            assert isinstance(c["metadata"]["referenced_by"], list)
+
+    def test_has_graph_ready_flag(self):
+        chunks = chunk_by_article(CESEDA_SAMPLE)
+        for c in chunks:
+            assert c["metadata"]["graph_ready"] is False
 
     def test_different_titre(self):
         chunks = chunk_by_article(CESEDA_SAMPLE)
