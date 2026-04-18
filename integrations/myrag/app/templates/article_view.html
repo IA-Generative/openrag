@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ article_id }} — MyRAG</title>
+    <style>
+        :root {
+            --blue-france: #000091;
+            --red-marianne: #e1000f;
+            --grey-bg: #f6f6f6;
+            --grey-border: #e5e5e5;
+            --text-primary: #161616;
+            --text-secondary: #666666;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Marianne', -apple-system, sans-serif; color: var(--text-primary); background: white; padding: 24px; }
+        .breadcrumb { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px; }
+        .breadcrumb a { color: var(--blue-france); text-decoration: none; }
+        h1 { font-size: 1.5rem; color: var(--blue-france); margin-bottom: 8px; }
+        .hierarchy { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 24px; }
+        .content { line-height: 1.6; margin-bottom: 24px; white-space: pre-wrap; }
+        .references { border-top: 1px solid var(--grey-border); padding-top: 16px; }
+        .references h2 { font-size: 1rem; margin-bottom: 8px; }
+        .ref-list { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
+        .ref-list li a {
+            display: inline-block; padding: 4px 12px; background: var(--grey-bg);
+            border: 1px solid var(--grey-border); border-radius: 4px;
+            color: var(--blue-france); text-decoration: none; font-size: 0.85rem;
+        }
+        .ref-list li a:hover { background: var(--blue-france); color: white; }
+        .actions { margin-top: 16px; display: flex; gap: 8px; }
+        .btn { padding: 8px 16px; border: 1px solid var(--blue-france); border-radius: 4px;
+               cursor: pointer; font-size: 0.85rem; text-decoration: none; }
+        .btn-primary { background: var(--blue-france); color: white; }
+        .btn-secondary { background: white; color: var(--blue-france); }
+        .sensitivity { display: inline-block; padding: 2px 8px; border-radius: 4px;
+                       font-size: 0.75rem; font-weight: bold; text-transform: uppercase; }
+        .sensitivity-public { background: #b8fec9; color: #0d6635; }
+        .sensitivity-internal { background: #fef3cd; color: #856404; }
+        .sensitivity-restricted { background: #fddede; color: #9a1b1b; }
+        .sensitivity-confidential { background: #d63384; color: white; }
+    </style>
+    <script>
+        const ro = new ResizeObserver(() => {
+            window.parent.postMessage({type: 'iframe-resize', height: document.documentElement.scrollHeight}, '*');
+        });
+        ro.observe(document.body);
+    </script>
+</head>
+<body>
+    <div class="breadcrumb">
+        <a href="/graph?corpus_id={{ collection }}">{{ collection }}</a> &gt;
+        {% if livre %}Livre {{ livre }} &gt;{% endif %}
+        {% if titre %}Titre {{ titre }} &gt;{% endif %}
+        {% if chapitre %}Chapitre {{ chapitre }} &gt;{% endif %}
+        {{ article_id }}
+    </div>
+
+    <h1>Article {{ article_id }}</h1>
+    <div class="hierarchy">
+        {% if livre %}Livre {{ livre }}{% endif %}
+        {% if titre %} — Titre {{ titre }}{% endif %}
+        {% if chapitre %} — Chapitre {{ chapitre }}{% endif %}
+        {% if sensitivity %}<span class="sensitivity sensitivity-{{ sensitivity }}">{{ sensitivity }}</span>{% endif %}
+    </div>
+
+    <div class="content">{{ content }}</div>
+
+    {% if references %}
+    <div class="references">
+        <h2>Articles cites</h2>
+        <ul class="ref-list">
+            {% for ref in references %}
+            <li><a href="/articles/{{ collection }}/{{ ref }}">{{ ref }}</a></li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if referenced_by %}
+    <div class="references" style="margin-top: 12px;">
+        <h2>Cite par</h2>
+        <ul class="ref-list">
+            {% for ref in referenced_by %}
+            <li><a href="/articles/{{ collection }}/{{ ref }}">{{ ref }}</a></li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <div class="actions">
+        <a href="/graph?corpus_id={{ collection }}&query={{ article_id }}" class="btn btn-primary">📊 Voir le graph</a>
+        <a href="/graph/{{ collection }}/related?article={{ article_id }}&depth=2" class="btn btn-secondary">🔗 Articles lies</a>
+    </div>
+</body>
+</html>
