@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import ingest, collections, sync, graph, articles
+from app.routers import ingest, collections, sync, graph, articles, sources
 
 app = FastAPI(
     title=settings.app_title,
@@ -48,6 +48,7 @@ app.include_router(collections.router)
 app.include_router(sync.router)
 app.include_router(graph.router)
 app.include_router(articles.router)
+app.include_router(sources.router)
 
 
 @app.get("/api/config")
