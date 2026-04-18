@@ -13,14 +13,16 @@ router = APIRouter(prefix="/api/ingest", tags=["Ingest"])
 
 async def _upload_chunks_background(job_id: str, collection: str, chunks: list[dict]):
     """Background task: upload chunks to OpenRAG one by one, updating job progress."""
+    import logging
     from app.services.job_tracker import get_job
 
+    logger = logging.getLogger("myrag.ingest")
     job = get_job(job_id)
     if not job:
         return
 
     job.status = "uploading"
-    client = OpenRAGClient()
+    client = OpenRAGClient(timeout=120.0)
 
     for i, chunk in enumerate(chunks):
         try:
@@ -29,8 +31,14 @@ async def _upload_chunks_background(job_id: str, collection: str, chunks: list[d
         except Exception as e:
             job.failed_chunks += 1
             job.uploaded_chunks = i + 1
+            logger.warning(f"Chunk {i+1}/{len(chunks)} failed: {e}")
+
+        # Log progress every 100 chunks
+        if (i + 1) % 100 == 0:
+            logger.info(f"Job {job_id}: {i+1}/{len(chunks)} uploaded")
 
     job.status = "done" if job.failed_chunks == 0 else "done_with_errors"
+    logger.info(f"Job {job_id} finished: {job.uploaded_chunks} uploaded, {job.failed_chunks} failed")
 
 
 @router.post("/{collection}")
