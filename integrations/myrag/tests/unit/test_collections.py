@@ -87,7 +87,8 @@ class TestSystemPrompt:
         response = client.get("/api/collections/unknown/system-prompt")
         assert response.status_code == 200
         assert response.json()["source"] == "default"
-        assert "citer" in response.json()["system_prompt"].lower()
+        assert "assistant" in response.json()["system_prompt"].lower()
+        assert response.json()["template"] == "generic"
 
     def test_update_system_prompt(self, client, sample_collection):
         response = client.patch("/api/collections/test-col/system-prompt", json={
