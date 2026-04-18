@@ -28,6 +28,8 @@ class CreateCollectionRequest(BaseModel):
     prompt_template: str = DEFAULT_TEMPLATE_KEY
     system_prompt: str | None = None
     graph_enabled: bool = False
+    ai_summary_enabled: bool = False
+    ai_summary_threshold: int = 1000
     scope: str = "group"
 
 
@@ -129,6 +131,8 @@ async def create_collection(req: CreateCollectionRequest):
         name=req.name, description=req.description, strategy=req.strategy,
         sensitivity=req.sensitivity, prompt_template=req.prompt_template,
         system_prompt=system_prompt, graph_enabled=req.graph_enabled,
+        ai_summary_enabled=req.ai_summary_enabled,
+        ai_summary_threshold=req.ai_summary_threshold,
         scope=req.scope, created_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
     )
     config.save()

@@ -51,7 +51,9 @@ def build_graph_from_chunks(chunks: list[dict]) -> nx.DiGraph:
             chapitre=meta.get("chapitre", ""),
             parent_path=meta.get("parent_path", ""),
             source_group=f"{meta.get('livre', '')}",
-            content_preview=chunk.get("content", "")[:10000],
+            content_preview=chunk.get("content", "")[:500],  # short brut (no LLM)
+            content_full_length=len(chunk.get("content", "")),
+            ai_summary="",  # populated by summarize_long_articles() if LLM enabled
             filename=chunk.get("filename", ""),
             referenced_by=[],
         )
@@ -170,6 +172,85 @@ class GraphBuilder:
 
         return graph.subgraph(nodes_to_include).copy()
 
+    async def summarize_long_articles(
+        self,
+        collection: str,
+        chunks: list[dict],
+        threshold: int = 1000,
+        llm_url: str | None = None,
+        llm_api_key: str | None = None,
+        llm_model: str | None = None,
+    ) -> dict:
+        """Generate AI summaries for articles longer than threshold.
+
+        Requires LLM access (Scaleway, OpenAI-compatible).
+        Stores summaries in graph nodes as ai_summary field.
+        """
+        import httpx
+        from app.config import settings
+
+        graph = self.get(collection)
+        if not graph:
+            return {"summarized": 0, "skipped": 0, "errors": 0}
+
+        url = llm_url or settings.openrag_url.replace(":8080", "")  # fallback
+        # Use the configured LLM from .env if available
+        base_url = llm_url or "https://api.scaleway.ai/v1"
+        api_key = llm_api_key or ""
+        model = llm_model or "mistral-small-3.2-24b-instruct-2506"
+
+        # Index chunks by article for full content
+        chunk_by_article = {}
+        for chunk in chunks:
+            article = chunk.get("metadata", {}).get("article")
+            if article:
+                chunk_by_article[article] = chunk.get("content", "")
+
+        summarized = 0
+        skipped = 0
+        errors = 0
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            for node_id in graph.nodes:
+                full_text = chunk_by_article.get(node_id, "")
+                if len(full_text) < threshold:
+                    skipped += 1
+                    continue
+
+                try:
+                    resp = await client.post(
+                        f"{base_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": model,
+                            "messages": [
+                                {
+                                    "role": "system",
+                                    "content": "Tu es un assistant juridique. Resume l'article suivant en 3-5 phrases. Conserve les numeros d'articles cites. Commence par 'Cet article...'",
+                                },
+                                {"role": "user", "content": full_text[:8000]},
+                            ],
+                            "max_tokens": 300,
+                            "temperature": 0.1,
+                        },
+                    )
+                    if resp.status_code == 200:
+                        summary = resp.json()["choices"][0]["message"]["content"]
+                        graph.nodes[node_id]["ai_summary"] = summary
+                        summarized += 1
+                    else:
+                        errors += 1
+                except Exception:
+                    errors += 1
+
+        # Save updated graph
+        self.save(collection)
+
+        return {"summarized": summarized, "skipped": skipped, "errors": errors}
+
     def to_graph_data_response(
         self,
         collection: str,
@@ -219,11 +300,25 @@ class GraphBuilder:
             size = max(8, min(32, degree * 4 + 8))
             livre = attrs.get("livre", "")
 
+            # Use AI summary if available, otherwise raw preview
+            ai_summary = attrs.get("ai_summary", "")
+            preview = attrs.get("content_preview", "")
+            full_length = attrs.get("content_full_length", 0)
+
+            if ai_summary:
+                description = f"🤖 Resume IA :\n{ai_summary}"
+                fragment_text = f"🤖 Resume par l'IA (article original : {full_length} caracteres)\n\n{ai_summary}"
+            else:
+                description = preview
+                fragment_text = preview
+                if full_length > 500:
+                    fragment_text += f"\n\n[... tronque — {full_length} caracteres au total]"
+
             nodes.append({
                 "id": node_id,
                 "label": attrs.get("label", node_id),
                 "entity_type": attrs.get("entity_type", "article"),
-                "description": attrs.get("content_preview", ""),
+                "description": description,
                 "degree": degree,
                 "frequency": 1,
                 "size": size,
@@ -231,10 +326,10 @@ class GraphBuilder:
                 "document_paths": [attrs.get("filename", "")],
                 "fragments": [{
                     "id": f"{node_id}:preview",
-                    "text": attrs.get("content_preview", "")[:10000],
+                    "text": fragment_text,
                     "token_count": 0,
                     "document_paths": [attrs.get("filename", "")],
-                }] if attrs.get("content_preview") else [],
+                }] if preview or ai_summary else [],
             })
 
         edges = []

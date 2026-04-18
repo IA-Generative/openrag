@@ -149,3 +149,72 @@ async def build_graph(collection: str):
         "nodes": graph.number_of_nodes(),
         "edges": graph.number_of_edges(),
     }
+
+
+@router.post("/{collection}/summarize")
+async def summarize_articles(
+    collection: str,
+    threshold: int | None = Query(None, description="Override threshold (default: from collection config)"),
+    llm_url: str = Query("", description="LLM API URL (default: Scaleway)"),
+    llm_api_key: str = Query("", description="LLM API key"),
+    llm_model: str = Query("", description="LLM model name"),
+):
+    """Generate AI summaries for long articles in the graph.
+
+    Uses the collection's ai_summary_enabled and ai_summary_threshold settings.
+    Override threshold via query param.
+    Articles shorter than the threshold keep their raw 500-char preview.
+    Articles longer get a 3-5 sentence AI summary with a 'Resume par l'IA' badge.
+    Requires LLM access (Scaleway or OpenAI-compatible endpoint).
+    """
+    from app.models.collection import CollectionConfig
+
+    config = CollectionConfig.load(collection)
+    if config and not config.ai_summary_enabled and threshold is None:
+        return {
+            "status": "disabled",
+            "detail": f"AI summaries are disabled for '{collection}'. Enable in collection config.",
+        }
+
+    effective_threshold = threshold or (config.ai_summary_threshold if config else 1000)
+    from app.services.chunker import chunk_by_article
+
+    graph = _builder.get(collection)
+    if not graph:
+        raise HTTPException(status_code=404, detail=f"No graph for '{collection}'. Build it first.")
+
+    # Count articles that need summarizing
+    long_articles = [n for n, d in graph.nodes(data=True)
+                     if d.get("content_full_length", 0) > effective_threshold]
+
+    if not long_articles:
+        return {"status": "nothing_to_summarize", "threshold": effective_threshold}
+
+    # We need the full chunks to summarize — re-read from source if available
+    from pathlib import Path
+    source_files = list(Path(f"{_builder.data_dir}/{collection}").glob("*.md"))
+
+    # If no source files, use content_preview (truncated but better than nothing)
+    chunks = []
+    if source_files:
+        for f in source_files:
+            text = f.read_text()
+            chunks.extend(chunk_by_article(text))
+
+    result = await _builder.summarize_long_articles(
+        collection=collection,
+        chunks=chunks,
+        threshold=effective_threshold,
+        llm_url=llm_url or None,
+        llm_api_key=llm_api_key or None,
+        llm_model=llm_model or None,
+    )
+
+    return {
+        "status": "done",
+        "collection": collection,
+        "threshold": effective_threshold,
+        "ai_summary_enabled": config.ai_summary_enabled if config else True,
+        "articles_needing_summary": len(long_articles),
+        **result,
+    }

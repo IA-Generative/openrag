@@ -267,6 +267,8 @@ class CollectionConfig:
     prompt_template: str = DEFAULT_TEMPLATE_KEY
     system_prompt: str = field(default_factory=lambda: DEFAULT_SYSTEM_PROMPT)
     graph_enabled: bool = False
+    ai_summary_enabled: bool = False  # generate AI summaries for long articles
+    ai_summary_threshold: int = 1000  # articles longer than this (chars) get summarized
     legifrance_source_id: str = ""
     legifrance_refresh_mode: str = "manual"
     scope: str = "group"  # public, group, private
