@@ -51,7 +51,7 @@ def build_graph_from_chunks(chunks: list[dict]) -> nx.DiGraph:
             chapitre=meta.get("chapitre", ""),
             parent_path=meta.get("parent_path", ""),
             source_group=f"{meta.get('livre', '')}",
-            content_preview=chunk.get("content", "")[:2000],
+            content_preview=chunk.get("content", "")[:10000],
             filename=chunk.get("filename", ""),
             referenced_by=[],
         )
@@ -231,7 +231,7 @@ class GraphBuilder:
                 "document_paths": [attrs.get("filename", "")],
                 "fragments": [{
                     "id": f"{node_id}:preview",
-                    "text": attrs.get("content_preview", "")[:2000],
+                    "text": attrs.get("content_preview", "")[:10000],
                     "token_count": 0,
                     "document_paths": [attrs.get("filename", "")],
                 }] if attrs.get("content_preview") else [],
