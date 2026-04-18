@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myrag-config
+  namespace: myrag
+data:
+  OPENRAG_URL: "http://openrag.openrag.svc:8080"
+  KEYCLOAK_URL: "http://keycloak.owui.svc:8080"
+  KEYCLOAK_REALM: "openwebui"
+  MYRAG_PUBLIC_URL: "https://myrag.mirai.gouv.fr"
+  GRAPHRAG_VIEWER_URL: "http://bridge.grafrag.svc:8081/graph"
