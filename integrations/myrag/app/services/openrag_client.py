@@ -63,6 +63,22 @@ class OpenRAGClient:
                 return {"status": "ok"}
             return resp.json()
 
+    async def _upload_form(self, path: str, data: dict) -> dict:
+        """POST form data (for endpoints that expect form fields, not JSON)."""
+        headers = {"Authorization": f"Bearer {self.admin_token}"}
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.post(
+                f"{self.base_url}{path}",
+                headers=headers,
+                data=data,
+            )
+            if resp.status_code == 409:
+                return {"status": "exists"}
+            resp.raise_for_status()
+            if resp.status_code == 204 or not resp.content:
+                return {"status": "ok"}
+            return resp.json()
+
     # --- Public API ---
 
     async def create_partition(self, name: str) -> dict:
