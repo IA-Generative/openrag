@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
+from app.routers import ingest
 
 app = FastAPI(
     title=settings.app_title,
@@ -40,6 +41,9 @@ async def root():
             "docs": "/docs",
         }
     )
+
+
+app.include_router(ingest.router)
 
 
 @app.get("/api/config")
