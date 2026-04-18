@@ -21,6 +21,18 @@ FAQ_HEADER_RE = re.compile(r"^#{1,4}\s+(.+\?)\s*$", re.MULTILINE)
 
 Strategy = Literal["article", "section", "qr", "length", "auto"]
 
+# Sensitivity levels for access control filtering
+# Based on French classification convention + platform capability
+Sensitivity = Literal["public", "internal", "restricted", "confidential", "secret"]
+
+SENSITIVITY_LEVELS = {
+    "public": 0,       # Accessible a tous (ex: textes de loi publies au JO)
+    "internal": 1,     # Usage interne organisation (ex: notes de service)
+    "restricted": 2,   # Diffusion restreinte (ex: procedures internes)
+    "confidential": 3, # Confidentiel (ex: donnees personnelles, avis juridiques)
+    "secret": 4,       # Secret (ex: defense nationale — hors scope plateforme)
+}
+
 
 def detect_strategy(text: str) -> Strategy:
     """Detect the best chunking strategy for the given text."""
@@ -69,7 +81,7 @@ def _track_hierarchy(text_before: str) -> dict:
     return hierarchy
 
 
-def chunk_by_article(text: str) -> list[dict]:
+def chunk_by_article(text: str, sensitivity: Sensitivity = "public") -> list[dict]:
     """Split a legal code by article. Each article becomes one chunk."""
     if not text.strip():
         return []
@@ -127,13 +139,14 @@ def chunk_by_article(text: str) -> list[dict]:
                 "references": references,
                 "referenced_by": [],  # populated in post-processing (graph build)
                 "graph_ready": False,  # set to True after graph build
+                "sensitivity": sensitivity,
             },
         })
 
     return chunks
 
 
-def chunk_by_section(text: str) -> list[dict]:
+def chunk_by_section(text: str, sensitivity: Sensitivity = "internal") -> list[dict]:
     """Split a document by markdown headers (##, ###)."""
     if not text.strip():
         return []
@@ -141,7 +154,7 @@ def chunk_by_section(text: str) -> list[dict]:
     matches = list(SECTION_HEADER_RE.finditer(text))
     if not matches:
         return [{"content": text.strip(), "filename": "section-1.md",
-                 "metadata": {"section_title": "", "level": 1, "page": 1}}]
+                 "metadata": {"section_title": "", "level": 1, "page": 1, "sensitivity": sensitivity}}]
 
     chunks = []
     for i, match in enumerate(matches):
@@ -162,13 +175,14 @@ def chunk_by_section(text: str) -> list[dict]:
                 "section_title": title,
                 "level": level,
                 "page": i + 1,
+                "sensitivity": sensitivity,
             },
         })
 
     return chunks
 
 
-def chunk_by_qr(text: str) -> list[dict]:
+def chunk_by_qr(text: str, sensitivity: Sensitivity = "public") -> list[dict]:
     """Split a FAQ document by question/answer pairs."""
     if not text.strip():
         return []
@@ -192,13 +206,14 @@ def chunk_by_qr(text: str) -> list[dict]:
             "metadata": {
                 "question": question,
                 "page": i + 1,
+                "sensitivity": sensitivity,
             },
         })
 
     return chunks
 
 
-def chunk_by_length(text: str, max_chars: int = 512, overlap: int = 50) -> list[dict]:
+def chunk_by_length(text: str, max_chars: int = 512, overlap: int = 50, sensitivity: Sensitivity = "internal") -> list[dict]:
     """Split text into fixed-length chunks with overlap."""
     if not text.strip():
         return []
@@ -223,7 +238,7 @@ def chunk_by_length(text: str, max_chars: int = 512, overlap: int = 50) -> list[
             chunks.append({
                 "content": chunk_text,
                 "filename": f"chunk-{page}.md",
-                "metadata": {"page": page},
+                "metadata": {"page": page, "sensitivity": sensitivity},
             })
             page += 1
 
@@ -237,16 +252,23 @@ def chunk_document(
     strategy: Strategy = "auto",
     max_chars: int = 512,
     overlap: int = 50,
+    sensitivity: Sensitivity = "public",
 ) -> list[dict]:
-    """Chunk a document using the specified or auto-detected strategy."""
+    """Chunk a document using the specified or auto-detected strategy.
+
+    The sensitivity level is applied to ALL chunks produced and stored in metadata.
+    It can be modified later per-chunk via the collection admin API.
+
+    Levels: public, internal, restricted, confidential, secret
+    """
     if strategy == "auto":
         strategy = detect_strategy(text)
 
     if strategy == "article":
-        return chunk_by_article(text)
+        return chunk_by_article(text, sensitivity=sensitivity)
     elif strategy == "section":
-        return chunk_by_section(text)
+        return chunk_by_section(text, sensitivity=sensitivity)
     elif strategy == "qr":
-        return chunk_by_qr(text)
+        return chunk_by_qr(text, sensitivity=sensitivity)
     else:
-        return chunk_by_length(text, max_chars=max_chars, overlap=overlap)
+        return chunk_by_length(text, max_chars=max_chars, overlap=overlap, sensitivity=sensitivity)
