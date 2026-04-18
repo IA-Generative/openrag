@@ -12,9 +12,11 @@ ARTICLE_REF_RE = re.compile(
     r"\b[Ll](?:'article|'article)\s+([LRD])\.\s?(\d+(?:-\d+)*)\b"
     r"|\b([LRD])\.\s?(\d+(?:-\d+)*)\b"
 )
-LIVRE_RE = re.compile(r"Livre\s+([IVXLCDM]+)", re.IGNORECASE)
-TITRE_RE = re.compile(r"Titre\s+([IVXLCDM]+(?:\s*\w*)?)", re.IGNORECASE)
-CHAPITRE_RE = re.compile(r"Chapitre\s+([IVXLCDM]+(?:\s*\w*)?)", re.IGNORECASE)
+# Match roman numerals (I, II, III, IV, IX, ...) or ordinal (Ier, 1er, premier)
+_ROMAN_OR_ORD = r"([IVXLCDM]+(?:\s*(?:er|ère|ème|bis|ter|quater))?|1er|premier|préliminaire)"
+LIVRE_RE = re.compile(r"Livre\s+" + _ROMAN_OR_ORD, re.IGNORECASE)
+TITRE_RE = re.compile(r"Titre\s+" + _ROMAN_OR_ORD, re.IGNORECASE)
+CHAPITRE_RE = re.compile(r"Chapitre\s+" + _ROMAN_OR_ORD, re.IGNORECASE)
 SECTION_HEADER_RE = re.compile(r"^(#{1,3})\s+(.+)$", re.MULTILINE)
 FAQ_HEADER_RE = re.compile(r"^#{1,4}\s+(.+\?)\s*$", re.MULTILINE)
 
