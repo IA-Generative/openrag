@@ -1,6 +1,16 @@
 <template>
   <div>
+    <nav role="navigation" class="fr-breadcrumb" aria-label="vous etes ici">
+      <ol class="fr-breadcrumb__list">
+        <li><NuxtLink class="fr-breadcrumb__link" to="/admin">Administration</NuxtLink></li>
+        <li><NuxtLink class="fr-breadcrumb__link" to="/admin/create">Creer</NuxtLink></li>
+        <li aria-current="page">Publication</li>
+      </ol>
+    </nav>
+
     <h1 class="fr-h3">Publication — {{ collection }}</h1>
+    <p class="fr-text--lg fr-mb-4w">Etape 4 sur 4 — Choisissez comment publier</p>
+
     <WizardStepper :current-step="4" />
 
     <div class="fr-grid-row fr-grid-row--gutters">

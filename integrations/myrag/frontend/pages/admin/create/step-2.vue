@@ -1,9 +1,23 @@
 <template>
   <div>
+    <nav role="navigation" class="fr-breadcrumb" aria-label="vous etes ici">
+      <ol class="fr-breadcrumb__list">
+        <li><NuxtLink class="fr-breadcrumb__link" to="/admin">Administration</NuxtLink></li>
+        <li><NuxtLink class="fr-breadcrumb__link" to="/admin/create">Creer</NuxtLink></li>
+        <li aria-current="page">Donnees</li>
+      </ol>
+    </nav>
+
     <h1 class="fr-h3">Associer la donnee — {{ collection }}</h1>
+    <p class="fr-text--lg fr-mb-4w">Etape 2 sur 4 — Indexez au moins un document</p>
+
     <WizardStepper :current-step="2" />
 
-    <div class="fr-col-8">
+    <div v-if="!collection" class="fr-alert fr-alert--warning fr-mb-4w">
+      <p>Aucune collection specifiee. <NuxtLink to="/admin/create">Retour a l'etape 1</NuxtLink></p>
+    </div>
+
+    <div v-else class="fr-col-8">
       <!-- Upload -->
       <div class="fr-upload-group fr-mb-4w">
         <label class="fr-label">Deposer un fichier</label>

@@ -1,6 +1,16 @@
 <template>
   <div>
+    <nav role="navigation" class="fr-breadcrumb" aria-label="vous etes ici">
+      <ol class="fr-breadcrumb__list">
+        <li><NuxtLink class="fr-breadcrumb__link" to="/admin">Administration</NuxtLink></li>
+        <li><NuxtLink class="fr-breadcrumb__link" to="/admin/create">Creer</NuxtLink></li>
+        <li aria-current="page">Evaluation</li>
+      </ol>
+    </nav>
+
     <h1 class="fr-h3">Mesure d'evaluation — {{ collection }}</h1>
+    <p class="fr-text--lg fr-mb-4w">Etape 3 sur 4 — Optionnel mais recommande</p>
+
     <WizardStepper :current-step="3" />
 
     <div class="fr-col-8">
