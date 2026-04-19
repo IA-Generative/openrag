@@ -86,6 +86,7 @@ services:
       - API_BASE_URL=${API_BASE_URL:-http://localhost:${APP_PORT:-8080}}
       - INCLUDE_CREDENTIALS=${INCLUDE_CREDENTIALS:-false}
       - AUTH_MODE=${AUTH_MODE:-token}
+      - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-}
     ports:
       - "${INDEXERUI_PORT:-3042}:3000"
     restart: unless-stopped

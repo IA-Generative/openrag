@@ -234,8 +234,8 @@
         "sources_label": "Sources",
         "profile_description_all": "You are interacting with the **{name}** LLM.\nThe LLM's answers will be grounded on **all** partitions.",
         "profile_description_partition": "You are interacting with the **{name}** LLM.\nThe LLM's answers will be grounded only on the partition named **{partition}**.",
-        "error_health": "An error occured while checking the API health: {}",
+        "error_health": "An error occurred while checking the API health: {}",
         "error_chat": "An error occurred: {}",
-        "error_profiles": "An error occured: {}"
+        "error_profiles": "An error occurred: {}"
     }
 }
