@@ -6,14 +6,14 @@ export default defineNuxtConfig({
     head: {
       title: 'MyRAG (beta)',
       htmlAttrs: { lang: 'fr', 'data-fr-scheme': 'light' },
-      link: [
-        { rel: 'stylesheet', href: '/@gouvfr/dsfr/dist/dsfr.min.css' },
-        { rel: 'stylesheet', href: '/@gouvfr/dsfr/dist/utility/icons/icons.min.css' },
-      ],
     },
   },
 
-  css: ['~/assets/main.css'],
+  css: [
+    '@gouvfr/dsfr/dist/dsfr.min.css',
+    '@gouvfr/dsfr/dist/utility/icons/icons.min.css',
+    '~/assets/main.css',
+  ],
 
   runtimeConfig: {
     public: {
