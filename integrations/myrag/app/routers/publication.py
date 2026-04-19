@@ -1,14 +1,14 @@
 """Publication router — publish/unpublish collections to Open WebUI."""
 
-from __future__ import annotations
-
-import time
+import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.models.collection import CollectionConfig, PublicationConfig
-from app.services.openrag_client import OpenRAGClient
+from app.database import async_session
+from app.models.db import Publication, PublicationHistory
+from app.services.collection_store import get_or_create_collection
 
 router = APIRouter(prefix="/api/collections", tags=["Publication"])
 
@@ -16,146 +16,115 @@ router = APIRouter(prefix="/api/collections", tags=["Publication"])
 class PublishRequest(BaseModel):
     alias_enabled: bool = True
     alias_name: str = ""
-    alias_description: str = ""
-    alias_tags: list[str] = []
     tool_enabled: bool = False
-    tool_target_models: list[str] = []
-    tool_methods: list[str] = [
-        "search_collection", "view_article", "explore_graph", "browse_collection"
-    ]
     embed_enabled: bool = False
-    embed_prefix: str = ""
     visibility: str = "all"
-    visibility_group: str = ""
-    visibility_users: list[str] = []
+    visibility_groups: list[str] = []
+    widget_enabled: bool = False
+    browser_enabled: bool = False
     published_by: str = ""
+    state: str = ""  # allow "draft" for save-as-draft
 
 
 @router.get("/{name}/publication")
 async def get_publication_status(name: str):
-    """Get the publication status of a collection."""
-    config = CollectionConfig.load(name)
-    if not config:
-        raise HTTPException(status_code=404, detail=f"Collection '{name}' not found")
-
-    pub = config.get_publication()
-    return pub.to_dict()
+    async with async_session() as session:
+        pub = await session.get(Publication, name)
+        if not pub:
+            return {"collection": name, "state": "draft"}
+        return pub.to_dict()
 
 
 @router.post("/{name}/publish")
 async def publish_collection(name: str, req: PublishRequest):
-    """Publish a collection to Open WebUI.
+    # Auto-create collection config if it doesn't exist
+    await get_or_create_collection(name)
 
-    Creates/updates the model alias, tool attachment, and visibility settings.
-    """
-    config = CollectionConfig.load(name)
-    if not config:
-        raise HTTPException(status_code=404, detail=f"Collection '{name}' not found")
+    now = datetime.now(timezone.utc)
 
-    pub = config.get_publication()
+    async with async_session() as session:
+        pub = await session.get(Publication, name)
+        if not pub:
+            pub = Publication(collection_name=name)
+            session.add(pub)
 
-    # Update publication config
-    pub.state = "published"
-    pub.published_at = time.strftime("%Y-%m-%dT%H:%M:%S")
-    pub.published_by = req.published_by or "admin"
+        pub.state = req.state if req.state == "draft" else "published"
+        pub.alias_enabled = req.alias_enabled
+        pub.alias_name = req.alias_name or f"📚 {name}"
+        pub.tool_enabled = req.tool_enabled
+        pub.embed_enabled = req.embed_enabled
+        pub.visibility = req.visibility
+        pub.visibility_groups_json = json.dumps(req.visibility_groups)
+        pub.widget_enabled = req.widget_enabled
+        pub.browser_enabled = req.browser_enabled
+        pub.published_at = now
+        pub.published_by = req.published_by or "admin"
 
-    pub.alias_enabled = req.alias_enabled
-    pub.alias_name = req.alias_name or f"MyRAG {name}"
-    pub.alias_description = req.alias_description or config.description
-    pub.alias_tags = req.alias_tags or ["MyRAG", "RAG"]
+        # History entry
+        history = PublicationHistory(
+            collection_name=name,
+            action=pub.state,
+            acted_by=pub.published_by,
+            acted_at=now,
+            details_json=json.dumps({
+                "alias": pub.alias_enabled,
+                "tool": pub.tool_enabled,
+                "embed": pub.embed_enabled,
+                "visibility": pub.visibility,
+            }),
+        )
+        session.add(history)
 
-    pub.tool_enabled = req.tool_enabled
-    pub.tool_target_models = req.tool_target_models
-    pub.tool_methods = req.tool_methods
-
-    pub.embed_enabled = req.embed_enabled
-    pub.embed_prefix = req.embed_prefix or f"#{name}"
-
-    pub.visibility = req.visibility
-    pub.visibility_group = req.visibility_group
-    pub.visibility_users = req.visibility_users
-
-    # Add to history
-    pub.history.append({
-        "action": "published",
-        "at": pub.published_at,
-        "by": pub.published_by,
-        "modes": {
-            "alias": pub.alias_enabled,
-            "tool": pub.tool_enabled,
-            "embed": pub.embed_enabled,
-        },
-        "visibility": pub.visibility,
-    })
-
-    config.set_publication(pub)
-    config.save()
-
-    # TODO: Actually push to OWUI via API/SQLite
-    # For now, just update the config — OWUI integration will be done
-    # when the OWUI API for model management is available
-
-    return {
-        "state": pub.state,
-        "collection": name,
-        "alias_name": pub.alias_name,
-        "modes": {
-            "alias": pub.alias_enabled,
-            "tool": pub.tool_enabled,
-            "embed": pub.embed_enabled,
-        },
-        "visibility": pub.visibility,
-    }
+        await session.commit()
+        await session.refresh(pub)
+        return pub.to_dict()
 
 
 @router.post("/{name}/unpublish")
 async def unpublish_collection(name: str):
-    """Disable a published collection (keeps data, hides from OWUI)."""
-    config = CollectionConfig.load(name)
-    if not config:
-        raise HTTPException(status_code=404, detail=f"Collection '{name}' not found")
+    async with async_session() as session:
+        pub = await session.get(Publication, name)
+        if not pub:
+            raise HTTPException(status_code=404, detail=f"No publication for '{name}'")
+        pub.state = "disabled"
 
-    pub = config.get_publication()
-    pub.state = "disabled"
-    pub.history.append({
-        "action": "disabled",
-        "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "by": "admin",
-    })
-
-    config.set_publication(pub)
-    config.save()
-
-    return {"state": pub.state, "collection": name}
+        session.add(PublicationHistory(
+            collection_name=name, action="disabled", acted_by="admin",
+        ))
+        await session.commit()
+        return {"state": pub.state, "collection": name}
 
 
 @router.post("/{name}/archive")
 async def archive_collection(name: str):
-    """Archive a collection (removes from OWUI, keeps data in MyRAG)."""
-    config = CollectionConfig.load(name)
-    if not config:
-        raise HTTPException(status_code=404, detail=f"Collection '{name}' not found")
+    async with async_session() as session:
+        pub = await session.get(Publication, name)
+        if not pub:
+            raise HTTPException(status_code=404, detail=f"No publication for '{name}'")
+        pub.state = "archived"
 
-    pub = config.get_publication()
-    pub.state = "archived"
-    pub.history.append({
-        "action": "archived",
-        "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "by": "admin",
-    })
-
-    config.set_publication(pub)
-    config.save()
-
-    return {"state": pub.state, "collection": name}
+        session.add(PublicationHistory(
+            collection_name=name, action="archived", acted_by="admin",
+        ))
+        await session.commit()
+        return {"state": pub.state, "collection": name}
 
 
 @router.get("/{name}/publication/history")
 async def publication_history(name: str):
-    """Get the publication history for a collection."""
-    config = CollectionConfig.load(name)
-    if not config:
-        raise HTTPException(status_code=404, detail=f"Collection '{name}' not found")
-
-    pub = config.get_publication()
-    return {"collection": name, "history": pub.history}
+    from sqlalchemy import select
+    async with async_session() as session:
+        result = await session.execute(
+            select(PublicationHistory)
+            .where(PublicationHistory.collection_name == name)
+            .order_by(PublicationHistory.acted_at.desc())
+        )
+        entries = result.scalars().all()
+        return {
+            "collection": name,
+            "history": [
+                {"action": h.action, "at": h.acted_at.isoformat(), "by": h.acted_by,
+                 "details": json.loads(h.details_json or "{}")}
+                for h in entries
+            ],
+        }

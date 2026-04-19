@@ -1,5 +1,6 @@
-"""Sources router — Legifrance source management."""
+"""Sources router — Legifrance source management + URL checking."""
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -26,6 +27,70 @@ class SearchLegifranceRequest(BaseModel):
     query: str
     fond: str = "CODE_DATE"
     page_size: int = 10
+
+
+@router.get("/check-url")
+async def check_url(url: str = Query(..., description="URL to check")):
+    """Check if a remote URL is accessible and return content info.
+
+    Server-side HEAD request avoids browser CORS restrictions.
+    """
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
+            resp = await client.head(url)
+            if resp.status_code < 400:
+                content_type = resp.headers.get("content-type", "inconnu").split(";")[0].strip()
+                content_length = resp.headers.get("content-length")
+                return {
+                    "accessible": True,
+                    "status_code": resp.status_code,
+                    "content_type": content_type,
+                    "content_length": int(content_length) if content_length else None,
+                    "url": str(resp.url),  # final URL after redirects
+                }
+            return {
+                "accessible": False,
+                "status_code": resp.status_code,
+                "content_type": None,
+                "content_length": None,
+            }
+    except httpx.TimeoutException:
+        return {"accessible": False, "error": "timeout"}
+    except Exception as e:
+        return {"accessible": False, "error": str(e)}
+
+
+@router.get("/preview-url")
+async def preview_url(
+    url: str = Query(..., description="URL to preview"),
+    max_chars: int = Query(4000, description="Max characters to return"),
+):
+    """Fetch the first bytes of a remote URL and return as text preview.
+
+    Server-side fetch avoids CORS and X-Frame-Options restrictions.
+    """
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
+            async with client.stream("GET", url) as resp:
+                if resp.status_code >= 400:
+                    return {"content": None, "error": f"HTTP {resp.status_code}"}
+                # Read only what we need
+                chunks = []
+                total = 0
+                async for chunk in resp.aiter_text():
+                    chunks.append(chunk)
+                    total += len(chunk)
+                    if total >= max_chars:
+                        break
+                content = "".join(chunks)
+                truncated = len(content) >= max_chars
+                if truncated:
+                    content = content[:max_chars]
+                return {"content": content, "truncated": truncated}
+    except httpx.TimeoutException:
+        return {"content": None, "error": "timeout"}
+    except Exception as e:
+        return {"content": None, "error": str(e)}
 
 
 @router.post("/legifrance/parse-url")
@@ -57,15 +122,16 @@ async def add_source(req: AddSourceByIdRequest):
     This registers the source for tracking. The actual fetch + indexation
     is triggered separately via POST /api/ingest/{collection}.
     """
-    from app.models.collection import CollectionConfig
+    from app.services.collection_store import get_collection, update_collection
 
-    config = CollectionConfig.load(req.collection)
+    config = await get_collection(req.collection)
     if not config:
         raise HTTPException(status_code=404, detail=f"Collection '{req.collection}' not found")
 
-    config.legifrance_source_id = req.legifrance_id
-    config.legifrance_refresh_mode = req.refresh_mode
-    config.save()
+    await update_collection(req.collection, {
+        "source_type": "legifrance",
+        "source_url": req.legifrance_id,
+    })
 
     return {
         "status": "registered",
@@ -79,15 +145,15 @@ async def add_source(req: AddSourceByIdRequest):
 @router.get("/legifrance/status/{collection}")
 async def source_status(collection: str):
     """Check the Legifrance source status for a collection."""
-    from app.models.collection import CollectionConfig
+    from app.services.collection_store import get_collection
 
-    config = CollectionConfig.load(collection)
+    config = await get_collection(collection)
     if not config:
         raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
 
     return {
         "collection": collection,
-        "legifrance_source_id": config.legifrance_source_id or None,
-        "refresh_mode": config.legifrance_refresh_mode,
-        "configured": bool(config.legifrance_source_id),
+        "legifrance_source_id": config.get("source_url") or None,
+        "source_type": config.get("source_type", ""),
+        "configured": config.get("source_type") == "legifrance",
     }

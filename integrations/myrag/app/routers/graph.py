@@ -167,16 +167,16 @@ async def summarize_articles(
     Articles longer get a 3-5 sentence AI summary with a 'Resume par l'IA' badge.
     Requires LLM access (Scaleway or OpenAI-compatible endpoint).
     """
-    from app.models.collection import CollectionConfig
+    from app.services.collection_store import get_collection
 
-    config = CollectionConfig.load(collection)
-    if config and not config.ai_summary_enabled and threshold is None:
+    config = await get_collection(collection)
+    if config and not config.get("ai_summary_enabled") and threshold is None:
         return {
             "status": "disabled",
             "detail": f"AI summaries are disabled for '{collection}'. Enable in collection config.",
         }
 
-    effective_threshold = threshold or (config.ai_summary_threshold if config else 1000)
+    effective_threshold = threshold or (config.get("ai_summary_threshold", 1000) if config else 1000)
     from app.services.chunker import chunk_by_article
 
     graph = _builder.get(collection)
