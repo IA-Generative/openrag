@@ -71,6 +71,10 @@ class Query(BaseModel):
     )
 
     def to_milvus_filter(self) -> str | None:
+        """The temporal_filters attributes are already checked through the Pydantic types, except for date value that is kept as string,
+        as LLM sometimes give correct but not entirely complete date
+        """
+
         if not self.temporal_filters:
             return None
         parts = []
