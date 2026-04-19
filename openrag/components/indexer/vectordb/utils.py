@@ -425,9 +425,11 @@ class PartitionFileManager:
             s.commit()
             return True
 
-    def regenerate_user_token(self, user_id: int) -> dict:
+    def regenerate_user_token(self, user_id: int) -> dict | None:
         with self.Session() as s:
             user = s.query(User).filter(User.id == user_id).first()
+            if not user:
+                return None
             new_token = f"or-{secrets.token_hex(16)}"
             hashed_token = self.hash_token(new_token)
             user.token = hashed_token
