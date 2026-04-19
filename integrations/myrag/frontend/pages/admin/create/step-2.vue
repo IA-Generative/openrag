@@ -142,7 +142,6 @@
               </p>
             </div>
           </details>
-          </div>
         </div>
       </fieldset>
 
