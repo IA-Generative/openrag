@@ -98,7 +98,7 @@
         <div class="fr-fieldset__element">
           <div class="fr-checkbox-group">
             <input type="checkbox" id="graph" v-model="form.graph_enabled"
-                   @change="if (!form.graph_enabled) form.ai_summary_enabled = false" />
+                   @change="onGraphToggle" />
             <label class="fr-label" for="graph">Activer le graph de references</label>
           </div>
           <details class="fr-mt-1w fr-ml-4w">
@@ -172,6 +172,12 @@ const descPlaceholders: Record<string, string> = {
   legifrance: 'Code de l\'entree et du sejour des etrangers',
   file: 'Description du document', directory: 'Description du corpus',
   drive: 'Dossier Drive a synchroniser', nextcloud: 'Dossier Nextcloud', resana: 'Espace Resana',
+}
+
+function onGraphToggle() {
+  if (!form.value.graph_enabled) {
+    form.value.ai_summary_enabled = false
+  }
 }
 
 // Profils couples : strategie + prompt + options
