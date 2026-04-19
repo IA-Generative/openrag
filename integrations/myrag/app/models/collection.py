@@ -256,6 +256,31 @@ def delete_custom_template(key: str) -> bool:
 load_custom_templates()
 
 
+# --- Source config ---
+
+@dataclass
+class SourceConfig:
+    type: str = ""  # legifrance | file | directory | drive | nextcloud | resana
+    url: str = ""
+    path: str = ""
+    legifrance_id: str = ""
+    auth_mode: str = ""  # service_account | user_token | api_key
+    auth_client_id: str = ""
+    auth_client_secret: str = ""
+    refresh_enabled: bool = False
+    refresh_frequency: str = "manual"  # manual | daily | weekly
+    last_synced_at: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "SourceConfig":
+        if not data:
+            return cls()
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
 # --- Publication config ---
 
 @dataclass
@@ -316,9 +341,10 @@ class CollectionConfig:
     contact_email: str = ""
     legifrance_source_id: str = ""
     legifrance_refresh_mode: str = "manual"
-    wizard_step: int = 0  # 0=not started, 1-4=step in progress
+    wizard_step: int = 0  # 0=not started, 1-5=step in progress
     scope: str = "group"
     created_at: str = ""
+    source: dict = field(default_factory=lambda: SourceConfig().to_dict())
     publication: dict = field(default_factory=lambda: PublicationConfig().to_dict())
 
     def to_dict(self) -> dict:

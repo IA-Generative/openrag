@@ -4,94 +4,102 @@
       <ol class="fr-breadcrumb__list">
         <li><NuxtLink class="fr-breadcrumb__link" to="/admin">Administration</NuxtLink></li>
         <li><NuxtLink class="fr-breadcrumb__link" to="/admin/create">Creer</NuxtLink></li>
-        <li aria-current="page">Evaluation</li>
+        <li aria-current="page">Donnees</li>
       </ol>
     </nav>
 
-    <h1 class="fr-h3">Mesure d'evaluation — {{ collection }}</h1>
-    <p class="fr-text--lg fr-mb-4w">Etape 3 sur 4 — Optionnel mais recommande</p>
+    <h1 class="fr-h3">Associer la donnee — {{ collection }}</h1>
+    <p class="fr-text--lg fr-mb-4w">Etape 3 sur 5 — Indexez au moins un document</p>
 
     <WizardStepper :current-step="3" />
 
-    <div class="fr-col-8">
-      <p class="fr-text--lg fr-mb-4w">Testez la qualite du RAG avant publication.</p>
+    <div v-if="!collection" class="fr-alert fr-alert--warning fr-mb-4w">
+      <p>Aucune collection specifiee. <NuxtLink to="/admin/create">Retour a l'etape 1</NuxtLink></p>
+    </div>
 
-      <!-- Quick test -->
-      <div class="fr-card fr-mb-4w">
+    <div v-else class="fr-col-8">
+      <!-- Upload -->
+      <div class="fr-upload-group fr-mb-4w">
+        <label class="fr-label">Deposer un fichier</label>
+        <input type="file" class="fr-upload" @change="onFile"
+               accept=".pdf,.txt,.md,.docx,.pptx,.doc,.eml,.png,.jpeg,.jpg" />
+      </div>
+
+      <button v-if="file" class="fr-btn fr-mb-4w" @click="upload" :disabled="uploading">
+        {{ uploading ? 'Indexation...' : 'Indexer le document' }}
+      </button>
+
+      <!-- Job progress -->
+      <div v-if="job" class="fr-card fr-mb-4w">
         <div class="fr-card__body">
           <div class="fr-card__content">
-            <h3 class="fr-card__title">Test rapide</h3>
-            <div class="fr-input-group">
-              <input class="fr-input" v-model="question" placeholder="Posez une question de test..." />
-            </div>
-            <button class="fr-btn fr-btn--sm fr-mt-1w" @click="test" :disabled="testing || !question.trim()">
-              {{ testing ? 'Test...' : 'Tester' }}
-            </button>
-            <div v-if="response" class="fr-mt-2w fr-p-2w" style="background:#f6f6f6;border-radius:4px;white-space:pre-wrap;font-size:0.85rem;">
-              {{ response }}
-            </div>
+            <p>{{ job.uploaded_chunks }}/{{ job.total_chunks }} chunks ({{ job.progress_pct }}%)</p>
+            <progress :value="job.uploaded_chunks" :max="job.total_chunks" style="width:100%;"></progress>
+            <p class="fr-text--sm">Status: {{ job.status }}</p>
           </div>
         </div>
       </div>
 
-      <!-- Eval dataset -->
-      <div class="fr-card fr-mb-4w">
-        <div class="fr-card__body">
-          <div class="fr-card__content">
-            <h3 class="fr-card__title">Jeu de test (optionnel)</h3>
-            <p class="fr-text--sm">Importez un fichier JSON de questions-reponses pour evaluer le RAG.</p>
-            <input type="file" class="fr-upload" accept=".json" @change="importDataset" />
-            <p class="fr-text--sm fr-mt-1w">{{ datasetCount }} questions chargees</p>
-          </div>
-        </div>
+      <!-- Legifrance source -->
+      <div class="fr-input-group fr-mt-4w">
+        <label class="fr-label">Ou coller une URL Legifrance</label>
+        <input class="fr-input" v-model="legiUrl" placeholder="https://www.legifrance.gouv.fr/codes/texte_lc/..." />
       </div>
-
-      <div class="fr-callout fr-mb-4w">
-        <p class="fr-callout__text">
-          Cette etape est optionnelle. Vous pourrez evaluer la collection
-          a tout moment depuis la page Evaluation.
-        </p>
-      </div>
+      <button v-if="legiUrl" class="fr-btn fr-btn--secondary fr-btn--sm fr-mt-1w" @click="addLegiSource">
+        Ajouter la source
+      </button>
 
       <!-- Navigation -->
-      <div class="fr-btns-group fr-btns-group--inline">
-        <NuxtLink :to="`/admin/create/step-2?collection=${collection}`" class="fr-btn fr-btn--secondary">
-          ← Precedent
-        </NuxtLink>
-        <NuxtLink :to="`/admin/create/step-4?collection=${collection}`" class="fr-btn">
+      <div class="fr-btns-group fr-btns-group--inline fr-mt-6w">
+        <NuxtLink to="/admin/create" class="fr-btn fr-btn--secondary">← Precedent</NuxtLink>
+        <button class="fr-btn" @click="next" :disabled="!hasDocuments">
           Suivant →
-        </NuxtLink>
+        </button>
       </div>
+
+      <p v-if="!hasDocuments" class="fr-text--sm fr-mt-1w" style="color:#b34000;">
+        ⚠ Au moins un document est requis pour continuer.
+      </p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 const route = useRoute()
+const router = useRouter()
 const collection = route.query.collection as string
-const { post } = useApi()
+const { uploadFile, post, get } = useApi()
 
-const question = ref('')
-const response = ref('')
-const testing = ref(false)
-const datasetCount = ref(0)
+const file = ref<File | null>(null)
+const uploading = ref(false)
+const job = ref<any>(null)
+const legiUrl = ref('')
+const hasDocuments = ref(false)
 
-async function test() {
-  testing.value = true
-  response.value = ''
+function onFile(e: Event) { file.value = (e.target as HTMLInputElement).files?.[0] || null }
+
+async function upload() {
+  if (!file.value) return
+  uploading.value = true
   try {
-    const data = await post(`/api/playground/${collection}/chat`, { question: question.value })
-    response.value = data.response || 'Pas de reponse'
-  } catch (e: any) { response.value = `Erreur: ${e.message}` }
-  testing.value = false
+    const result = await uploadFile(`/api/ingest/${collection}`, file.value, { strategy: 'auto', sensitivity: 'public' })
+    job.value = result
+    // Poll progress
+    const interval = setInterval(async () => {
+      const j = await get(`/api/ingest/jobs/${result.job_id}`)
+      job.value = j
+      if (j.status === 'done' || j.status === 'done_with_errors') {
+        clearInterval(interval)
+        hasDocuments.value = true
+        uploading.value = false
+      }
+    }, 2000)
+  } catch (e) { uploading.value = false }
 }
 
-async function importDataset(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
-  const text = await file.text()
-  const data = JSON.parse(text)
-  await post(`/api/collections/${collection}/eval/dataset`, data)
-  datasetCount.value = data.length
+async function addLegiSource() {
+  await post('/api/sources/legifrance/parse-url', { url: legiUrl.value, collection })
 }
+
+function next() { router.push(`/admin/create/step-4?collection=${collection}`) }
 </script>

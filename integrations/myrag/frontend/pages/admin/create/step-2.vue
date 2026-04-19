@@ -4,62 +4,104 @@
       <ol class="fr-breadcrumb__list">
         <li><NuxtLink class="fr-breadcrumb__link" to="/admin">Administration</NuxtLink></li>
         <li><NuxtLink class="fr-breadcrumb__link" to="/admin/create">Creer</NuxtLink></li>
-        <li aria-current="page">Donnees</li>
+        <li aria-current="page">Identification</li>
       </ol>
     </nav>
 
-    <h1 class="fr-h3">Associer la donnee — {{ collection }}</h1>
-    <p class="fr-text--lg fr-mb-4w">Etape 2 sur 4 — Indexez au moins un document</p>
+    <h1 class="fr-h3">Identification de la collection</h1>
+    <p class="fr-text--lg fr-mb-4w">Etape 2 sur 5 — Source : {{ sourceLabel }}</p>
 
     <WizardStepper :current-step="2" />
 
-    <div v-if="!collection" class="fr-alert fr-alert--warning fr-mb-4w">
-      <p>Aucune collection specifiee. <NuxtLink to="/admin/create">Retour a l'etape 1</NuxtLink></p>
-    </div>
-
-    <div v-else class="fr-col-8">
-      <!-- Upload -->
-      <div class="fr-upload-group fr-mb-4w">
-        <label class="fr-label">Deposer un fichier</label>
-        <input type="file" class="fr-upload" @change="onFile"
-               accept=".pdf,.txt,.md,.docx,.pptx,.doc,.eml,.png,.jpeg,.jpg" />
+    <div class="fr-col-8">
+      <div class="fr-input-group">
+        <label class="fr-label" for="name">Nom de la collection *</label>
+        <input id="name" class="fr-input" v-model="form.name" placeholder="ceseda-v4" />
       </div>
 
-      <button v-if="file" class="fr-btn fr-mb-4w" @click="upload" :disabled="uploading">
-        {{ uploading ? 'Indexation...' : 'Indexer le document' }}
-      </button>
+      <div class="fr-input-group fr-mt-2w">
+        <label class="fr-label" for="desc">Description</label>
+        <textarea id="desc" class="fr-input" v-model="form.description" rows="2"
+               :placeholder="descPlaceholders[source] || 'Description'"></textarea>
+      </div>
 
-      <!-- Job progress -->
-      <div v-if="job" class="fr-card fr-mb-4w">
-        <div class="fr-card__body">
-          <div class="fr-card__content">
-            <p>{{ job.uploaded_chunks }}/{{ job.total_chunks }} chunks ({{ job.progress_pct }}%)</p>
-            <progress :value="job.uploaded_chunks" :max="job.total_chunks" style="width:100%;"></progress>
-            <p class="fr-text--sm">Status: {{ job.status }}</p>
+      <div class="fr-select-group fr-mt-2w">
+        <label class="fr-label">Prompt systeme de la collection</label>
+        <select class="fr-select" v-model="form.prompt_template">
+          <option v-for="tpl in templates" :key="tpl.key" :value="tpl.key">
+            {{ tpl.icon }} {{ tpl.name }}
+          </option>
+        </select>
+      </div>
+
+      <div class="fr-select-group fr-mt-2w">
+        <label class="fr-label">Strategie de decoupage</label>
+        <select class="fr-select" v-model="form.strategy">
+          <option value="auto">Automatique (detection du type)</option>
+          <option value="article">Par article (code juridique)</option>
+          <option value="section">Par section (rapport)</option>
+          <option value="qr">Par Q&R (FAQ)</option>
+          <option value="length">Par longueur fixe</option>
+        </select>
+      </div>
+
+      <div class="fr-grid-row fr-grid-row--gutters fr-mt-2w">
+        <div class="fr-col-6">
+          <div class="fr-select-group">
+            <label class="fr-label">Sensibilite</label>
+            <select class="fr-select" v-model="form.sensitivity">
+              <option value="public">Public</option>
+              <option value="internal">Interne</option>
+              <option value="restricted">Restreint</option>
+              <option value="confidential">Confidentiel</option>
+            </select>
+          </div>
+        </div>
+        <div class="fr-col-6">
+          <div class="fr-select-group">
+            <label class="fr-label">Portee</label>
+            <select class="fr-select" v-model="form.scope">
+              <option value="public">General (tous)</option>
+              <option value="group">Groupe</option>
+              <option value="private">Prive</option>
+            </select>
           </div>
         </div>
       </div>
 
-      <!-- Legifrance source -->
-      <div class="fr-input-group fr-mt-4w">
-        <label class="fr-label">Ou coller une URL Legifrance</label>
-        <input class="fr-input" v-model="legiUrl" placeholder="https://www.legifrance.gouv.fr/codes/texte_lc/..." />
-      </div>
-      <button v-if="legiUrl" class="fr-btn fr-btn--secondary fr-btn--sm fr-mt-1w" @click="addLegiSource">
-        Ajouter la source
-      </button>
+      <fieldset class="fr-fieldset fr-mt-3w">
+        <legend class="fr-fieldset__legend">Options</legend>
+        <div class="fr-fieldset__element">
+          <div class="fr-checkbox-group">
+            <input type="checkbox" id="graph" v-model="form.graph_enabled" />
+            <label class="fr-label" for="graph">Activer le graph de references</label>
+          </div>
+        </div>
+        <div class="fr-fieldset__element">
+          <div class="fr-checkbox-group">
+            <input type="checkbox" id="ai_summary" v-model="form.ai_summary_enabled" />
+            <label class="fr-label" for="ai_summary">Resume IA pour les articles longs</label>
+          </div>
+        </div>
+      </fieldset>
 
-      <!-- Navigation -->
-      <div class="fr-btns-group fr-btns-group--inline fr-mt-6w">
+      <div class="fr-input-group fr-mt-3w">
+        <label class="fr-label">Responsable / contact</label>
+        <input class="fr-input" v-model="form.contact_name" placeholder="Nom du responsable" />
+      </div>
+      <div class="fr-input-group fr-mt-1w">
+        <label class="fr-label">Email de contact</label>
+        <input class="fr-input" type="email" v-model="form.contact_email" placeholder="responsable@example.com" />
+      </div>
+
+      <div class="fr-btns-group fr-btns-group--inline fr-mt-4w">
         <NuxtLink to="/admin/create" class="fr-btn fr-btn--secondary">← Precedent</NuxtLink>
-        <button class="fr-btn" @click="next" :disabled="!hasDocuments">
-          Suivant →
+        <button class="fr-btn" @click="createAndNext" :disabled="creating || !form.name.trim()">
+          {{ creating ? 'Creation...' : 'Suivant →' }}
         </button>
       </div>
 
-      <p v-if="!hasDocuments" class="fr-text--sm fr-mt-1w" style="color:#b34000;">
-        ⚠ Au moins un document est requis pour continuer.
-      </p>
+      <div v-if="error" class="fr-alert fr-alert--error fr-mt-2w"><p>{{ error }}</p></div>
     </div>
   </div>
 </template>
@@ -67,39 +109,62 @@
 <script setup lang="ts">
 const route = useRoute()
 const router = useRouter()
-const collection = route.query.collection as string
-const { uploadFile, post, get } = useApi()
+const { get, post } = useApi()
 
-const file = ref<File | null>(null)
-const uploading = ref(false)
-const job = ref<any>(null)
-const legiUrl = ref('')
-const hasDocuments = ref(false)
+const source = (route.query.source as string) || 'file'
 
-function onFile(e: Event) { file.value = (e.target as HTMLInputElement).files?.[0] || null }
+const sourceLabels: Record<string, string> = {
+  legifrance: '⚖️ Legifrance', file: '📄 Fichier unique', directory: '📁 Repertoire',
+  drive: '☁️ Drive', nextcloud: '📦 Nextcloud', resana: '🗂️ Resana',
+}
+const sourceLabel = sourceLabels[source] || source
 
-async function upload() {
-  if (!file.value) return
-  uploading.value = true
+const descPlaceholders: Record<string, string> = {
+  legifrance: 'Code de l\'entree et du sejour des etrangers',
+  file: 'Description du document', directory: 'Description du corpus',
+  drive: 'Dossier Drive a synchroniser', nextcloud: 'Dossier Nextcloud', resana: 'Espace Resana',
+}
+
+const defaultStrategies: Record<string, string> = {
+  legifrance: 'article', file: 'auto', directory: 'auto',
+  drive: 'auto', nextcloud: 'auto', resana: 'auto',
+}
+const defaultTemplates: Record<string, string> = {
+  legifrance: 'juridique', file: 'generic', directory: 'multi_thematique',
+  drive: 'multi_thematique', nextcloud: 'multi_thematique', resana: 'multi_thematique',
+}
+
+const form = ref({
+  name: '', description: '',
+  strategy: defaultStrategies[source] || 'auto',
+  sensitivity: 'public',
+  prompt_template: defaultTemplates[source] || 'generic',
+  scope: 'group',
+  graph_enabled: source === 'legifrance',
+  ai_summary_enabled: false,
+  contact_name: '', contact_email: '',
+})
+
+const templates = ref<any[]>([])
+const creating = ref(false)
+const error = ref('')
+
+async function createAndNext() {
+  creating.value = true
+  error.value = ''
   try {
-    const result = await uploadFile(`/api/ingest/${collection}`, file.value, { strategy: 'auto', sensitivity: 'public' })
-    job.value = result
-    // Poll progress
-    const interval = setInterval(async () => {
-      const j = await get(`/api/ingest/jobs/${result.job_id}`)
-      job.value = j
-      if (j.status === 'done' || j.status === 'done_with_errors') {
-        clearInterval(interval)
-        hasDocuments.value = true
-        uploading.value = false
-      }
-    }, 2000)
-  } catch (e) { uploading.value = false }
+    await post('/api/collections', form.value)
+    router.push(`/admin/create/step-3?collection=${form.value.name}&source=${source}`)
+  } catch (e: any) {
+    error.value = e.message
+  }
+  creating.value = false
 }
 
-async function addLegiSource() {
-  await post('/api/sources/legifrance/parse-url', { url: legiUrl.value, collection })
-}
-
-function next() { router.push(`/admin/create/step-3?collection=${collection}`) }
+onMounted(async () => {
+  try {
+    const data = await get('/api/collections/templates')
+    templates.value = data.templates || []
+  } catch (e) {}
+})
 </script>

@@ -4,130 +4,63 @@
       <ol class="fr-breadcrumb__list">
         <li><NuxtLink class="fr-breadcrumb__link" to="/admin">Administration</NuxtLink></li>
         <li><NuxtLink class="fr-breadcrumb__link" to="/admin/create">Creer</NuxtLink></li>
-        <li aria-current="page">Publication</li>
+        <li aria-current="page">Evaluation</li>
       </ol>
     </nav>
 
-    <h1 class="fr-h3">Publication — {{ collection }}</h1>
-    <p class="fr-text--lg fr-mb-4w">Etape 4 sur 4 — Choisissez comment publier</p>
+    <h1 class="fr-h3">Mesure d'evaluation — {{ collection }}</h1>
+    <p class="fr-text--lg fr-mb-4w">Etape 4 sur 5 — Optionnel mais recommande</p>
 
     <WizardStepper :current-step="4" />
 
-    <div class="fr-grid-row fr-grid-row--gutters">
-      <div class="fr-col-8">
-        <!-- Summary card -->
-        <div class="fr-card fr-mb-4w">
-          <div class="fr-card__body">
-            <div class="fr-card__content">
-              <h3 class="fr-card__title">Resume de la collection</h3>
-              <dl>
-                <dt>Nom</dt><dd>{{ config?.name }}</dd>
-                <dt>Description</dt><dd>{{ config?.description || '—' }}</dd>
-                <dt>Strategie</dt><dd>{{ config?.strategy }}</dd>
-                <dt>Prompt</dt><dd>{{ config?.prompt_template }}</dd>
-                <dt>Sensibilite</dt><dd>{{ config?.sensitivity }}</dd>
-                <dt>Graph</dt><dd>{{ config?.graph_enabled ? '✅' : '❌' }}</dd>
-              </dl>
-            </div>
-          </div>
-        </div>
+    <div class="fr-col-8">
+      <p class="fr-text--lg fr-mb-4w">Testez la qualite du RAG avant publication.</p>
 
-        <!-- Publication modes -->
-        <fieldset class="fr-fieldset fr-mb-4w">
-          <legend class="fr-fieldset__legend fr-h5">Modes de publication</legend>
-          <div class="fr-fieldset__element">
-            <div class="fr-checkbox-group">
-              <input type="checkbox" id="alias" v-model="form.alias_enabled" />
-              <label class="fr-label" for="alias">Alias de modele dans Open WebUI</label>
-            </div>
-          </div>
-          <div v-if="form.alias_enabled" class="fr-fieldset__element fr-ml-4w">
+      <!-- Quick test -->
+      <div class="fr-card fr-mb-4w">
+        <div class="fr-card__body">
+          <div class="fr-card__content">
+            <h3 class="fr-card__title">Test rapide</h3>
             <div class="fr-input-group">
-              <label class="fr-label">Nom du modele</label>
-              <input class="fr-input" v-model="form.alias_name" :placeholder="`MirAI ${collection}`" />
+              <input class="fr-input" v-model="question" placeholder="Posez une question de test..." />
             </div>
-          </div>
-          <div class="fr-fieldset__element">
-            <div class="fr-checkbox-group">
-              <input type="checkbox" id="tool" v-model="form.tool_enabled" />
-              <label class="fr-label" for="tool">Tool MyRAG (recherche + graph + articles)</label>
-            </div>
-          </div>
-          <div class="fr-fieldset__element">
-            <div class="fr-checkbox-group">
-              <input type="checkbox" id="embed" v-model="form.embed_enabled" />
-              <label class="fr-label" for="embed">#{{ collection }} dans le prompt</label>
-            </div>
-          </div>
-        </fieldset>
-
-        <!-- Visibility -->
-        <fieldset class="fr-fieldset fr-mb-4w">
-          <legend class="fr-fieldset__legend fr-h5">Visibilite</legend>
-          <div class="fr-fieldset__element">
-            <div class="fr-radio-group">
-              <input type="radio" id="v-all" value="all" v-model="form.visibility" />
-              <label class="fr-label" for="v-all">Tous les utilisateurs</label>
-            </div>
-          </div>
-          <div class="fr-fieldset__element">
-            <div class="fr-radio-group">
-              <input type="radio" id="v-group" value="group" v-model="form.visibility" />
-              <label class="fr-label" for="v-group">Membres du groupe Keycloak</label>
-            </div>
-          </div>
-        </fieldset>
-
-        <!-- Widget & browser extension -->
-        <fieldset class="fr-fieldset fr-mb-4w">
-          <legend class="fr-fieldset__legend fr-h5">Integration externe</legend>
-          <div class="fr-fieldset__element">
-            <div class="fr-checkbox-group">
-              <input type="checkbox" id="widget" v-model="form.widget_enabled" />
-              <label class="fr-label" for="widget">Widget overlay (embed.js)</label>
-            </div>
-          </div>
-          <div v-if="form.widget_enabled" class="fr-fieldset__element fr-ml-4w">
-            <p class="fr-text--sm fr-mb-1w">Snippet a integrer dans votre application :</p>
-            <div class="fr-p-2w" style="background:#f6f6f6;border-radius:4px;font-family:monospace;font-size:0.75rem;word-break:break-all;">
-              &lt;script src="{{ myragUrl }}/widget/embed.js" data-collection="{{ collection }}" data-position="bottom-right" data-auth="keycloak"&gt;&lt;/script&gt;
-            </div>
-            <button class="fr-btn fr-btn--sm fr-btn--tertiary fr-mt-1w" @click="copySnippet">
-              Copier le snippet
+            <button class="fr-btn fr-btn--sm fr-mt-1w" @click="test" :disabled="testing || !question.trim()">
+              {{ testing ? 'Test...' : 'Tester' }}
             </button>
-          </div>
-          <div class="fr-fieldset__element">
-            <div class="fr-checkbox-group">
-              <input type="checkbox" id="browser" v-model="form.browser_enabled" />
-              <label class="fr-label" for="browser">Extension navigateur MirAI</label>
+            <div v-if="response" class="fr-mt-2w fr-p-2w" style="background:#f6f6f6;border-radius:4px;white-space:pre-wrap;font-size:0.85rem;">
+              {{ response }}
             </div>
           </div>
-          <div v-if="form.browser_enabled" class="fr-fieldset__element fr-ml-4w">
-            <div class="fr-input-group">
-              <label class="fr-label">URL du service (pour l'extension)</label>
-              <input class="fr-input" :value="`${myragUrl}/widget/chat?collection=${collection}`" readonly />
-            </div>
-            <p class="fr-text--sm fr-mt-1w">Configurez cette URL dans l'extension navigateur MirAI (Settings > MyRAG).</p>
+        </div>
+      </div>
+
+      <!-- Eval dataset -->
+      <div class="fr-card fr-mb-4w">
+        <div class="fr-card__body">
+          <div class="fr-card__content">
+            <h3 class="fr-card__title">Jeu de test (optionnel)</h3>
+            <p class="fr-text--sm">Importez un fichier JSON de questions-reponses pour evaluer le RAG.</p>
+            <input type="file" class="fr-upload" accept=".json" @change="importDataset" />
+            <p class="fr-text--sm fr-mt-1w">{{ datasetCount }} questions chargees</p>
           </div>
-        </fieldset>
-
-        <!-- Actions -->
-        <div class="fr-btns-group fr-btns-group--inline">
-          <NuxtLink :to="`/admin/create/step-3?collection=${collection}`" class="fr-btn fr-btn--secondary">
-            ← Precedent
-          </NuxtLink>
-          <button class="fr-btn fr-btn--tertiary" @click="saveDraft">
-            Sauvegarder en brouillon
-          </button>
-          <button class="fr-btn" @click="publish" :disabled="publishing">
-            {{ publishing ? 'Publication...' : 'Publier la collection →' }}
-          </button>
         </div>
+      </div>
 
-        <div v-if="result" class="fr-alert fr-mt-2w" :class="resultClass">
-          <p>{{ result }}</p>
-          <NuxtLink v-if="published" :to="`/c/${collection}`" class="fr-link">Ouvrir la collection</NuxtLink>
-        </div>
+      <div class="fr-callout fr-mb-4w">
+        <p class="fr-callout__text">
+          Cette etape est optionnelle. Vous pourrez evaluer la collection
+          a tout moment depuis la page Evaluation.
+        </p>
+      </div>
+
+      <!-- Navigation -->
+      <div class="fr-btns-group fr-btns-group--inline">
+        <NuxtLink :to="`/admin/create/step-3?collection=${collection}`" class="fr-btn fr-btn--secondary">
+          ← Precedent
+        </NuxtLink>
+        <NuxtLink :to="`/admin/create/step-5?collection=${collection}`" class="fr-btn">
+          Suivant →
+        </NuxtLink>
       </div>
     </div>
   </div>
@@ -135,54 +68,30 @@
 
 <script setup lang="ts">
 const route = useRoute()
-const runtimeConfig = useRuntimeConfig()
 const collection = route.query.collection as string
-const { get, post, baseUrl: myragUrl } = useApi()
+const { post } = useApi()
 
-const config = ref<any>(null)
-const publishing = ref(false)
-const published = ref(false)
-const result = ref('')
-const resultClass = ref('fr-alert--info')
+const question = ref('')
+const response = ref('')
+const testing = ref(false)
+const datasetCount = ref(0)
 
-const form = ref({
-  alias_enabled: true,
-  alias_name: '',
-  tool_enabled: true,
-  embed_enabled: false,
-  visibility: 'group',
-  widget_enabled: false,
-  browser_enabled: false,
-})
-
-function copySnippet() {
-  const snippet = `<script src="${myragUrl}/widget/embed.js" data-collection="${collection}" data-position="bottom-right" data-auth="keycloak"><\/script>`
-  navigator.clipboard.writeText(snippet)
-}
-
-async function saveDraft() {
-  result.value = 'Collection sauvegardee en brouillon.'
-  resultClass.value = 'fr-alert--info'
-}
-
-async function publish() {
-  publishing.value = true
+async function test() {
+  testing.value = true
+  response.value = ''
   try {
-    await post(`/api/collections/${collection}/publish`, {
-      ...form.value,
-      alias_name: form.value.alias_name || `MirAI ${collection}`,
-    })
-    result.value = 'Collection publiee avec succes !'
-    resultClass.value = 'fr-alert--success'
-    published.value = true
-  } catch (e: any) {
-    result.value = `Erreur: ${e.message}`
-    resultClass.value = 'fr-alert--error'
-  }
-  publishing.value = false
+    const data = await post(`/api/playground/${collection}/chat`, { question: question.value })
+    response.value = data.response || 'Pas de reponse'
+  } catch (e: any) { response.value = `Erreur: ${e.message}` }
+  testing.value = false
 }
 
-onMounted(async () => {
-  try { config.value = await get(`/api/collections/${collection}`) } catch (e) {}
-})
+async function importDataset(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  const text = await file.text()
+  const data = JSON.parse(text)
+  await post(`/api/collections/${collection}/eval/dataset`, data)
+  datasetCount.value = data.length
+}
 </script>

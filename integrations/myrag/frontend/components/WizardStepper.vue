@@ -1,10 +1,10 @@
 <template>
   <nav class="fr-stepper fr-mb-4w" aria-label="Etapes de creation">
-    <div class="fr-stepper__steps" :data-fr-current-step="currentStep" :data-fr-steps="4">
+    <div class="fr-stepper__steps" :data-fr-current-step="currentStep" :data-fr-steps="5">
     </div>
     <div class="fr-grid-row fr-grid-row--gutters fr-mt-2w">
       <div v-for="(step, i) in steps" :key="i"
-           class="fr-col-3"
+           style="flex:1;max-width:20%;"
            style="text-align:center;">
         <div :class="['myrag-step', {
           'myrag-step--active': currentStep === i + 1,
@@ -24,7 +24,7 @@ defineProps<{
   currentStep: number
 }>()
 
-const steps = ['Identification', 'Donnees', 'Evaluation', 'Publication']
+const steps = ['Source', 'Identification', 'Donnees', 'Evaluation', 'Publication']
 </script>
 
 <style>
