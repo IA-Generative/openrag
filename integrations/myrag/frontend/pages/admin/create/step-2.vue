@@ -137,7 +137,7 @@
         </div>
       </fieldset>
 
-      <div class="fr-grid-row fr-grid-row--gutters fr-mt-2w">
+      <div class="fr-grid-row fr-grid-row--gutters fr-mt-2w" style="align-items:flex-start;">
         <div class="fr-col-6">
           <div class="fr-select-group">
             <label class="fr-label">Sensibilite</label>
