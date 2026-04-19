@@ -1,0 +1,24 @@
+/* MyRAG (beta) — custom styles on top of DSFR */
+
+.myrag-quality-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: #e5e5e5;
+  overflow: hidden;
+}
+
+.myrag-quality-bar__fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.myrag-quality-bar__fill--good { background: #18753c; }
+.myrag-quality-bar__fill--medium { background: #b34000; }
+.myrag-quality-bar__fill--bad { background: #ce0500; }
+
+.myrag-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
