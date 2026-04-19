@@ -4,7 +4,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'MyRAG (beta)',
+      title: 'Mes collections (beta)',
       htmlAttrs: { lang: 'fr', 'data-fr-scheme': 'light' },
     },
   },

@@ -8,14 +8,14 @@
             <div class="fr-header__brand fr-enlarge-link">
               <div class="fr-header__brand-top">
                 <div class="fr-header__logo">
-                  <p class="fr-logo">MyRAG<br><small>(beta)</small></p>
+                  <p class="fr-logo">Mes collections<br><small>(beta)</small></p>
                 </div>
               </div>
               <div class="fr-header__service">
                 <NuxtLink to="/" class="fr-header__service-title">
-                  MyRAG <span class="fr-badge fr-badge--sm fr-badge--info">beta</span>
+                  Mes collections <span class="fr-badge fr-badge--sm fr-badge--info">beta</span>
                 </NuxtLink>
-                <p class="fr-header__service-tagline">Recherche augmentee dans vos collections</p>
+                <p class="fr-header__service-tagline">Recherche augmentee dans vos collections documentaires</p>
               </div>
             </div>
             <div class="fr-header__tools">
@@ -102,7 +102,7 @@
       <div class="fr-container">
         <div class="fr-footer__body">
           <div class="fr-footer__brand fr-enlarge-link">
-            <p class="fr-logo">MyRAG (beta)</p>
+            <p class="fr-logo">Mes collections (beta)</p>
           </div>
           <div class="fr-footer__content">
             <p class="fr-footer__content-desc">
