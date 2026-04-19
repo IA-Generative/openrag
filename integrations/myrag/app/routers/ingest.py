@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, File, Form, Query, UploadFile, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from app.config import settings
 from app.services.chunker import chunk_document, Strategy, Sensitivity
@@ -169,6 +170,75 @@ async def ingest_from_url(collection: str, req: IngestFromUrlRequest):
         sensitivity=req.sensitivity,
         source_path=req.url,
     )
+
+
+@router.post("/{collection}/reindex")
+async def reindex_collection(collection: str, strategy: Strategy = "auto", sensitivity: Sensitivity = "public"):
+    """Re-index all source files of a collection with a new strategy.
+
+    Uses source files saved by R7 to re-chunk and re-index without re-upload.
+    """
+    from app.models.db import SourceFile
+    from app.database import async_session as db_session
+
+    # Get all source files for this collection
+    async with db_session() as session:
+        result = await session.execute(
+            select(SourceFile).where(SourceFile.collection_name == collection)
+        )
+        source_files = result.scalars().all()
+
+    if not source_files:
+        raise HTTPException(status_code=400, detail="Aucun fichier source enregistre pour cette collection. Re-uploadez vos documents.")
+
+    # Delete existing partition and recreate
+    client = OpenRAGClient()
+    try:
+        await client._post(f"/partition/{collection}", json=None)  # create if not exists
+    except Exception:
+        pass
+
+    # Re-ingest each source file
+    total_jobs = []
+    for sf in source_files:
+        path = Path(sf.storage_path)
+        if not path.exists():
+            logger.warning(f"Source file missing: {sf.storage_path}")
+            continue
+
+        content = path.read_bytes()
+        result = await _ingest_content(
+            collection=collection,
+            filename=sf.filename,
+            content=content,
+            strategy=strategy,
+            sensitivity=sensitivity,
+            source_path=sf.storage_path,
+        )
+        total_jobs.append(result)
+
+    return {
+        "status": "reindexing",
+        "collection": collection,
+        "strategy": strategy,
+        "files_reindexed": len(total_jobs),
+        "jobs": [j["job_id"] for j in total_jobs],
+    }
+
+
+@router.get("/{collection}/sources")
+async def list_source_files(collection: str):
+    """List all stored source files for a collection."""
+    from app.models.db import SourceFile
+    from app.database import async_session as db_session
+
+    async with db_session() as session:
+        result = await session.execute(
+            select(SourceFile).where(SourceFile.collection_name == collection)
+            .order_by(SourceFile.created_at.desc())
+        )
+        files = result.scalars().all()
+        return {"sources": [f.to_dict() for f in files]}
 
 
 @router.get("/jobs/{job_id}")
