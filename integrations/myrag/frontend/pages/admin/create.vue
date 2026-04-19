@@ -33,7 +33,7 @@
       </div>
 
       <div class="fr-select-group fr-mt-2w">
-        <label class="fr-label">Modele de prompt</label>
+        <label class="fr-label">Prompt systeme de la collection</label>
         <select class="fr-select" v-model="form.prompt_template">
           <option v-for="tpl in templates" :key="tpl.key" :value="tpl.key">
             {{ tpl.icon }} {{ tpl.name }}
@@ -76,6 +76,30 @@
         </div>
       </fieldset>
 
+      <fieldset class="fr-fieldset fr-mt-4w">
+        <legend class="fr-fieldset__legend">Publication</legend>
+        <div class="fr-fieldset__element">
+          <div class="fr-checkbox-group">
+            <input type="checkbox" id="publish_now" v-model="form.publish_now" />
+            <label class="fr-label" for="publish_now">Publier immediatement dans Open WebUI</label>
+          </div>
+        </div>
+        <div v-if="form.publish_now" class="fr-fieldset__element fr-ml-4w">
+          <div class="fr-radio-group">
+            <input type="radio" id="pub-alias" value="alias" v-model="form.publish_mode" />
+            <label class="fr-label" for="pub-alias">Alias de modele seul</label>
+          </div>
+          <div class="fr-radio-group">
+            <input type="radio" id="pub-both" value="both" v-model="form.publish_mode" />
+            <label class="fr-label" for="pub-both">Alias + Tool MyRAG</label>
+          </div>
+          <div class="fr-radio-group">
+            <input type="radio" id="pub-tool" value="tool" v-model="form.publish_mode" />
+            <label class="fr-label" for="pub-tool">Tool seul</label>
+          </div>
+        </div>
+      </fieldset>
+
       <button class="fr-btn fr-mt-4w" @click="create" :disabled="creating || !form.name.trim()">
         {{ creating ? 'Creation...' : 'Creer la collection' }}
       </button>
@@ -95,6 +119,7 @@ const form = ref({
   name: '', description: '', strategy: 'auto', sensitivity: 'public',
   prompt_template: 'generic', scope: 'group', graph_enabled: false,
   ai_summary_enabled: false,
+  publish_now: false, publish_mode: 'both',
 })
 const templates = ref<any[]>([])
 const creating = ref(false)

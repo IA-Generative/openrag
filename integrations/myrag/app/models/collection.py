@@ -256,6 +256,49 @@ def delete_custom_template(key: str) -> bool:
 load_custom_templates()
 
 
+# --- Publication config ---
+
+@dataclass
+class PublicationConfig:
+    state: str = "draft"  # draft | published | disabled | archived
+    published_at: str = ""
+    published_by: str = ""
+
+    # Mode A — alias modele
+    alias_enabled: bool = True
+    alias_name: str = ""
+    alias_description: str = ""
+    alias_tags: list = field(default_factory=list)
+
+    # Mode B — #collection
+    embed_enabled: bool = False
+    embed_prefix: str = ""
+
+    # Mode C — tool
+    tool_enabled: bool = False
+    tool_target_models: list = field(default_factory=list)
+    tool_methods: list = field(default_factory=lambda: [
+        "search_collection", "view_article", "explore_graph", "browse_collection"
+    ])
+
+    # Visibility
+    visibility: str = "all"  # all | group | users
+    visibility_group: str = ""
+    visibility_users: list = field(default_factory=list)
+
+    # History
+    history: list = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PublicationConfig":
+        if not data:
+            return cls()
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
 # --- Collection config ---
 
 @dataclass
@@ -267,15 +310,22 @@ class CollectionConfig:
     prompt_template: str = DEFAULT_TEMPLATE_KEY
     system_prompt: str = field(default_factory=lambda: DEFAULT_SYSTEM_PROMPT)
     graph_enabled: bool = False
-    ai_summary_enabled: bool = False  # generate AI summaries for long articles
-    ai_summary_threshold: int = 1000  # articles longer than this (chars) get summarized
+    ai_summary_enabled: bool = False
+    ai_summary_threshold: int = 1000
     legifrance_source_id: str = ""
     legifrance_refresh_mode: str = "manual"
-    scope: str = "group"  # public, group, private
+    scope: str = "group"
     created_at: str = ""
+    publication: dict = field(default_factory=lambda: PublicationConfig().to_dict())
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    def get_publication(self) -> PublicationConfig:
+        return PublicationConfig.from_dict(self.publication)
+
+    def set_publication(self, pub: PublicationConfig):
+        self.publication = pub.to_dict()
 
     @classmethod
     def from_dict(cls, data: dict) -> "CollectionConfig":

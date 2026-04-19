@@ -42,6 +42,9 @@
             <NuxtLink :to="`/c/${id}/config`" class="fr-btn fr-btn--tertiary fr-icon-settings-5-line fr-btn--icon-left">
               Configurer
             </NuxtLink>
+            <NuxtLink :to="`/c/${id}/publish`" class="fr-btn fr-btn--tertiary fr-icon-send-plane-line fr-btn--icon-left">
+              Publier
+            </NuxtLink>
           </div>
         </div>
 
