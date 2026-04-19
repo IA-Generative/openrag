@@ -122,14 +122,26 @@
             </div>
           </details>
         </div>
-        <div class="fr-fieldset__element" :style="!form.graph_enabled ? 'opacity:0.4;pointer-events:none;' : ''">
+        <div v-if="form.graph_enabled" class="fr-fieldset__element">
           <div class="fr-checkbox-group">
-            <input type="checkbox" id="ai_summary" v-model="form.ai_summary_enabled"
-                   :disabled="!form.graph_enabled" />
-            <label class="fr-label" for="ai_summary">
-              Resume IA pour les articles longs
-              <span v-if="!form.graph_enabled" class="fr-text--sm" style="color:#666;"> (necessite le graph)</span>
-            </label>
+            <input type="checkbox" id="ai_summary" v-model="form.ai_summary_enabled" />
+            <label class="fr-label" for="ai_summary">Resume IA des articles longs dans le graph</label>
+          </div>
+          <details class="fr-mt-1w fr-ml-4w">
+            <summary class="fr-text--sm" style="cursor:pointer;color:#000091;">En savoir plus</summary>
+            <div class="fr-callout fr-mt-1w">
+              <p class="fr-callout__text fr-text--sm">
+                Quand un article est tres long (ex: articles reglementaires de plusieurs pages),
+                le graph affiche un <strong>resume genere par l'IA</strong> a la place du texte brut tronque.
+                Cela ameliore la lisibilite du graph et les performances de navigation.
+              </p>
+              <p class="fr-callout__text fr-text--sm fr-mt-1w">
+                <strong>L'article original n'est jamais modifie.</strong>
+                Le resume est uniquement utilise pour l'affichage dans le viewer graph.
+                La recherche RAG et les reponses du LLM utilisent toujours le texte integral de l'article.
+              </p>
+            </div>
+          </details>
           </div>
         </div>
       </fieldset>
