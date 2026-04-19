@@ -81,7 +81,7 @@
       </div>
 
       <div class="fr-select-group fr-mt-2w">
-        <label class="fr-label">Type de collection (decoupage + prompt adaptes)</label>
+        <label class="fr-label">Type de collection (decoupage + prompt systeme)</label>
         <select class="fr-select" v-model="selectedProfile" @change="applyProfile">
           <option v-for="p in profiles" :key="p.key" :value="p.key">
             {{ p.icon }} {{ p.label }}
@@ -90,31 +90,7 @@
         <p class="fr-hint-text">{{ currentProfileDesc }}</p>
       </div>
 
-      <div class="fr-grid-row fr-grid-row--gutters fr-mt-2w">
-        <div class="fr-col-6">
-          <div class="fr-select-group">
-            <label class="fr-label">Sensibilite</label>
-            <select class="fr-select" v-model="form.sensitivity">
-              <option value="public">Public</option>
-              <option value="internal">Interne</option>
-              <option value="restricted">Restreint</option>
-              <option value="confidential">Confidentiel</option>
-            </select>
-          </div>
-        </div>
-        <div class="fr-col-6">
-          <div class="fr-select-group">
-            <label class="fr-label">Portee</label>
-            <select class="fr-select" v-model="form.scope">
-              <option value="public">General (tous)</option>
-              <option value="group">Groupe</option>
-              <option value="private">Prive</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <fieldset class="fr-fieldset fr-mt-3w">
+      <fieldset class="fr-fieldset fr-mt-2w">
         <legend class="fr-fieldset__legend">Options</legend>
         <div class="fr-fieldset__element">
           <div class="fr-checkbox-group">
@@ -152,19 +128,84 @@
             <summary class="fr-text--sm" style="cursor:pointer;color:#000091;">En savoir plus</summary>
             <div class="fr-callout fr-mt-1w">
               <p class="fr-callout__text fr-text--sm">
-                Quand un article est tres long (ex: articles reglementaires de plusieurs pages),
-                le graph affiche un <strong>resume genere par l'IA</strong> a la place du texte brut tronque.
-                Cela ameliore la lisibilite du graph et les performances de navigation.
-              </p>
-              <p class="fr-callout__text fr-text--sm fr-mt-1w">
-                <strong>L'article original n'est jamais modifie.</strong>
-                Le resume est uniquement utilise pour l'affichage dans le viewer graph.
-                La recherche RAG et les reponses du LLM utilisent toujours le texte integral de l'article.
+                Quand un article est tres long, le graph affiche un <strong>resume genere par l'IA</strong>
+                pour ameliorer la lisibilite. <strong>L'article original n'est jamais modifie</strong> —
+                le RAG utilise toujours le texte integral.
               </p>
             </div>
           </details>
         </div>
       </fieldset>
+
+      <div class="fr-grid-row fr-grid-row--gutters fr-mt-2w">
+        <div class="fr-col-6">
+          <div class="fr-select-group">
+            <label class="fr-label">Sensibilite</label>
+            <select class="fr-select" v-model="form.sensitivity">
+              <option value="public">Public</option>
+              <option value="internal">Interne</option>
+              <option value="restricted">Restreint</option>
+              <option value="confidential">Confidentiel</option>
+            </select>
+          </div>
+        </div>
+        <div class="fr-col-6">
+          <div class="fr-select-group">
+            <label class="fr-label">
+              Portee
+              <span class="fr-hint-text">Qui pourra acceder a cette collection</span>
+            </label>
+            <select class="fr-select" v-model="form.scope">
+              <option value="public">Tout le ministere</option>
+              <option value="group">Un ou plusieurs groupes</option>
+              <option value="private">Prive (pour evaluation)</option>
+            </select>
+          </div>
+
+          <!-- Group selector when scope = group -->
+          <div v-if="form.scope === 'group'" class="fr-mt-2w">
+            <label class="fr-label">
+              Groupes autorises
+              <span class="fr-hint-text">Recherchez parmi vos groupes Keycloak</span>
+            </label>
+            <div style="display:flex;gap:0.5rem;">
+              <input class="fr-input" v-model="groupSearch" placeholder="Rechercher un groupe..."
+                     @input="searchGroups" style="flex:1;" />
+            </div>
+
+            <!-- Search results -->
+            <div v-if="groupResults.length > 0" class="fr-mt-1w"
+                 style="border:1px solid var(--border-default-grey);border-radius:4px;max-height:150px;overflow-y:auto;">
+              <button v-for="g in groupResults" :key="g.id"
+                      class="fr-text--sm"
+                      style="display:block;width:100%;text-align:left;padding:0.5rem 0.75rem;border:none;background:none;cursor:pointer;"
+                      @mouseover="$event.target.style.background='#f6f6f6'"
+                      @mouseleave="$event.target.style.background='none'"
+                      @click="addGroup(g)">
+                {{ g.path || g.name }}
+              </button>
+            </div>
+
+            <!-- Selected groups -->
+            <div v-if="form.scope_groups.length > 0" class="fr-mt-1w" style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+              <span v-for="(g, i) in form.scope_groups" :key="i"
+                    class="fr-tag fr-tag--sm fr-tag--dismiss"
+                    @click="form.scope_groups.splice(i, 1)">
+                {{ g }}
+              </span>
+            </div>
+            <p v-else class="fr-text--sm fr-mt-1w" style="color:#666;">Aucun groupe selectionne</p>
+          </div>
+
+          <!-- Private info -->
+          <div v-if="form.scope === 'private'" class="fr-mt-1w">
+            <p class="fr-text--sm" style="color:#666;">
+              Seul vous pourrez voir et utiliser cette collection. Utile pour tester
+              avant de publier a un groupe ou au ministere.
+            </p>
+          </div>
+        </div>
+      </div>
 
       <div class="fr-input-group fr-mt-3w">
         <label class="fr-label">Responsable / contact</label>
@@ -205,6 +246,32 @@ const descPlaceholders: Record<string, string> = {
   legifrance: 'Code de l\'entree et du sejour des etrangers',
   file: 'Description du document', directory: 'Description du corpus',
   drive: 'Dossier Drive a synchroniser', nextcloud: 'Dossier Nextcloud', resana: 'Espace Resana',
+}
+
+// Group search
+const groupSearch = ref('')
+const groupResults = ref<any[]>([])
+const userGroups = ref<any[]>([])
+
+async function searchGroups() {
+  if (!groupSearch.value.trim()) {
+    groupResults.value = []
+    return
+  }
+  const q = groupSearch.value.toLowerCase()
+  groupResults.value = userGroups.value.filter(g =>
+    (g.name || '').toLowerCase().includes(q) ||
+    (g.path || '').toLowerCase().includes(q)
+  ).filter(g => !form.value.scope_groups.includes(g.path || g.name))
+}
+
+function addGroup(g: any) {
+  const name = g.path || g.name
+  if (!form.value.scope_groups.includes(name)) {
+    form.value.scope_groups.push(name)
+  }
+  groupSearch.value = ''
+  groupResults.value = []
 }
 
 function onGraphToggle() {
@@ -251,6 +318,7 @@ const form = ref({
   graph_enabled: initProfile?.graph || false,
   ai_summary_enabled: false,
   contact_name: '', contact_email: '',
+  scope_groups: [] as string[],
 })
 
 const templates = ref<any[]>([])
@@ -327,6 +395,11 @@ onMounted(async () => {
     templates.value = tplData.templates || []
     allCollections.value = colData.collections || []
   } catch (e) {}
+
+  // Load user groups from Keycloak (via auth profile)
+  if (user.value?.profile?.groups) {
+    userGroups.value = user.value.profile.groups.map((g: string) => ({ name: g.split('/').pop(), path: g }))
+  }
 
   // Pre-fill contact from session
   if (user.value?.profile) {
