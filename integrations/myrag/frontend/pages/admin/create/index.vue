@@ -8,7 +8,15 @@
     </nav>
 
     <h1 class="fr-h3">Creer une collection</h1>
-    <p class="fr-text--lg fr-mb-4w">Etape 1 sur 5 — D'ou viennent vos documents ?</p>
+    <p class="fr-text--lg fr-mb-2w">Etape 1 sur 5 — D'ou viennent vos documents ?</p>
+
+    <div class="fr-callout fr-mb-4w">
+      <p class="fr-callout__text">
+        Avant de creer une collection, consultez le
+        <NuxtLink to="/admin/catalog" class="fr-link">catalogue des collections existantes</NuxtLink>
+        pour eviter les doublons et contribuer aux efforts en cours.
+      </p>
+    </div>
 
     <WizardStepper :current-step="1" />
 

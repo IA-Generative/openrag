@@ -62,7 +62,7 @@
             <ul class="fr-nav__list">
               <li class="fr-nav__item">
                 <NuxtLink to="/" class="fr-nav__link" :aria-current="route.path === '/' ? 'page' : undefined">
-                  Collections
+                  Mes collections
                 </NuxtLink>
               </li>
               <li class="fr-nav__item">

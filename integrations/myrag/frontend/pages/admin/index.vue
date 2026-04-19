@@ -7,8 +7,19 @@
         <div class="fr-card fr-enlarge-link">
           <div class="fr-card__body">
             <div class="fr-card__content">
+              <h3 class="fr-card__title"><NuxtLink to="/admin/catalog">Catalogue des collections</NuxtLink></h3>
+              <p class="fr-card__desc">Voir les collections existantes avant d'en creer une nouvelle</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fr-col-4">
+        <div class="fr-card fr-enlarge-link">
+          <div class="fr-card__body">
+            <div class="fr-card__content">
               <h3 class="fr-card__title"><NuxtLink to="/admin/create">Creer une collection</NuxtLink></h3>
-              <p class="fr-card__desc">Nouvelle collection avec partition OpenRAG et groupes Keycloak</p>
+              <p class="fr-card__desc">Nouveau wizard en 5 etapes : source, identification, donnees, evaluation, publication</p>
             </div>
           </div>
         </div>

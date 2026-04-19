@@ -13,10 +13,44 @@
 
     <WizardStepper :current-step="2" />
 
+    <!-- Duplicate warning -->
+    <div v-if="duplicateWarning" class="fr-alert fr-alert--warning fr-mb-4w">
+      <h3 class="fr-alert__title">Collection similaire detectee</h3>
+      <p>{{ duplicateWarning.message }}</p>
+      <div v-if="duplicateWarning.existing" class="fr-mt-2w">
+        <p><strong>Collection existante :</strong> {{ duplicateWarning.existing.name }}
+          <span v-if="duplicateWarning.existing.description"> — {{ duplicateWarning.existing.description }}</span>
+        </p>
+        <p v-if="duplicateWarning.existing.contact_name">
+          <strong>Responsable :</strong> {{ duplicateWarning.existing.contact_name }}
+          <a v-if="duplicateWarning.existing.contact_email"
+             :href="`mailto:${duplicateWarning.existing.contact_email}?subject=Demande d'acces a la collection ${duplicateWarning.existing.name}&body=Bonjour,%0A%0AJe souhaitais creer une collection similaire (${form.name}).%0APourriez-vous m'accorder l'acces a la votre pour federer nos efforts ?%0A%0AMerci.`"
+             class="fr-link">
+            📧 {{ duplicateWarning.existing.contact_email }}
+          </a>
+        </p>
+      </div>
+      <div class="fr-callout fr-callout--brown-caramel fr-mt-2w">
+        <p class="fr-callout__text">
+          <strong>Pourquoi eviter les doublons ?</strong> Dupliquer une collection degrade la qualite des reponses
+          (sources contradictoires), double le cout d'indexation et de maintenance, et disperse les efforts
+          d'amelioration (feedback, evaluation, prompt). Preferez contribuer a la collection existante.
+        </p>
+      </div>
+      <div class="fr-btns-group fr-btns-group--inline fr-mt-2w">
+        <NuxtLink :to="`/c/${duplicateWarning.existing?.name}`" class="fr-btn fr-btn--secondary">
+          Voir la collection existante
+        </NuxtLink>
+        <button class="fr-btn fr-btn--tertiary" @click="duplicateWarning = null">
+          Je veux quand meme creer la mienne
+        </button>
+      </div>
+    </div>
+
     <div class="fr-col-8">
       <div class="fr-input-group">
         <label class="fr-label" for="name">Nom de la collection *</label>
-        <input id="name" class="fr-input" v-model="form.name" placeholder="ceseda-v4" />
+        <input id="name" class="fr-input" v-model="form.name" placeholder="ceseda-v4" @blur="checkDuplicates" />
       </div>
 
       <div class="fr-input-group fr-mt-2w">
@@ -146,8 +180,35 @@ const form = ref({
 })
 
 const templates = ref<any[]>([])
+const allCollections = ref<any[]>([])
 const creating = ref(false)
 const error = ref('')
+const duplicateWarning = ref<any>(null)
+
+async function checkDuplicates() {
+  if (!form.value.name.trim()) return
+  const name = form.value.name.toLowerCase()
+
+  // Check for similar names
+  const similar = allCollections.value.find(c => {
+    const n = c.name.toLowerCase()
+    return n === name
+      || n.includes(name)
+      || name.includes(n)
+      || (source === 'legifrance' && c.source?.type === 'legifrance')
+  })
+
+  if (similar) {
+    duplicateWarning.value = {
+      message: similar.name.toLowerCase() === name
+        ? `Une collection "${similar.name}" existe deja.`
+        : `Une collection similaire "${similar.name}" existe deja.`,
+      existing: similar,
+    }
+  } else {
+    duplicateWarning.value = null
+  }
+}
 
 async function createAndNext() {
   creating.value = true
@@ -163,8 +224,12 @@ async function createAndNext() {
 
 onMounted(async () => {
   try {
-    const data = await get('/api/collections/templates')
-    templates.value = data.templates || []
+    const [tplData, colData] = await Promise.all([
+      get('/api/collections/templates'),
+      get('/api/collections'),
+    ])
+    templates.value = tplData.templates || []
+    allCollections.value = colData.collections || []
   } catch (e) {}
 })
 </script>
