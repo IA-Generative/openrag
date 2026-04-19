@@ -106,7 +106,7 @@
           </div>
           <div class="fr-footer__content">
             <p class="fr-footer__content-desc">
-              Front augmente DSFR pour OpenRAG — Recherche et analyse documentaire assistee par IA.
+              Recherche et analyse documentaire assistee par IA.
             </p>
           </div>
         </div>
