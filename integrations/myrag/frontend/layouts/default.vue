@@ -81,8 +81,19 @@
       <p>OpenRAG n'est pas accessible ({{ config.public.myragApiUrl }}). Verifiez que le service est demarre.</p>
     </div>
 
-    <!-- Main content -->
-    <main id="main-content" class="fr-container fr-mt-4w fr-mb-8w">
+    <!-- Auth error banner -->
+    <div v-if="authError" class="fr-alert fr-alert--warning fr-alert--sm" role="alert">
+      <p>Authentification : {{ authError }}</p>
+    </div>
+
+    <!-- Auth loading gate -->
+    <div v-if="authLoading && config.public.authEnabled" class="fr-container fr-mt-8w" style="text-align:center;">
+      <p>Connexion a Keycloak en cours...</p>
+      <p class="fr-text--sm fr-mt-2w">Si cette page persiste, verifiez que Keycloak est accessible sur {{ config.public.keycloakUrl }}</p>
+    </div>
+
+    <!-- Main content (only when auth is ready) -->
+    <main v-else id="main-content" class="fr-container fr-mt-4w fr-mb-8w">
       <slot />
     </main>
 
@@ -107,7 +118,7 @@
 <script setup lang="ts">
 const config = useRuntimeConfig()
 const route = useRoute()
-const { user, loading: authLoading, init: initAuth, logout, getUserName } = useAuth()
+const { user, loading: authLoading, authError, init: initAuth, logout, getUserName } = useAuth()
 
 const myragStatus = ref({ status: 'checking', class: 'myrag-status__dot--checking', title: 'Verification...' })
 const openragStatus = ref({ status: 'checking', class: 'myrag-status__dot--checking', title: 'Verification...' })
