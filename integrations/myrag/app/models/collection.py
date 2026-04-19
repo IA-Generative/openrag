@@ -312,8 +312,11 @@ class CollectionConfig:
     graph_enabled: bool = False
     ai_summary_enabled: bool = False
     ai_summary_threshold: int = 1000
+    contact_name: str = ""
+    contact_email: str = ""
     legifrance_source_id: str = ""
     legifrance_refresh_mode: str = "manual"
+    wizard_step: int = 0  # 0=not started, 1-4=step in progress
     scope: str = "group"
     created_at: str = ""
     publication: dict = field(default_factory=lambda: PublicationConfig().to_dict())

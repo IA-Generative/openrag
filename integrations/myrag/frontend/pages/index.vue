@@ -31,6 +31,16 @@
                   {{ col.sensitivity }}
                 </span>
                 <span v-if="col.graph_enabled" class="fr-badge fr-badge--sm fr-badge--new">graph</span>
+                <span v-if="col.publication?.state === 'published'" class="fr-badge fr-badge--sm fr-badge--success">publie</span>
+                <span v-else class="fr-badge fr-badge--sm">brouillon</span>
+              </p>
+            </div>
+            <div v-if="col.contact_name" class="fr-card__end">
+              <p class="fr-card__detail fr-text--sm">
+                📧 {{ col.contact_name }}
+                <a v-if="col.contact_email" :href="`mailto:${col.contact_email}`" class="fr-link fr-text--sm">
+                  {{ col.contact_email }}
+                </a>
               </p>
             </div>
           </div>
