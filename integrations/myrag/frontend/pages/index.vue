@@ -3,8 +3,9 @@
     <div class="fr-mb-4w">
       <h1>Mes collections</h1>
       <p class="fr-text--lead">
-        MyRAG vous permet de creer des collections documentaires intelligentes
-        avec decoupage par article, graph de references et recherche augmentee.
+        En tant que gestionnaire, administrez et maintenez en qualite vos collections
+        de donnees documentaires. Suivez l'usage et mettez-les a disposition de tout
+        le ministere, de votre communaute ou de votre service.
       </p>
     </div>
 
