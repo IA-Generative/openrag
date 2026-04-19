@@ -115,6 +115,16 @@ const sources = [
     prompt_template: 'multi_thematique',
     soon: true,
   },
+  {
+    key: 'website',
+    icon: '🌐',
+    name: 'Indexation de site',
+    description: 'Crawler un site web ou un intranet pour indexer ses pages. Suivi des modifications.',
+    refresh: true,
+    strategy: 'section',
+    prompt_template: 'multi_thematique',
+    soon: true,
+  },
 ]
 
 function next() {

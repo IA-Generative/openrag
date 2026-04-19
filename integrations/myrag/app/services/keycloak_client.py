@@ -38,16 +38,38 @@ class KeycloakClient:
         if self._token and time.time() < self._token_expires:
             return self._token
 
-        data = {
-            "grant_type": "client_credentials",
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-        }
-        url = f"{self.base_url}/realms/{self.realm}/protocol/openid-connect/token"
-        result = await self._post_form(url, data)
-        self._token = result["access_token"]
-        self._token_expires = time.time() + result.get("expires_in", 300) - 30
-        return self._token
+        # Try client_credentials first (service account)
+        if self.client_secret:
+            data = {
+                "grant_type": "client_credentials",
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+            }
+            url = f"{self.base_url}/realms/{self.realm}/protocol/openid-connect/token"
+            try:
+                result = await self._post_form(url, data)
+                self._token = result["access_token"]
+                self._token_expires = time.time() + result.get("expires_in", 300) - 30
+                return self._token
+            except Exception:
+                pass
+
+        # Fallback: admin password on master realm
+        admin_password = settings.keycloak_admin_password
+        if admin_password:
+            data = {
+                "grant_type": "password",
+                "client_id": "admin-cli",
+                "username": settings.keycloak_admin_user,
+                "password": admin_password,
+            }
+            url = f"{self.base_url}/realms/master/protocol/openid-connect/token"
+            result = await self._post_form(url, data)
+            self._token = result["access_token"]
+            self._token_expires = time.time() + result.get("expires_in", 300) - 30
+            return self._token
+
+        raise RuntimeError("No Keycloak credentials configured (set KEYCLOAK_CLIENT_SECRET or KEYCLOAK_ADMIN_PASSWORD)")
 
     async def _admin_headers(self) -> dict:
         token = await self._get_admin_token()
@@ -118,6 +140,10 @@ class KeycloakClient:
             if g.get("name") == name:
                 return g["id"]
         return None
+
+    async def _list_children(self, parent_id: str) -> list[dict]:
+        """List all child groups of a parent group."""
+        return await self._admin_get(f"/groups/{parent_id}/children")
 
     async def create_group(self, name: str, parent_id: str | None = None):
         """Create a group in Keycloak."""

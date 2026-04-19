@@ -114,8 +114,11 @@
               <span v-if="col.graph_enabled" class="fr-badge fr-badge--sm fr-badge--new">graph</span>
             </div>
 
-            <p class="fr-text--sm fr-mb-2w" style="color:var(--text-mention-grey);">
+            <p class="fr-text--sm fr-mb-1w" style="color:var(--text-mention-grey);">
               {{ col.description || 'Pas de description' }}
+            </p>
+            <p v-if="col.file_count" class="fr-text--xs fr-mb-2w" style="color:var(--text-mention-grey);">
+              📊 {{ col.file_count }} document{{ col.file_count > 1 ? 's' : '' }} indexe{{ col.file_count > 1 ? 's' : '' }}
             </p>
 
             <p v-if="col.contact_name" class="fr-text--xs fr-mb-2w" style="color:var(--text-mention-grey);">
