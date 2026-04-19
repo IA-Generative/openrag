@@ -48,15 +48,36 @@
     </div>
 
     <div class="fr-col-8">
-      <div class="fr-input-group">
-        <label class="fr-label" for="name">Nom de la collection *</label>
-        <input id="name" class="fr-input" v-model="form.name" placeholder="ceseda-v4" @blur="checkDuplicates" />
+      <div class="fr-input-group" :class="nameStatus === 'taken' ? 'fr-input-group--error' : nameStatus === 'available' ? 'fr-input-group--valid' : ''">
+        <label class="fr-label" for="name">
+          Nom de la collection *
+          <span class="fr-hint-text">Identifiant unique, en minuscules, sans espaces (ex: droit-etrangers, faq-rh, doc-technique-v2)</span>
+        </label>
+        <div style="display:flex;gap:0.5rem;align-items:flex-start;">
+          <input id="name" class="fr-input" v-model="form.name" placeholder="un-nom-clair-et-unique"
+                 @blur="checkDuplicates" @input="nameStatus = ''" style="flex:1;" />
+          <button class="fr-btn fr-btn--sm fr-btn--secondary" @click="checkNameAvailability" :disabled="!form.name.trim()">
+            Verifier
+          </button>
+        </div>
+        <p v-if="nameStatus === 'available'" class="fr-valid-text">✓ Ce nom est disponible</p>
+        <p v-if="nameStatus === 'taken'" class="fr-error-text">Ce nom est deja utilise</p>
+        <div v-if="nameSuggestion" class="fr-mt-1w" style="display:flex;align-items:center;gap:0.5rem;">
+          <span class="fr-text--sm" style="color:#666;">Suggestion :</span>
+          <code class="fr-text--sm">{{ nameSuggestion }}</code>
+          <button class="fr-btn fr-btn--sm fr-btn--tertiary" @click="form.name = nameSuggestion; nameSuggestion = ''; checkNameAvailability()">
+            Utiliser
+          </button>
+        </div>
       </div>
 
       <div class="fr-input-group fr-mt-2w">
-        <label class="fr-label" for="desc">Description</label>
+        <label class="fr-label" for="desc">
+          Description
+          <span class="fr-hint-text">Decrivez le contenu et l'objectif de cette collection. Ce texte apparaitra dans le catalogue et aidera les autres utilisateurs a trouver votre collection.</span>
+        </label>
         <textarea id="desc" class="fr-input" v-model="form.description" rows="2"
-               :placeholder="descPlaceholders[source] || 'Description'"></textarea>
+               :placeholder="descPlaceholders[source] || 'Ex: Documentation juridique sur le droit des etrangers, mise a jour quotidiennement depuis Legifrance.'"></textarea>
       </div>
 
       <div class="fr-select-group fr-mt-2w">
@@ -237,6 +258,28 @@ const allCollections = ref<any[]>([])
 const creating = ref(false)
 const error = ref('')
 const duplicateWarning = ref<any>(null)
+const nameStatus = ref('')  // '' | 'available' | 'taken'
+const nameSuggestion = ref('')
+
+function checkNameAvailability() {
+  if (!form.value.name.trim()) return
+  const name = form.value.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+  form.value.name = name  // normalize
+
+  const exists = allCollections.value.some(c => c.name.toLowerCase() === name)
+  if (exists) {
+    nameStatus.value = 'taken'
+    // Generate suggestion by appending version number
+    let suffix = 2
+    while (allCollections.value.some(c => c.name.toLowerCase() === `${name}-v${suffix}`)) {
+      suffix++
+    }
+    nameSuggestion.value = `${name}-v${suffix}`
+  } else {
+    nameStatus.value = 'available'
+    nameSuggestion.value = ''
+  }
+}
 
 async function checkDuplicates() {
   if (!form.value.name.trim()) return
