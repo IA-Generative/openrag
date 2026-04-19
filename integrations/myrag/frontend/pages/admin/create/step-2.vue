@@ -170,6 +170,7 @@
 const route = useRoute()
 const router = useRouter()
 const { get, post } = useApi()
+const { getUserName, user } = useAuth()
 
 const source = (route.query.source as string) || 'file'
 
@@ -283,5 +284,16 @@ onMounted(async () => {
     templates.value = tplData.templates || []
     allCollections.value = colData.collections || []
   } catch (e) {}
+
+  // Pre-fill contact from session
+  if (user.value?.profile) {
+    const p = user.value.profile
+    if (!form.value.contact_name) {
+      form.value.contact_name = p.name || p.preferred_username || ''
+    }
+    if (!form.value.contact_email) {
+      form.value.contact_email = p.email || ''
+    }
+  }
 })
 </script>
