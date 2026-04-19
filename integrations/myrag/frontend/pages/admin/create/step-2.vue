@@ -145,10 +145,11 @@
               <span class="fr-hint-text">Niveau de classification des documents de la collection</span>
             </label>
             <select class="fr-select" v-model="form.sensitivity">
-              <option value="public">Public — textes publies (JO, Legifrance)</option>
-              <option value="internal">Interne — usage interne organisation</option>
-              <option value="restricted">Restreint — diffusion limitee</option>
-              <option value="confidential">Confidentiel — acces nominal</option>
+              <option value="public">Donnees ouvertes</option>
+              <option value="internal">Interne au ministeriel</option>
+              <option value="personal">Donnees personnelles</option>
+              <option value="confidential">Confidentiel</option>
+              <option value="restricted">Diffusion restreinte</option>
             </select>
           </div>
         </div>
