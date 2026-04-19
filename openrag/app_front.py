@@ -1,5 +1,6 @@
 import json
 import os
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -26,7 +27,7 @@ CHAINLIT_AUTH_SECRET = os.environ.get("CHAINLIT_AUTH_SECRET")
 port = os.environ.get("APP_iPORT", "8080")
 INTERNAL_BASE_URL = f"http://localhost:{port}"  # Default fallback URL
 
-DEFAULT_LANGUAGE = os.environ.get("CHAINLIT_DEFAULT_LANGUAGE")
+DEFAULT_LANGUAGE = os.environ.get("DEFAULT_LANGUAGE")
 
 
 def get_user_language() -> str:
@@ -40,14 +41,33 @@ def get_user_language() -> str:
             # "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7" → "fr-FR"
             return accept_language.split(",")[0].split(";")[0].strip()
     except Exception:
-        return "en-US"
+        pass
+    return "en-US"
 
 
-def t(key: str):
-    """Get a translated app string for the current user's language."""
-    lang = get_user_language()
-    app_strings = cl_config.load_translation(lang).get("app", {})
-    return app_strings[key]
+def _language_candidates(lang: str) -> list[str]:
+    """Return locales to try in order: full code, base language, then en-US fallback."""
+    candidates = [lang]
+    base = lang.split("-")[0]
+    if base and base != lang:
+        candidates.append(base)
+    candidates.append("en-US")
+    return list(dict.fromkeys(candidates))
+
+
+@lru_cache(maxsize=32)
+def _load_app_strings(lang: str) -> dict:
+    # Cached to avoid re-reading translation JSON from disk on every t() call.
+    return cl_config.load_translation(lang).get("app", {})
+
+
+def t(key: str) -> str:
+    """Get a translated app string for the current user's language, falling back if missing."""
+    for lang in _language_candidates(get_user_language()):
+        app_strings = _load_app_strings(lang)
+        if key in app_strings:
+            return app_strings[key]
+    return key
 
 
 def get_headers(api_key):
@@ -172,7 +192,7 @@ async def chat_profile(current_user: cl.User):
         chat_profiles = []
         for i, m in enumerate(models, start=1):
             partition = m.id.split(PARTITION_PREFIX)[1]
-            description_key = "profile_description_all" if "all" in m.id else "profile_description_partition"
+            description_key = "profile_description_all" if partition == "all" else "profile_description_partition"
             description_template = t(description_key)
             chat_profiles.append(
                 cl.ChatProfile(
