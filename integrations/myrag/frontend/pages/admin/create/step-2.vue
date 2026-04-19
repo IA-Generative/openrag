@@ -60,23 +60,13 @@
       </div>
 
       <div class="fr-select-group fr-mt-2w">
-        <label class="fr-label">Prompt systeme de la collection</label>
-        <select class="fr-select" v-model="form.prompt_template">
-          <option v-for="tpl in templates" :key="tpl.key" :value="tpl.key">
-            {{ tpl.icon }} {{ tpl.name }}
+        <label class="fr-label">Type de collection (decoupage + prompt adaptes)</label>
+        <select class="fr-select" v-model="selectedProfile" @change="applyProfile">
+          <option v-for="p in profiles" :key="p.key" :value="p.key">
+            {{ p.icon }} {{ p.label }}
           </option>
         </select>
-      </div>
-
-      <div class="fr-select-group fr-mt-2w">
-        <label class="fr-label">Strategie de decoupage</label>
-        <select class="fr-select" v-model="form.strategy">
-          <option value="auto">Automatique (detection du type)</option>
-          <option value="article">Par article (code juridique)</option>
-          <option value="section">Par section (rapport)</option>
-          <option value="qr">Par Q&R (FAQ)</option>
-          <option value="length">Par longueur fixe</option>
-        </select>
+        <p class="fr-hint-text">{{ currentProfileDesc }}</p>
       </div>
 
       <div class="fr-grid-row fr-grid-row--gutters fr-mt-2w">
@@ -159,22 +149,42 @@ const descPlaceholders: Record<string, string> = {
   drive: 'Dossier Drive a synchroniser', nextcloud: 'Dossier Nextcloud', resana: 'Espace Resana',
 }
 
-const defaultStrategies: Record<string, string> = {
-  legifrance: 'article', file: 'auto', directory: 'auto',
-  drive: 'auto', nextcloud: 'auto', resana: 'auto',
+// Profils couples : strategie + prompt + options
+const profiles = [
+  { key: 'juridique', icon: '⚖️', label: 'Code juridique (articles + citations)', strategy: 'article', prompt: 'juridique', graph: true, desc: 'Decoupage par article avec hierarchie Livre/Titre/Chapitre. Le LLM cite les numeros d\'articles.' },
+  { key: 'faq', icon: '❓', label: 'FAQ / Questions-reponses', strategy: 'qr', prompt: 'faq', graph: false, desc: 'Decoupage par question-reponse. Le LLM donne des reponses directes avec la source.' },
+  { key: 'rapport', icon: '📊', label: 'Rapport / Document structure', strategy: 'section', prompt: 'technique', graph: false, desc: 'Decoupage par section (titres markdown). Le LLM cite les sections et pages.' },
+  { key: 'corpus', icon: '📚', label: 'Corpus multi-documents', strategy: 'auto', prompt: 'multi_thematique', graph: false, desc: 'Detection automatique du type. Le LLM croise les sources de plusieurs documents.' },
+  { key: 'multimedia', icon: '🎬', label: 'Multimedia (images, audio, video)', strategy: 'auto', prompt: 'multimedia', graph: false, desc: 'Transcriptions audio, descriptions d\'images. Le LLM cite les timecodes et fichiers.' },
+  { key: 'generique', icon: '📄', label: 'Generique (detection automatique)', strategy: 'auto', prompt: 'generic', graph: false, desc: 'Decoupage et prompt automatiques. Adapte a tout type de document.' },
+]
+
+const defaultProfile: Record<string, string> = {
+  legifrance: 'juridique', file: 'generique', directory: 'corpus',
+  drive: 'corpus', nextcloud: 'corpus', resana: 'corpus',
 }
-const defaultTemplates: Record<string, string> = {
-  legifrance: 'juridique', file: 'generic', directory: 'multi_thematique',
-  drive: 'multi_thematique', nextcloud: 'multi_thematique', resana: 'multi_thematique',
+
+const selectedProfile = ref(defaultProfile[source] || 'generique')
+const currentProfileDesc = computed(() => profiles.find(p => p.key === selectedProfile.value)?.desc || '')
+
+function applyProfile() {
+  const p = profiles.find(pr => pr.key === selectedProfile.value)
+  if (p) {
+    form.value.strategy = p.strategy
+    form.value.prompt_template = p.prompt
+    form.value.graph_enabled = p.graph
+  }
 }
+
+const initProfile = profiles.find(p => p.key === (defaultProfile[source] || 'generique'))
 
 const form = ref({
   name: '', description: '',
-  strategy: defaultStrategies[source] || 'auto',
+  strategy: initProfile?.strategy || 'auto',
   sensitivity: 'public',
-  prompt_template: defaultTemplates[source] || 'generic',
+  prompt_template: initProfile?.prompt || 'generic',
   scope: 'group',
-  graph_enabled: source === 'legifrance',
+  graph_enabled: initProfile?.graph || false,
   ai_summary_enabled: false,
   contact_name: '', contact_email: '',
 })

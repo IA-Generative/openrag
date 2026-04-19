@@ -67,6 +67,7 @@ const sources = [
     description: 'Code, loi, ordonnance depuis l\'API PISTE. Decoupage automatique par article avec hierarchie.',
     refresh: true,
     strategy: 'article',
+    prompt_template: 'juridique',
   },
   {
     key: 'file',
@@ -75,6 +76,7 @@ const sources = [
     description: 'Upload un fichier (PDF, MD, TXT, DOCX, images, audio). Detection automatique du type.',
     refresh: false,
     strategy: 'auto',
+    prompt_template: 'generic',
   },
   {
     key: 'directory',
@@ -83,6 +85,7 @@ const sources = [
     description: 'Upload un dossier ou un ZIP contenant plusieurs fichiers a indexer ensemble.',
     refresh: false,
     strategy: 'auto',
+    prompt_template: 'multi_thematique',
   },
   {
     key: 'drive',
@@ -91,6 +94,7 @@ const sources = [
     description: 'Connecter un dossier Drive (Suite Numerique). Synchronisation automatique des modifications.',
     refresh: true,
     strategy: 'auto',
+    prompt_template: 'multi_thematique',
   },
   {
     key: 'nextcloud',
@@ -99,6 +103,7 @@ const sources = [
     description: 'Connecter un dossier Nextcloud via l\'API OCS. Synchronisation automatique.',
     refresh: true,
     strategy: 'auto',
+    prompt_template: 'multi_thematique',
   },
   {
     key: 'resana',
@@ -107,6 +112,7 @@ const sources = [
     description: 'Connecter un espace Resana. Synchronisation automatique des documents.',
     refresh: true,
     strategy: 'auto',
+    prompt_template: 'multi_thematique',
     soon: true,
   },
 ]
