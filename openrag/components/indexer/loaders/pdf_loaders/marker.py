@@ -191,8 +191,10 @@ class MarkerPool:
 
     @staticmethod
     def _get_page_count(file_path: str) -> int:
-        with pypdfium2.PdfDocument(file_path) as pdf:
-            return len(pdf)
+        pdf = pypdfium2.PdfDocument(file_path)
+        page_count = len(pdf)
+        pdf.close()
+        return page_count
 
     @staticmethod
     def _create_chunks(page_count: int, chunk_size: int) -> list[tuple[list[int], str]]:
