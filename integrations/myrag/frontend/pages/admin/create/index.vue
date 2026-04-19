@@ -22,9 +22,12 @@
 
     <div class="myrag-card-grid">
       <div v-for="src in sources" :key="src.key"
-           :class="['fr-card', 'fr-enlarge-link', { 'fr-card--shadow': selected === src.key }]"
-           @click="selected = src.key"
-           style="cursor:pointer;">
+           :class="['fr-card', {
+             'fr-card--shadow': selected === src.key,
+             'fr-enlarge-link': !src.soon,
+           }]"
+           @click="!src.soon && (selected = src.key)"
+           :style="src.soon ? 'opacity:0.5;cursor:not-allowed;' : 'cursor:pointer;'">
         <div class="fr-card__body">
           <div class="fr-card__content">
             <h3 class="fr-card__title">
@@ -32,12 +35,13 @@
             </h3>
             <p class="fr-card__desc">{{ src.description }}</p>
             <div class="fr-card__start">
-              <span v-if="src.refresh" class="fr-badge fr-badge--sm fr-badge--new">Refresh auto</span>
-              <span class="fr-badge fr-badge--sm fr-badge--info">{{ src.strategy }}</span>
+              <span v-if="src.soon" class="fr-badge fr-badge--sm fr-badge--grey">Bientot disponible</span>
+              <span v-if="src.refresh && !src.soon" class="fr-badge fr-badge--sm fr-badge--new">Refresh auto</span>
+              <span v-if="!src.soon" class="fr-badge fr-badge--sm fr-badge--info">{{ src.strategy }}</span>
             </div>
           </div>
         </div>
-        <div v-if="selected === src.key" class="fr-card__header" style="background:#000091;padding:4px;text-align:center;">
+        <div v-if="selected === src.key && !src.soon" class="fr-card__header" style="background:#000091;padding:4px;text-align:center;">
           <span style="color:white;font-size:0.8rem;font-weight:bold;">✓ Selectionne</span>
         </div>
       </div>
@@ -103,6 +107,7 @@ const sources = [
     description: 'Connecter un espace Resana. Synchronisation automatique des documents.',
     refresh: true,
     strategy: 'auto',
+    soon: true,
   },
 ]
 
