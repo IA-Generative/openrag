@@ -4,8 +4,7 @@
     </div>
     <div class="fr-grid-row fr-grid-row--gutters fr-mt-2w">
       <div v-for="(step, i) in steps" :key="i"
-           style="flex:1;max-width:20%;"
-           style="text-align:center;">
+           style="flex:1;max-width:20%;text-align:center;">
         <div :class="['myrag-step', {
           'myrag-step--active': currentStep === i + 1,
           'myrag-step--done': currentStep > i + 1,
