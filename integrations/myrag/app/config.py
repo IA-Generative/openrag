@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     app_version: str = Field(default="0.1.0")
     debug: bool = Field(default=False)
 
+    # Database
+    database_url: str = Field(default="sqlite+aiosqlite:////app/data/myrag.db")
+
     # OpenRAG
     openrag_url: str = Field(default="http://openrag:8080")
     openrag_admin_token: str = Field(default="")
@@ -20,6 +23,8 @@ class Settings(BaseSettings):
     keycloak_realm: str = Field(default="openwebui")
     keycloak_client_id: str = Field(default="myrag-admin")
     keycloak_client_secret: str = Field(default="")
+    keycloak_admin_user: str = Field(default="admin")
+    keycloak_admin_password: str = Field(default="")
 
     # Legifrance PISTE
     legifrance_client_id: str = Field(default="")

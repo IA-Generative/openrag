@@ -4,14 +4,26 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from contextlib import asynccontextmanager
+
 from app.config import settings
-from app.routers import ingest, collections, sync, graph, articles, sources, feedback, publication
+from app.database import init_db
+from app.routers import ingest, collections, sync, graph, articles, sources, feedback, publication, playground
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Import models so tables are registered
+    import app.models.db  # noqa: F401
+    await init_db()
+    yield
+
 
 app = FastAPI(
     title=settings.app_title,
     version=settings.app_version,
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -51,6 +63,7 @@ app.include_router(articles.router)
 app.include_router(sources.router)
 app.include_router(feedback.router)
 app.include_router(publication.router)
+app.include_router(playground.router)
 
 
 @app.get("/api/config")
