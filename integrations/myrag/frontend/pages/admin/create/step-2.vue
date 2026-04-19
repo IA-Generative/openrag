@@ -140,12 +140,15 @@
       <div class="fr-grid-row fr-grid-row--gutters fr-mt-2w" style="align-items:flex-start;">
         <div class="fr-col-6">
           <div class="fr-select-group">
-            <label class="fr-label">Sensibilite</label>
+            <label class="fr-label">
+              Sensibilite
+              <span class="fr-hint-text">Niveau de classification des documents de la collection</span>
+            </label>
             <select class="fr-select" v-model="form.sensitivity">
-              <option value="public">Public</option>
-              <option value="internal">Interne</option>
-              <option value="restricted">Restreint</option>
-              <option value="confidential">Confidentiel</option>
+              <option value="public">Public — textes publies (JO, Legifrance)</option>
+              <option value="internal">Interne — usage interne organisation</option>
+              <option value="restricted">Restreint — diffusion limitee</option>
+              <option value="confidential">Confidentiel — acces nominal</option>
             </select>
           </div>
         </div>
