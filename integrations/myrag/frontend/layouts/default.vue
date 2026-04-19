@@ -13,7 +13,7 @@
               </div>
               <div class="fr-header__service">
                 <NuxtLink to="/" class="fr-header__service-title">
-                  {{ config.public.appTitle }}
+                  MyRAG <span class="fr-badge fr-badge--sm fr-badge--info">beta</span>
                 </NuxtLink>
                 <p class="fr-header__service-tagline">Recherche augmentee dans vos collections</p>
               </div>
@@ -34,10 +34,21 @@
                       OpenRAG
                     </span>
                   </li>
+                  <li v-if="user">
+                    <span class="myrag-status" :title="getUserName()">
+                      <span class="fr-icon-user-line" aria-hidden="true" style="font-size:0.9rem;"></span>
+                      {{ getUserName() }}
+                    </span>
+                  </li>
                   <li>
                     <NuxtLink to="/admin" class="fr-btn fr-icon-settings-5-line fr-btn--sm">
                       Admin
                     </NuxtLink>
+                  </li>
+                  <li v-if="user">
+                    <button class="fr-btn fr-btn--sm fr-btn--tertiary-no-outline" @click="logout">
+                      Deconnexion
+                    </button>
                   </li>
                 </ul>
               </div>
@@ -96,6 +107,7 @@
 <script setup lang="ts">
 const config = useRuntimeConfig()
 const route = useRoute()
+const { user, loading: authLoading, init: initAuth, logout, getUserName } = useAuth()
 
 const myragStatus = ref({ status: 'checking', class: 'myrag-status__dot--checking', title: 'Verification...' })
 const openragStatus = ref({ status: 'checking', class: 'myrag-status__dot--checking', title: 'Verification...' })
@@ -141,9 +153,13 @@ async function checkServices() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // Init auth (redirect to Keycloak if not logged in)
+  if (config.public.authEnabled) {
+    await initAuth()
+  }
+
   checkServices()
-  // Re-check every 30 seconds
   setInterval(checkServices, 30000)
 })
 </script>

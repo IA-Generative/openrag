@@ -19,6 +19,10 @@ export default defineNuxtConfig({
     public: {
       myragApiUrl: process.env.MYRAG_API_URL || 'http://localhost:8200',
       appTitle: process.env.APP_TITLE || 'MyRAG (beta)',
+      keycloakUrl: process.env.KEYCLOAK_URL || 'http://host.docker.internal:8082',
+      keycloakRealm: process.env.KEYCLOAK_REALM || 'openwebui',
+      keycloakClientId: process.env.KEYCLOAK_CLIENT_ID || 'openwebui',
+      authEnabled: process.env.AUTH_ENABLED !== 'false',
     },
   },
 })
