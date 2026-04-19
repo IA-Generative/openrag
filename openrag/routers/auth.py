@@ -118,9 +118,16 @@ def _require_oidc_mode():
 def _is_request_secure(request: Request) -> bool:
     """True if the client-observed scheme is HTTPS.
 
-    ``request.url.scheme`` already accounts for reverse-proxy headers when the
-    app is started with ``proxy_headers=True`` (see ``api.py``).
+    Checks multiple indicators:
+    1. ``PREFERRED_URL_SCHEME`` env var (set when behind a TLS-terminating proxy)
+    2. ``X-Forwarded-Proto`` header (set by reverse proxies like Traefik/Nginx)
+    3. ``request.url.scheme`` (accounts for proxy_headers=True in uvicorn)
     """
+    import os
+    if os.environ.get("PREFERRED_URL_SCHEME", "").lower() == "https":
+        return True
+    if request.headers.get("x-forwarded-proto", "").lower() == "https":
+        return True
     return request.url.scheme == "https"
 
 
