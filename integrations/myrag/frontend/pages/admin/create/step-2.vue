@@ -97,14 +97,39 @@
         <legend class="fr-fieldset__legend">Options</legend>
         <div class="fr-fieldset__element">
           <div class="fr-checkbox-group">
-            <input type="checkbox" id="graph" v-model="form.graph_enabled" />
+            <input type="checkbox" id="graph" v-model="form.graph_enabled"
+                   @change="if (!form.graph_enabled) form.ai_summary_enabled = false" />
             <label class="fr-label" for="graph">Activer le graph de references</label>
           </div>
+          <details class="fr-mt-1w fr-ml-4w">
+            <summary class="fr-text--sm" style="cursor:pointer;color:#000091;">En savoir plus sur le graph</summary>
+            <div class="fr-callout fr-callout--green-emeraude fr-mt-1w">
+              <p class="fr-callout__text fr-text--sm">
+                Le <strong>graph de references</strong> cartographie les liens entre les documents de votre collection
+                (par exemple, les renvois entre articles d'un code juridique).
+                Il permet de naviguer visuellement dans les relations entre documents
+                et d'enrichir les reponses du RAG avec le contexte des documents lies.
+              </p>
+              <p class="fr-callout__text fr-text--sm fr-mt-1w">
+                <strong>Quand l'activer ?</strong>
+              </p>
+              <ul class="fr-text--sm">
+                <li>✅ Codes juridiques (references croisees entre articles)</li>
+                <li>✅ Documentation technique avec renvois entre sections</li>
+                <li>✅ Corpus de normes ou specifications liees entre elles</li>
+                <li>❌ Pas utile pour les FAQ, fichiers independants, ou corpus sans liens internes</li>
+              </ul>
+            </div>
+          </details>
         </div>
-        <div class="fr-fieldset__element">
+        <div class="fr-fieldset__element" :style="!form.graph_enabled ? 'opacity:0.4;pointer-events:none;' : ''">
           <div class="fr-checkbox-group">
-            <input type="checkbox" id="ai_summary" v-model="form.ai_summary_enabled" />
-            <label class="fr-label" for="ai_summary">Resume IA pour les articles longs</label>
+            <input type="checkbox" id="ai_summary" v-model="form.ai_summary_enabled"
+                   :disabled="!form.graph_enabled" />
+            <label class="fr-label" for="ai_summary">
+              Resume IA pour les articles longs
+              <span v-if="!form.graph_enabled" class="fr-text--sm" style="color:#666;"> (necessite le graph)</span>
+            </label>
           </div>
         </div>
       </fieldset>
