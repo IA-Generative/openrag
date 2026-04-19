@@ -182,6 +182,37 @@ def require_admin(user=Depends(current_user)):
     return user
 
 
+def request_user_id(request: Request) -> int | None:
+    """Return the user_id from path params (as int), or None."""
+    raw = request.path_params.get("user_id", None)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def require_admin_or_self(
+    target_user_id: int | None = Depends(request_user_id),
+    user=Depends(current_user),
+):
+    """Ensure the caller is admin or is acting on their own account."""
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Authentication required",
+        )
+    if user.get("is_admin", False):
+        return user
+    if target_user_id is not None and user.get("id") == target_user_id:
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Admin privileges or self-access required",
+    )
+
+
 async def check_user_file_quota(
     user=Depends(current_user),
 ):
