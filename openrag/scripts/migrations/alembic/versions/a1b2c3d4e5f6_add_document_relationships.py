@@ -15,24 +15,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy import inspect
-
-
-def column_exists(table_name: str, column_name: str) -> bool:
-    """Check if a column exists in a table."""
-    bind = op.get_bind()
-    inspector = inspect(bind)
-    columns = [col["name"] for col in inspector.get_columns(table_name)]
-    return column_name in columns
-
-
-def index_exists(index_name: str, table_name: str) -> bool:
-    """Check if an index exists on a table."""
-    bind = op.get_bind()
-    inspector = inspect(bind)
-    indexes = inspector.get_indexes(table_name)
-    return any(idx["name"] == index_name for idx in indexes)
-
+from schema_helpers import column_exists, index_exists
 
 # revision identifiers, used by Alembic.
 revision: str = "a1b2c3d4e5f6"
@@ -59,7 +42,7 @@ def upgrade() -> None:
         )
 
     # Create single-column indexes
-    if not index_exists("ix_files_relationship_id", "files"):
+    if not index_exists("files", "ix_files_relationship_id"):
         op.create_index(
             "ix_files_relationship_id",
             "files",
@@ -67,7 +50,7 @@ def upgrade() -> None:
             unique=False,
         )
 
-    if not index_exists("ix_files_parent_id", "files"):
+    if not index_exists("files", "ix_files_parent_id"):
         op.create_index(
             "ix_files_parent_id",
             "files",
@@ -76,7 +59,7 @@ def upgrade() -> None:
         )
 
     # Create composite indexes for common query patterns
-    if not index_exists("ix_relationship_partition", "files"):
+    if not index_exists("files", "ix_relationship_partition"):
         op.create_index(
             "ix_relationship_partition",
             "files",
@@ -84,7 +67,7 @@ def upgrade() -> None:
             unique=False,
         )
 
-    if not index_exists("ix_parent_partition", "files"):
+    if not index_exists("files", "ix_parent_partition"):
         op.create_index(
             "ix_parent_partition",
             "files",
@@ -97,17 +80,17 @@ def downgrade() -> None:
     """Remove relationship_id and parent_id columns from files table."""
 
     # Drop composite indexes
-    if index_exists("ix_parent_partition", "files"):
+    if index_exists("files", "ix_parent_partition"):
         op.drop_index("ix_parent_partition", table_name="files")
 
-    if index_exists("ix_relationship_partition", "files"):
+    if index_exists("files", "ix_relationship_partition"):
         op.drop_index("ix_relationship_partition", table_name="files")
 
     # Drop single-column indexes
-    if index_exists("ix_files_parent_id", "files"):
+    if index_exists("files", "ix_files_parent_id"):
         op.drop_index("ix_files_parent_id", table_name="files")
 
-    if index_exists("ix_files_relationship_id", "files"):
+    if index_exists("files", "ix_files_relationship_id"):
         op.drop_index("ix_files_relationship_id", table_name="files")
 
     # Drop columns

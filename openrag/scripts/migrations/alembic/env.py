@@ -1,4 +1,10 @@
+import os
+import sys
 from logging.config import fileConfig
+
+# Make modules alongside env.py (e.g. schema_helpers) importable from
+# migration scripts regardless of the cwd alembic is invoked from.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from alembic import context
 from components.indexer.vectordb.models import Base

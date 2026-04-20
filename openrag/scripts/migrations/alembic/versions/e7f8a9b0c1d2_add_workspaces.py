@@ -10,7 +10,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy import inspect
+from schema_helpers import table_exists
 
 # revision identifiers, used by Alembic.
 revision: str = "e7f8a9b0c1d2"
@@ -19,17 +19,13 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def _table_exists(table: str) -> bool:
-    return table in inspect(op.get_bind()).get_table_names()
-
-
 def upgrade() -> None:
     """Upgrade schema.
 
     Idempotent: Base.metadata.create_all() at app startup may have already
     created these tables on older deployments.
     """
-    if not _table_exists("workspaces"):
+    if not table_exists("workspaces"):
         op.create_table(
             "workspaces",
             sa.Column("id", sa.Integer, primary_key=True),
@@ -49,7 +45,7 @@ def upgrade() -> None:
             sa.Column("display_name", sa.String, nullable=True),
             sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
         )
-    if not _table_exists("workspace_files"):
+    if not table_exists("workspace_files"):
         op.create_table(
             "workspace_files",
             sa.Column("id", sa.Integer, primary_key=True),
@@ -67,7 +63,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    if _table_exists("workspace_files"):
+    if table_exists("workspace_files"):
         op.drop_table("workspace_files")
-    if _table_exists("workspaces"):
+    if table_exists("workspaces"):
         op.drop_table("workspaces")

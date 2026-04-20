@@ -10,23 +10,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy import inspect
-
-
-def table_exists(table_name: str) -> bool:
-    """Check if a table exists in the database."""
-    bind = op.get_bind()
-    inspector = inspect(bind)
-    return table_name in inspector.get_table_names()
-
-
-def index_exists(index_name: str, table_name: str) -> bool:
-    """Check if an index exists on a table."""
-    bind = op.get_bind()
-    inspector = inspect(bind)
-    indexes = inspector.get_indexes(table_name)
-    return any(idx["name"] == index_name for idx in indexes)
-
+from schema_helpers import index_exists, table_exists
 
 # revision identifiers, used by Alembic.
 revision: str = "cd642e4502d8"
@@ -52,14 +36,14 @@ def upgrade() -> None:
 
     # Create indexes for users table if they don't exist
     if table_exists("users"):
-        if not index_exists("ix_users_external_user_id", "users"):
+        if not index_exists("users", "ix_users_external_user_id"):
             op.create_index(
                 op.f("ix_users_external_user_id"),
                 "users",
                 ["external_user_id"],
                 unique=True,
             )
-        if not index_exists("ix_users_token", "users"):
+        if not index_exists("users", "ix_users_token"):
             op.create_index(op.f("ix_users_token"), "users", ["token"], unique=True)
 
     # Create partition_memberships table if it doesn't exist
@@ -80,21 +64,21 @@ def upgrade() -> None:
 
     # Create indexes for partition_memberships table if they don't exist
     if table_exists("partition_memberships"):
-        if not index_exists("ix_partition_memberships_partition_name", "partition_memberships"):
+        if not index_exists("partition_memberships", "ix_partition_memberships_partition_name"):
             op.create_index(
                 op.f("ix_partition_memberships_partition_name"),
                 "partition_memberships",
                 ["partition_name"],
                 unique=False,
             )
-        if not index_exists("ix_partition_memberships_user_id", "partition_memberships"):
+        if not index_exists("partition_memberships", "ix_partition_memberships_user_id"):
             op.create_index(
                 op.f("ix_partition_memberships_user_id"),
                 "partition_memberships",
                 ["user_id"],
                 unique=False,
             )
-        if not index_exists("ix_user_partition", "partition_memberships"):
+        if not index_exists("partition_memberships", "ix_user_partition"):
             op.create_index(
                 "ix_user_partition",
                 "partition_memberships",
@@ -107,14 +91,14 @@ def downgrade() -> None:
     """Downgrade schema."""
     # Drop indexes and tables if they exist
     if table_exists("partition_memberships"):
-        if index_exists("ix_user_partition", "partition_memberships"):
+        if index_exists("partition_memberships", "ix_user_partition"):
             op.drop_index("ix_user_partition", table_name="partition_memberships")
-        if index_exists("ix_partition_memberships_user_id", "partition_memberships"):
+        if index_exists("partition_memberships", "ix_partition_memberships_user_id"):
             op.drop_index(
                 op.f("ix_partition_memberships_user_id"),
                 table_name="partition_memberships",
             )
-        if index_exists("ix_partition_memberships_partition_name", "partition_memberships"):
+        if index_exists("partition_memberships", "ix_partition_memberships_partition_name"):
             op.drop_index(
                 op.f("ix_partition_memberships_partition_name"),
                 table_name="partition_memberships",
@@ -122,8 +106,8 @@ def downgrade() -> None:
         op.drop_table("partition_memberships")
 
     if table_exists("users"):
-        if index_exists("ix_users_token", "users"):
+        if index_exists("users", "ix_users_token"):
             op.drop_index(op.f("ix_users_token"), table_name="users")
-        if index_exists("ix_users_external_user_id", "users"):
+        if index_exists("users", "ix_users_external_user_id"):
             op.drop_index(op.f("ix_users_external_user_id"), table_name="users")
         op.drop_table("users")
