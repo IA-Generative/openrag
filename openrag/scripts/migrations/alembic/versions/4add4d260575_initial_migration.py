@@ -10,23 +10,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy import inspect
-
-
-def table_exists(table_name: str) -> bool:
-    """Check if a table exists in the database."""
-    bind = op.get_bind()
-    inspector = inspect(bind)
-    return table_name in inspector.get_table_names()
-
-
-def index_exists(index_name: str, table_name: str) -> bool:
-    """Check if an index exists on a table."""
-    bind = op.get_bind()
-    inspector = inspect(bind)
-    indexes = inspector.get_indexes(table_name)
-    return any(idx["name"] == index_name for idx in indexes)
-
+from schema_helpers import index_exists, table_exists
 
 # revision identifiers, used by Alembic.
 revision: str = "4add4d260575"
@@ -49,14 +33,14 @@ def upgrade() -> None:
 
     # Create indexes for partitions table if they don't exist
     if table_exists("partitions"):
-        if not index_exists("ix_partitions_created_at", "partitions"):
+        if not index_exists("partitions", "ix_partitions_created_at"):
             op.create_index(
                 op.f("ix_partitions_created_at"),
                 "partitions",
                 ["created_at"],
                 unique=False,
             )
-        if not index_exists("ix_partitions_partition", "partitions"):
+        if not index_exists("partitions", "ix_partitions_partition"):
             op.create_index(
                 op.f("ix_partitions_partition"),
                 "partitions",
@@ -82,16 +66,16 @@ def upgrade() -> None:
 
     # Create indexes for files table if they don't exist
     if table_exists("files"):
-        if not index_exists("ix_files_file_id", "files"):
+        if not index_exists("files", "ix_files_file_id"):
             op.create_index(op.f("ix_files_file_id"), "files", ["file_id"], unique=False)
-        if not index_exists("ix_files_partition_name", "files"):
+        if not index_exists("files", "ix_files_partition_name"):
             op.create_index(
                 op.f("ix_files_partition_name"),
                 "files",
                 ["partition_name"],
                 unique=False,
             )
-        if not index_exists("ix_partition_file", "files"):
+        if not index_exists("files", "ix_partition_file"):
             op.create_index(
                 "ix_partition_file",
                 "files",
@@ -104,17 +88,17 @@ def downgrade() -> None:
     """Downgrade schema."""
     # Drop indexes and tables if they exist
     if table_exists("files"):
-        if index_exists("ix_partition_file", "files"):
+        if index_exists("files", "ix_partition_file"):
             op.drop_index("ix_partition_file", table_name="files")
-        if index_exists("ix_files_partition_name", "files"):
+        if index_exists("files", "ix_files_partition_name"):
             op.drop_index(op.f("ix_files_partition_name"), table_name="files")
-        if index_exists("ix_files_file_id", "files"):
+        if index_exists("files", "ix_files_file_id"):
             op.drop_index(op.f("ix_files_file_id"), table_name="files")
         op.drop_table("files")
 
     if table_exists("partitions"):
-        if index_exists("ix_partitions_partition", "partitions"):
+        if index_exists("partitions", "ix_partitions_partition"):
             op.drop_index(op.f("ix_partitions_partition"), table_name="partitions")
-        if index_exists("ix_partitions_created_at", "partitions"):
+        if index_exists("partitions", "ix_partitions_created_at"):
             op.drop_index(op.f("ix_partitions_created_at"), table_name="partitions")
         op.drop_table("partitions")

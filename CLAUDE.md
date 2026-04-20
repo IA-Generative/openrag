@@ -238,6 +238,12 @@ Per-user file quota enforcement tracked via the `file_count` and `file_quota` co
 
 **Migration:** `openrag/scripts/migrations/alembic/versions/c224d4befe71_add_file_count_and_file_quota.py`
 
+### Alembic Migration Idempotency
+
+`Base.metadata.create_all()` runs at app startup (`PartitionFileManager.__init__` in `openrag/components/indexer/vectordb/utils.py`), so a freshly bootstrapped database already contains the full current-model schema before alembic ever touches it. Migrations must therefore be **idempotent** — re-applying an `ADD COLUMN` / `CREATE TABLE` / `CREATE INDEX` against an already-existing object would raise `DuplicateColumn` / `DuplicateTable`.
+
+Guard every schema-mutating op with an inspector-based existence check (`table_exists`, `column_exists`, `index_exists`, `fk_exists`), in both `upgrade()` and `downgrade()`. For migrations that convert a column type, also short-circuit if the column is already the target type.
+
 ### Configuration
 
 Configuration uses Hydra with YAML files in `.hydra_config/`:
