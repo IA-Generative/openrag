@@ -105,7 +105,7 @@ All variables must be set when `AUTH_MODE=oidc`. If any required variable is mis
 | `OIDC_ENDPOINT` | Yes* | — | Issuer URL (auto-discovery via `/.well-known/openid-configuration`) |
 | `OIDC_CLIENT_ID` | Yes* | — | Client ID registered at the IdP |
 | `OIDC_CLIENT_SECRET` | Yes* | — | Client secret (confidential clients only) |
-| `OIDC_REDIRECT_URI` | Yes* | — | Callback URL, must match IdP configuration (e.g., `https://openrag.example.com/auth/callback`) |
+| `OIDC_REDIRECT_URI` | Yes* | — | Callback URL on OpenRag's backend, must match IdP configuration. Behind a proxy: `https://openrag.example.com/auth/callback`; direct access: `http://<ip_addr>:<APP_PORT>/auth/callback`. See [Choosing `OIDC_REDIRECT_URI`](#choosing-oidc_redirect_uri). |
 | `OIDC_TOKEN_ENCRYPTION_KEY` | Yes* | — | Fernet key for encrypting tokens at rest (see [Generating the Fernet Key](#generating-the-fernet-key)) |
 | `OIDC_CLAIM_SOURCE` | No | `id_token` | Where to read claims for [Claim Mapping](#claim-mapping-optional): `id_token` (verified JWT) or `userinfo` (`/userinfo` endpoint) |
 | `OIDC_CLAIM_MAPPING` | No | — | Optional CSV of `db_field:claim` pairs to copy claims into user fields on every login (e.g., `display_name:name,email:email`). See [Claim Mapping](#claim-mapping-optional). |
@@ -113,6 +113,26 @@ All variables must be set when `AUTH_MODE=oidc`. If any required variable is mis
 | `OIDC_POST_LOGOUT_REDIRECT_URI` | No | — | URL the IdP sends the user to after RP-initiated logout. **No default**: if unset AND the IdP doesn't have an `end_session_endpoint`, `/auth/logout` returns a plain 200 confirming the logout. Avoid pointing this to an OpenRag URL (triggers re-auth — silent SSO loop). |
 
 \* Required when `AUTH_MODE=oidc`
+
+### Choosing `OIDC_REDIRECT_URI`
+
+The value must be an absolute URL pointing at **OpenRag's backend** `/auth/callback` route, reachable from the user's browser, and registered verbatim in the IdP client configuration.
+
+- **Behind a reverse proxy** (production, TLS terminated): UI and backend share the same public base URL, so use the public hostname directly:
+
+  ```
+  OIDC_REDIRECT_URI=https://openrag.example.com/auth/callback
+  ```
+
+- **No reverse proxy** (local / bare-metal deployment): each service is reached on its own port, so the backend must be addressed explicitly by host and `APP_PORT`:
+
+  ```
+  OIDC_REDIRECT_URI=http://<ip_addr>:<APP_PORT>/auth/callback
+  ```
+
+  The IdP redirects the browser to this URL, so `<ip_addr>` must be resolvable/reachable from the end user's machine — not `localhost` or `127.0.0.1` unless the browser runs on the same host as OpenRag.
+
+Whichever form you use, the string must match the IdP's **Valid redirect URIs** list byte-for-byte (scheme, host, port, path, trailing slash).
 
 ### Generating the Fernet Key
 
