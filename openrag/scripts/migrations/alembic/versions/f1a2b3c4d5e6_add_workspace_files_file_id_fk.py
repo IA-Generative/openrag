@@ -10,22 +10,13 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy import inspect
+from schema_helpers import column_type_is
 
 # revision identifiers, used by Alembic.
 revision: str = "f1a2b3c4d5e6"
 down_revision: str | Sequence[str] | None = "e7f8a9b0c1d2"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-
-def _file_id_is_integer() -> bool:
-    """Check whether workspace_files.file_id is already an INTEGER (post-migration state)."""
-    inspector = inspect(op.get_bind())
-    for col in inspector.get_columns("workspace_files"):
-        if col["name"] == "file_id":
-            return isinstance(col["type"], sa.Integer)
-    return False
 
 
 def upgrade() -> None:
@@ -35,7 +26,7 @@ def upgrade() -> None:
     created workspace_files with file_id as INTEGER on older deployments — in
     which case the conversion is a no-op.
     """
-    if _file_id_is_integer():
+    if column_type_is("workspace_files", "file_id", sa.Integer):
         return
 
     # 1. Purge rows that have no matching file (no valid files.file_id to JOIN against).

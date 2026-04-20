@@ -1,0 +1,33 @@
+"""Shared inspection helpers for idempotent Alembic migrations.
+
+Needed because `Base.metadata.create_all()` at app startup may create the
+current-model schema directly on fresh (or older) deployments — so migrations
+must tolerate objects already existing.
+"""
+
+from alembic import op
+from sqlalchemy import inspect
+
+
+def table_exists(table: str) -> bool:
+    return table in inspect(op.get_bind()).get_table_names()
+
+
+def column_exists(table: str, column: str) -> bool:
+    return any(c["name"] == column for c in inspect(op.get_bind()).get_columns(table))
+
+
+def index_exists(table: str, index: str) -> bool:
+    return any(i["name"] == index for i in inspect(op.get_bind()).get_indexes(table))
+
+
+def fk_exists(table: str, fk_name: str) -> bool:
+    return any(fk["name"] == fk_name for fk in inspect(op.get_bind()).get_foreign_keys(table))
+
+
+def column_type_is(table: str, column: str, sa_type: type) -> bool:
+    """Return True if `table.column` exists and its type is an instance of `sa_type`."""
+    for col in inspect(op.get_bind()).get_columns(table):
+        if col["name"] == column:
+            return isinstance(col["type"], sa_type)
+    return False

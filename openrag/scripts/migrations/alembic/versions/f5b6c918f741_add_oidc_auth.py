@@ -10,25 +10,13 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy import inspect
+from schema_helpers import column_exists, index_exists, table_exists
 
 # revision identifiers, used by Alembic.
 revision: str = "f5b6c918f741"
 down_revision: str | Sequence[str] | None = "f1a2b3c4d5e6"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-
-def _column_exists(table: str, column: str) -> bool:
-    return any(c["name"] == column for c in inspect(op.get_bind()).get_columns(table))
-
-
-def _index_exists(table: str, index: str) -> bool:
-    return any(i["name"] == index for i in inspect(op.get_bind()).get_indexes(table))
-
-
-def _table_exists(table: str) -> bool:
-    return table in inspect(op.get_bind()).get_table_names()
 
 
 def upgrade() -> None:
@@ -38,13 +26,13 @@ def upgrade() -> None:
     created these on older deployments.
     """
     # users.email (nullable, unique, indexed)
-    if not _column_exists("users", "email"):
+    if not column_exists("users", "email"):
         op.add_column("users", sa.Column("email", sa.String(), nullable=True))
-    if not _index_exists("users", "ix_users_email"):
+    if not index_exists("users", "ix_users_email"):
         op.create_index("ix_users_email", "users", ["email"], unique=True)
 
     # oidc_sessions table
-    if not _table_exists("oidc_sessions"):
+    if not table_exists("oidc_sessions"):
         op.create_table(
             "oidc_sessions",
             sa.Column("id", sa.Integer(), primary_key=True),
@@ -81,7 +69,7 @@ def upgrade() -> None:
     # Composite index (user_id, sub) for fast lookup by (user, OIDC subject).
     # The individual session_token_hash, user_id, and sid indexes are already
     # created implicitly via the Column(..., index=True/unique=True) directives above.
-    if not _index_exists("oidc_sessions", "ix_oidc_sessions_user_sub"):
+    if not index_exists("oidc_sessions", "ix_oidc_sessions_user_sub"):
         op.create_index(
             "ix_oidc_sessions_user_sub",
             "oidc_sessions",
@@ -91,12 +79,12 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema: drop oidc_sessions table and users.email column."""
-    if _index_exists("oidc_sessions", "ix_oidc_sessions_user_sub"):
+    if index_exists("oidc_sessions", "ix_oidc_sessions_user_sub"):
         op.drop_index("ix_oidc_sessions_user_sub", table_name="oidc_sessions")
     # Drop table — this cascades the implicit per-column indexes.
-    if _table_exists("oidc_sessions"):
+    if table_exists("oidc_sessions"):
         op.drop_table("oidc_sessions")
-    if _index_exists("users", "ix_users_email"):
+    if index_exists("users", "ix_users_email"):
         op.drop_index("ix_users_email", table_name="users")
-    if _column_exists("users", "email"):
+    if column_exists("users", "email"):
         op.drop_column("users", "email")
