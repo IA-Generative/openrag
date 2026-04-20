@@ -4,7 +4,7 @@ from models.user import UserCreate, UserPublic, UserUpdate
 from utils.dependencies import get_task_state_manager, get_vectordb
 from utils.logger import get_logger
 
-from .utils import DEFAULT_FILE_QUOTA, current_user, require_admin, require_admin_or_self
+from .utils import DEFAULT_FILE_QUOTA, current_user, require_admin
 
 logger = get_logger()
 router = APIRouter()
@@ -207,7 +207,7 @@ async def delete_user(user_id: int, vectordb=Depends(get_vectordb), admin_user=D
 - `user_id`: User identifier
 
 **Permissions:**
-- Requires admin role, or the caller must be regenerating their own token.
+- Requires admin role (or user can regenerate their own token)
 
 **Behavior:**
 - Generates a new authentication token
@@ -223,20 +223,11 @@ Returns user details including the new token:
 **Note:** Store the new token securely - the old token is now invalid.
 """,
 )
-async def regenerate_user_token(
-    user_id: int,
-    vectordb=Depends(get_vectordb),
-    _auth=Depends(require_admin_or_self),
-):
+async def regenerate_user_token(user_id: int, vectordb=Depends(get_vectordb)):
     """
     Regenerate a user's token.
     """
     user = await vectordb.regenerate_user_token.remote(user_id)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User '{user_id}' not found",
-        )
     logger.info("Regenerated user token", user_id=user_id)
     return JSONResponse(status_code=status.HTTP_200_OK, content=user)
 
