@@ -123,11 +123,12 @@ def _is_request_secure(request: Request) -> bool:
     2. ``X-Forwarded-Proto`` header (set by reverse proxies like Traefik/Nginx)
     3. ``request.url.scheme`` (accounts for proxy_headers=True in uvicorn)
     """
-    import os
-
     if os.environ.get("PREFERRED_URL_SCHEME", "").lower() == "https":
         return True
-    if request.headers.get("x-forwarded-proto", "").lower() == "https":
+    # X-Forwarded-Proto can be comma-separated when chained through multiple
+    # proxies (e.g. "https, http"); the client-most hop is the first entry.
+    xfp = request.headers.get("x-forwarded-proto", "")
+    if xfp.split(",", 1)[0].strip().lower() == "https":
         return True
     return request.url.scheme == "https"
 
