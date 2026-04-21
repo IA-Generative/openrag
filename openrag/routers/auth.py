@@ -124,6 +124,7 @@ def _is_request_secure(request: Request) -> bool:
     3. ``request.url.scheme`` (accounts for proxy_headers=True in uvicorn)
     """
     import os
+
     if os.environ.get("PREFERRED_URL_SCHEME", "").lower() == "https":
         return True
     if request.headers.get("x-forwarded-proto", "").lower() == "https":
