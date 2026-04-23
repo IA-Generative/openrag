@@ -200,8 +200,8 @@ def build_llm_messages(prompt: str, messages: list[dict]) -> list[dict]:
 def _model_kwargs(base_url: str) -> dict:
     """Return call-time kwargs; omit vLLM-specific extra_body for OpenAI endpoints."""
     kwargs: dict = {"max_completion_tokens": 512}
-    if "openai.com" not in base_url:
-        kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
+    # if "openai.com" not in base_url:
+    #     kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
     return kwargs
 
 
