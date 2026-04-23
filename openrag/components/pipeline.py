@@ -249,7 +249,7 @@ class RagPipeline:
 
                 model_kwargs = {
                     "max_completion_tokens": self.max_contextualized_query_len,
-                    "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+                    # "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
                 }
                 prompt = QUERY_CONTEXTUALIZER_PROMPT.format(
                     query_language=query_language,
