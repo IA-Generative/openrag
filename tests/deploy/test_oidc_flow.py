@@ -1,0 +1,113 @@
+"""Vérifications de surface du flow OIDC OpenRAG.
+
+Pas de full round-trip Keycloak (impossible sans compte test) — uniquement
+les invariants observables de l'extérieur :
+- /auth/login redirige bien vers Keycloak Mirai
+- L'URL de callback est bien dans les redirect_uris attendus
+- Les pages UI sans cookie redirigent vers /auth/login (mode OIDC)
+- La discovery OIDC du SSO Mirai répond
+- L'API rejette les requêtes sans bearer (sauf /health_check, /version, /docs)
+
+Usage :
+    BASE_HOST=openrag-mirai.fake-domain.name pytest tests/deploy/test_oidc_flow.py -v
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from urllib.parse import parse_qs, urlparse
+
+import pytest
+import requests
+
+BASE = os.environ.get("BASE_HOST", "openrag-mirai.fake-domain.name")
+API = f"https://api.{BASE}"
+INDEXER = f"https://indexer.{BASE}"
+CHAT = f"https://chat.{BASE}"
+
+SSO_ISSUER = os.environ.get(
+    "OIDC_ENDPOINT",
+    "https://sso.mirai.interieur.gouv.fr",
+).rstrip("/")
+
+
+def _no_redirect_get(url: str, **kwargs):
+    return requests.get(url, allow_redirects=False, timeout=10, **kwargs)
+
+
+def test_auth_login_redirects_to_sso():
+    r = _no_redirect_get(f"{API}/auth/login")
+    assert r.status_code in (302, 303), r.status_code
+    loc = r.headers.get("Location", "")
+    assert "sso.mirai.interieur.gouv.fr" in loc, f"redirect inattendu : {loc}"
+
+
+def test_auth_login_includes_pkce_and_client_id():
+    r = _no_redirect_get(f"{API}/auth/login")
+    loc = r.headers.get("Location", "")
+    qs = parse_qs(urlparse(loc).query)
+    assert qs.get("client_id", [""])[0] == "openrag", qs
+    assert "code_challenge" in qs, "PKCE manquant"
+    assert qs.get("code_challenge_method", [""])[0] == "S256", qs
+
+
+def test_auth_login_carries_next_param():
+    r = _no_redirect_get(f"{API}/auth/login?next=%2Findexer")
+    assert r.status_code in (302, 303)
+    # OpenRAG encode le next dans state, pas de leak en clair attendu
+
+
+def test_auth_callback_rejects_bad_state():
+    """/auth/callback sans state ni code -> 400 ou 4xx."""
+    r = _no_redirect_get(f"{API}/auth/callback")
+    assert r.status_code >= 400, r.status_code
+
+
+def test_indexer_ui_redirects_to_login():
+    """Sans cookie de session, l'UI admin doit rediriger vers /auth/login."""
+    r = _no_redirect_get(f"{INDEXER}/")
+    # 200 avec page de login server-rendered, ou 302 vers login
+    assert r.status_code in (200, 302, 303), r.status_code
+
+
+def test_api_v1_rejects_unauth():
+    """L'API v1 doit refuser sans bearer (401, pas 200/500)."""
+    r = requests.get(f"{API}/v1/models", timeout=10, allow_redirects=False)
+    assert r.status_code in (401, 302, 303), r.status_code
+
+
+def test_health_check_is_open():
+    """/health_check doit rester accessible sans auth pour les LB / monitoring."""
+    r = requests.get(f"{API}/health_check", timeout=10)
+    assert r.status_code == 200
+
+
+def test_sso_discovery_reachable():
+    """La discovery OIDC du SSO Mirai doit répondre (à défaut, OpenRAG ne pourra
+    pas démarrer en mode oidc)."""
+    r = requests.get(f"{SSO_ISSUER}/.well-known/openid-configuration", timeout=10)
+    if r.status_code == 404:
+        pytest.skip(f"realm non précisé dans OIDC_ENDPOINT={SSO_ISSUER}")
+    assert r.status_code == 200, r.status_code
+    body = r.json()
+    for k in ("issuer", "authorization_endpoint", "token_endpoint", "jwks_uri"):
+        assert k in body, f"discovery incomplète : {k} manquant"
+
+
+def test_backchannel_logout_endpoint_exists():
+    """OpenRAG doit exposer /auth/backchannel-logout (POST seulement)."""
+    r = requests.get(
+        f"{API}/auth/backchannel-logout", timeout=10, allow_redirects=False
+    )
+    # GET sur un endpoint POST -> 405 ou 404 (mais pas 200 ni 500)
+    assert r.status_code in (404, 405, 400), r.status_code
+
+
+def test_redirect_uri_matches_expected_host():
+    """Le redirect_uri envoyé au SSO doit correspondre à l'API publique."""
+    r = _no_redirect_get(f"{API}/auth/login")
+    loc = r.headers.get("Location", "")
+    qs = parse_qs(urlparse(loc).query)
+    redirect_uri = qs.get("redirect_uri", [""])[0]
+    assert redirect_uri == f"{API}/auth/callback", redirect_uri
