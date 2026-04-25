@@ -9,6 +9,15 @@ x-openrag: &openrag_template
   build:
     context: .
     dockerfile: Dockerfile
+  extra_hosts:
+    # Let containers reach services running on the Docker host via
+    # ``host.docker.internal`` (Linux Docker >= 20.10). Useful when an OIDC
+    # provider runs on the host in AUTH_MODE=oidc. If the IdP is behind a
+    # custom hostname resolved only in the host's /etc/hosts, add your own
+    # mapping via a ``docker-compose.override.yaml`` rather than editing this
+    # list — otherwise real external domains with the same name would be
+    # shadowed for other users.
+    - "host.docker.internal:host-gateway"
   volumes:
     - ${DATA_VOLUME:-./data}:/app/data
     - ${MODEL_WEIGHTS_VOLUME:-~/.cache/huggingface}:/app/model_weights # Model weights for RAG
@@ -69,6 +78,7 @@ services:
     environment:
       - API_BASE_URL=${API_BASE_URL:-http://localhost:${APP_PORT:-8080}}
       - INCLUDE_CREDENTIALS=${INCLUDE_CREDENTIALS:-false}
+      - AUTH_MODE=${AUTH_MODE:-token}
     ports:
       - "${INDEXERUI_PORT:-3042}:3000"
     restart: unless-stopped

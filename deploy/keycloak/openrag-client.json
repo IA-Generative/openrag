@@ -1,0 +1,142 @@
+{
+  "clientId": "openrag",
+  "name": "OpenRAG (RAG documentaire Mirai)",
+  "description": "Client OIDC partagé entre les VMs OpenRAG. Gère l'auth des UIs (api/indexer/chat) et la révocation back-channel.",
+  "rootUrl": "https://api.openrag-mirai.fake-domain.name",
+  "adminUrl": "https://api.openrag-mirai.fake-domain.name",
+  "baseUrl": "/",
+  "enabled": true,
+  "alwaysDisplayInConsole": false,
+  "clientAuthenticatorType": "client-secret",
+  "redirectUris": [
+    "https://api.openrag-mirai.fake-domain.name/auth/callback",
+    "https://indexer.openrag-mirai.fake-domain.name/auth/callback",
+    "https://chat.openrag-mirai.fake-domain.name/auth/callback",
+    "https://api.openrag.fake-domain.name/auth/callback",
+    "https://indexer.openrag.fake-domain.name/auth/callback",
+    "https://chat.openrag.fake-domain.name/auth/callback",
+    "https://api.openrag-mirai.numerique-interieur.com/auth/callback",
+    "https://indexer.openrag-mirai.numerique-interieur.com/auth/callback",
+    "https://chat.openrag-mirai.numerique-interieur.com/auth/callback",
+    "https://api.openrag.numerique-interieur.com/auth/callback",
+    "https://indexer.openrag.numerique-interieur.com/auth/callback",
+    "https://chat.openrag.numerique-interieur.com/auth/callback"
+  ],
+  "webOrigins": [
+    "https://api.openrag-mirai.fake-domain.name",
+    "https://indexer.openrag-mirai.fake-domain.name",
+    "https://chat.openrag-mirai.fake-domain.name",
+    "https://api.openrag.fake-domain.name",
+    "https://indexer.openrag.fake-domain.name",
+    "https://chat.openrag.fake-domain.name",
+    "https://api.openrag-mirai.numerique-interieur.com",
+    "https://indexer.openrag-mirai.numerique-interieur.com",
+    "https://chat.openrag-mirai.numerique-interieur.com",
+    "https://api.openrag.numerique-interieur.com",
+    "https://indexer.openrag.numerique-interieur.com",
+    "https://chat.openrag.numerique-interieur.com"
+  ],
+  "notBefore": 0,
+  "bearerOnly": false,
+  "consentRequired": false,
+  "standardFlowEnabled": true,
+  "implicitFlowEnabled": false,
+  "directAccessGrantsEnabled": false,
+  "serviceAccountsEnabled": false,
+  "publicClient": false,
+  "frontchannelLogout": false,
+  "protocol": "openid-connect",
+  "attributes": {
+    "oidc.ciba.grant.enabled": "false",
+    "oauth2.device.authorization.grant.enabled": "false",
+    "backchannel.logout.session.required": "true",
+    "backchannel.logout.revoke.offline.tokens": "true",
+    "backchannel.logout.url": "https://api.openrag-mirai.fake-domain.name/auth/backchannel-logout",
+    "post.logout.redirect.uris": "+",
+    "client.session.idle.timeout": "0",
+    "client.session.max.lifespan": "0",
+    "access.token.lifespan": "1800",
+    "tls.client.certificate.bound.access.tokens": "false",
+    "client.use.lightweight.access.token.enabled": "true",
+    "display.on.consent.screen": "false",
+    "exclude.session.state.from.auth.response": "false"
+  },
+  "authenticationFlowBindingOverrides": {},
+  "fullScopeAllowed": false,
+  "nodeReRegistrationTimeout": -1,
+  "protocolMappers": [
+    {
+      "name": "preferred_username",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-attribute-mapper",
+      "consentRequired": false,
+      "config": {
+        "user.attribute": "username",
+        "claim.name": "preferred_username",
+        "jsonType.label": "String",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "userinfo.token.claim": "true"
+      }
+    },
+    {
+      "name": "email",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-property-mapper",
+      "consentRequired": false,
+      "config": {
+        "user.attribute": "email",
+        "claim.name": "email",
+        "jsonType.label": "String",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "userinfo.token.claim": "true"
+      }
+    },
+    {
+      "name": "full name",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-full-name-mapper",
+      "consentRequired": false,
+      "config": {
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "userinfo.token.claim": "true"
+      }
+    },
+    {
+      "name": "groups",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-group-membership-mapper",
+      "consentRequired": false,
+      "config": {
+        "claim.name": "groups",
+        "full.path": "false",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "userinfo.token.claim": "true"
+      }
+    },
+    {
+      "name": "openrag audience",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-audience-mapper",
+      "consentRequired": false,
+      "config": {
+        "included.client.audience": "openrag",
+        "included.custom.audience": "",
+        "id.token.claim": "false",
+        "access.token.claim": "true",
+        "userinfo.token.claim": "false"
+      }
+    }
+  ],
+  "defaultClientScopes": [
+    "openid",
+    "email",
+    "profile"
+  ],
+  "optionalClientScopes": [
+    "offline_access"
+  ]
+}

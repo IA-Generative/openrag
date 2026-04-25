@@ -323,3 +323,96 @@ from config import load_config
 # Avoid relative imports across packages
 # from .ray_utils import ...  # Only within same package
 ```
+
+### OIDC Authentication (OpenID Connect)
+
+OpenRag supports two authentication modes, controlled by the `AUTH_MODE` environment variable:
+
+**Token Mode** (`AUTH_MODE=token`, default):
+- Bearer token authentication via `Authorization: Bearer <AUTH_TOKEN>` header
+- Existing behavior unchanged
+- Suitable for programmatic access, CI/CD, and testing
+- Admin user (id=1) created with `AUTH_TOKEN` env var or random token on bootstrap
+
+**OIDC Mode** (`AUTH_MODE=oidc`):
+- OpenID Connect Authorization Code + PKCE flow
+- Users authenticate via an external IdP (Keycloak, LemonLDAP::NG, etc.)
+- Browser UI (Chainlit, Indexer) redirects to IdP login
+- Opaque session tokens stored in `openrag_session` httpOnly cookie
+- Bearer `users.token` still accepted for programmatic access
+
+**Env Variables** (required when `AUTH_MODE=oidc`):
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `OIDC_ENDPOINT` | Issuer URL for auto-discovery | `https://idp.example.com/realms/openrag` |
+| `OIDC_CLIENT_ID` | Client registered at IdP | `openrag` |
+| `OIDC_CLIENT_SECRET` | Client secret | (provided by IdP) |
+| `OIDC_REDIRECT_URI` | Callback URL (must match IdP config) | `https://openrag.example.com/auth/callback` |
+| `OIDC_TOKEN_ENCRYPTION_KEY` | Fernet key for token encryption | (generate via: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`) |
+
+**Optional Env Variables**:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OIDC_CLAIM_SOURCE` | `id_token` | Where to read claims for claim mapping: `id_token` (verified JWT) or `userinfo` (`/userinfo` endpoint) |
+| `OIDC_CLAIM_MAPPING` | (none) | CSV of `db_field:claim` pairs to sync IdP claims into the users row on every login (whitelist: `display_name`, `email`). Unset = no post-login update. |
+| `OIDC_SCOPES` | `openid email profile offline_access` | Space-separated scope list (include `offline_access` for refresh tokens) |
+| `OIDC_POST_LOGOUT_REDIRECT_URI` | — | URL the IdP sends the user to after RP-initiated logout. No default (an OpenRag URL would re-trigger OIDC login) |
+| `OIDC_AUTO_PROVISION_LOGIN` | `false` | When `true`, an unknown `sub` triggers on-the-fly creation of a non-admin user from the ID-token claims (`name`/`preferred_username` → `display_name`, `email` → `email`). Default keeps the strict admin-pre-provisioning policy below. |
+
+**User Matching & Provisioning**:
+
+When a user logs in via OIDC, matching is **exclusively** by `users.external_user_id == sub` (the stable OIDC claim). There is no email fallback. If the `sub` is unknown, the callback either:
+- returns `403 "User not registered"` (default — admins must pre-create every user), or
+- creates a non-admin user from the ID-token claims when `OIDC_AUTO_PROVISION_LOGIN=true`. Auto-provisioned users inherit the default file quota; `is_admin` is **always** `false` (operators can promote afterwards via `/users/{id}` or `/users/`).
+
+Optionally, if `OIDC_CLAIM_MAPPING` is set, after a successful match the callback reads the configured claims (from the ID token or `/userinfo`, per `OIDC_CLAIM_SOURCE`) and updates the user row. The writable whitelist is strict — only `display_name` and `email` are allowed; `is_admin`, `external_user_id`, `file_quota`, `token` are never writable via claim mapping.
+
+**Admin Pre-provisioning**: Admins create users with the `external_user_id` matching the IdP's `sub` claim for that user. Example:
+```bash
+curl -X POST http://localhost:8080/users/ \
+  -H "Authorization: Bearer <AUTH_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"display_name": "Alice", "external_user_id": "kc-alice-uuid", "is_admin": false}'
+```
+
+**Database Schema**:
+
+Columns on `users` table relevant to OIDC:
+- `external_user_id` (String, unique, nullable): Must equal the IdP's `sub` for OIDC matching
+- `email` (String, unique, nullable): Pure metadata; populated manually or via claim mapping. Not used for matching.
+
+New table `oidc_sessions`:
+- `session_token_hash` (unique): SHA-256 of the opaque session token
+- `user_id` (FK): User this session belongs to
+- `sid` (nullable): OIDC session identifier (used for back-channel logout)
+- `sub` (required): OIDC `sub` claim (stable user identifier)
+- `id_token_encrypted`, `access_token_encrypted`, `refresh_token_encrypted`: Fernet-encrypted IdP tokens
+- `access_token_expires_at`, `session_expires_at`: Token expiry times
+- `revoked_at` (nullable): Set on back-channel logout or manual revocation
+
+**Auth Endpoints** (all bypass the normal middleware):
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/auth/login` | Start Authorization Code + PKCE flow; redirects to IdP |
+| GET | `/auth/callback` | IdP callback; creates session, sets cookie; redirects to `next_url` |
+| POST | `/auth/backchannel-logout` | IdP-driven logout (OIDC spec); revokes sessions by `sid` |
+| GET | `/auth/logout` | RP-initiated logout; invalidates session + redirects to IdP |
+| GET | `/auth/me` | (debug) Returns current user and session expiry |
+
+**Session Management**:
+
+- Session token: URL-safe opaque token (`secrets.token_urlsafe(32)` — ~43 chars from 32 bytes of randomness), hashed (SHA-256) before storage
+- Cookie: `openrag_session` (httpOnly, Secure if HTTPS, SameSite=Lax, Path=/, no Domain=)
+- TTL: Aligned with `access_token_expires_at`; auto-refresh if `refresh_token` available (<60s before expiry)
+- Revocation: Via back-channel logout or manual invalidation
+
+**Middleware Behavior**:
+
+- UI paths (`/`, `/chainlit`, `/static`) without auth → 302 redirect to `/auth/login?next=...`
+- API paths (`/v1`, `/indexer`, `/search`, etc.) without auth → 401 JSON response
+- Programmtic access: Bearer `users.token` accepted in both modes
+
+**See Also**: Full configuration and troubleshooting guide at `docs/oidc.md`.
