@@ -115,16 +115,25 @@ Conséquence : **vLLM, Reranker Infinity, Whisper local — tous désactivés** 
 
 ## 6. Mapping ports / hosts
 
-DNS sur sous-zone dédiée **`openrag-mirai.fake-domain.name`** (créée dans le projet Scaleway de l'utilisateur, projet `default` de `scw config`).
+DNS provisionné sur **4 sous-zones** Scaleway (toutes dans le projet `default` `223ee57e…`), pour les 2 VMs sur les 2 domaines (legacy `fake-domain.name` + production `numerique-interieur.com`) :
 
-| Hôte public | Records DNS | Reverse proxy → conteneur:port |
+| Sous-zone | VM cible | Records (`*` + `api`/`indexer`/`chat`) |
 |---|---|---|
-| `api.openrag-mirai.fake-domain.name` | A → 51.159.184.192 | `openrag:8080` (FastAPI) |
-| `indexer.openrag-mirai.fake-domain.name` | A → 51.159.184.192 | `indexer-ui:3042` |
-| `chat.openrag-mirai.fake-domain.name` | A → 51.159.184.192 | `openrag:8080` (sub-path Chainlit) |
-| `*.openrag-mirai.fake-domain.name` | A → 51.159.184.192 | wildcard catch-all (extensibilité future, ex. `metrics.…`) |
+| `openrag-mirai.fake-domain.name` | VM 2 (51.159.184.192) | ✓ |
+| `openrag-mirai.numerique-interieur.com` | VM 2 (51.159.184.192) | ✓ |
+| `openrag.fake-domain.name` | VM 1 (51.159.119.187, legacy — non touchée) | (pré-existante côté legacy) |
+| `openrag.numerique-interieur.com` | VM 1 (51.159.119.187) | ✓ (créée pour future bascule prod) |
 
-Tous les records ont **TTL 60s** (pivot rapide possible). La sous-zone est totalement séparée de l'ancienne (`openrag.fake-domain.name` → 51.159.119.187), donc bascule de prod sans interférence.
+Reverse proxy de chaque VM (Caddy) :
+
+| Hôte public | Reverse proxy → conteneur:port |
+|---|---|
+| `api.<zone>` | `openrag:8080` (FastAPI) |
+| `indexer.<zone>` | `indexer-ui:3042` |
+| `chat.<zone>` | `openrag:8080` (sub-path Chainlit) |
+| `*.<zone>` | wildcard catch-all (extensibilité future) |
+
+Tous les records ont **TTL 60s** (pivot rapide possible). Le wildcard de chaque sous-zone permet d'ajouter des vhosts (ex. `metrics.openrag-mirai…`) sans toucher au DNS.
 
 ## 7. Sécurité
 
