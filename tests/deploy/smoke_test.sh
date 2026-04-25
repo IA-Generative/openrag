@@ -26,19 +26,47 @@ check() {
     fi
 }
 
+NC_BASE="${NC_BASE:-openrag-mirai.numerique-interieur.com}"
+NC_API="https://api.${NC_BASE}"
+NC_INDEXER="https://indexer.${NC_BASE}"
+NC_CHAT="https://chat.${NC_BASE}"
+
 echo "============ Smoke tests OpenRAG ============"
-echo "Base : $BASE"
+echo "Base canonical     : $BASE"
+echo "Base non-canonical : $NC_BASE  (doit redir 301 vers le canonical)"
 echo ""
 
-echo "--- DNS ---"
+echo "--- DNS canonical ---"
 check "api.${BASE}    résout"     "dig +short api.${BASE} @1.1.1.1 | head -1"     '51\.[0-9.]+'
 check "indexer.${BASE} résout"   "dig +short indexer.${BASE} @1.1.1.1 | head -1" '51\.[0-9.]+'
 check "chat.${BASE}   résout"     "dig +short chat.${BASE} @1.1.1.1 | head -1"    '51\.[0-9.]+'
 echo ""
 
-echo "--- API health ---"
+echo "--- DNS non-canonical (numerique-interieur.com) ---"
+check "api.${NC_BASE}    résout"     "dig +short api.${NC_BASE} @1.1.1.1 | head -1"     '51\.[0-9.]+'
+check "indexer.${NC_BASE} résout"   "dig +short indexer.${NC_BASE} @1.1.1.1 | head -1" '51\.[0-9.]+'
+check "chat.${NC_BASE}   résout"     "dig +short chat.${NC_BASE} @1.1.1.1 | head -1"    '51\.[0-9.]+'
+echo ""
+
+echo "--- API health (canonical, direct) ---"
 check "GET ${API}/health_check"               "curl -fsSL -o /dev/null -w '%{http_code}' --max-time 10 ${API}/health_check"           '200'
 check "GET ${API}/version"                    "curl -fsSL -o /dev/null -w '%{http_code}' --max-time 10 ${API}/version"                '200'
+echo ""
+
+echo "--- Redirect non-canonical → canonical (3 hosts) ---"
+for n in api indexer chat; do
+    nc="https://${n}.${NC_BASE}/health_check"
+    canon="https://${n}.${BASE}/health_check"
+    check "${n}.${NC_BASE} -> 30x sur /health_check" \
+          "curl -sI --max-time 10 ${nc} | awk 'NR==1{print \$2}' | tr -d '\\r'" \
+          '30[1278]'
+    check "${n}.${NC_BASE}  Location  -> ${n}.${BASE}" \
+          "curl -sI --max-time 10 ${nc} | awk 'BEGIN{IGNORECASE=1} /^location/{print \$2}' | head -1 | tr -d '\\r'" \
+          "${canon//\./\\.}.*"
+    check "${n}.${NC_BASE} -L (redirect suivi) -> 200" \
+          "curl -fsSL -o /dev/null -w '%{http_code}' --max-time 15 ${nc}" \
+          '200'
+done
 echo ""
 
 echo "--- OIDC redirect ---"

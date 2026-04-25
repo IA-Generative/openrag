@@ -90,3 +90,40 @@ chat.openrag-mirai.fake-domain.name {
     }
     respond "Not found" 404
 }
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Domaine non-canonical : numerique-interieur.com → redirect 301 permanent
+# vers le canonical fake-domain.name.
+#
+# Pourquoi un redirect plutôt qu'un proxy direct sur les 2 domaines :
+# OpenRAG a un seul `OIDC_REDIRECT_URI`, un seul `INDEXERUI_URL`, et les
+# cookies de session sont liés à un domaine. Servir les 2 hôtes en proxy
+# casserait le cookie après le passage par Keycloak. Le redirect 301
+# garantit qu'avant tout cookie/auth, le client est sur le canonical.
+#
+# Bascule production future : quand `numerique-interieur.com` deviendra
+# le domaine principal, swapper la direction des redirects + mettre à
+# jour API_BASE_URL / INDEXERUI_URL / OIDC_REDIRECT_URI dans /opt/openrag/.env.
+# Le client Keycloak whitelist déjà les 12 redirect URIs des 2 domaines,
+# aucune modif côté SSO.
+# ═════════════════════════════════════════════════════════════════════════════
+
+api.openrag-mirai.numerique-interieur.com {
+    redir https://api.openrag-mirai.fake-domain.name{uri} permanent
+}
+
+indexer.openrag-mirai.numerique-interieur.com {
+    redir https://indexer.openrag-mirai.fake-domain.name{uri} permanent
+}
+
+chat.openrag-mirai.numerique-interieur.com {
+    redir https://chat.openrag-mirai.fake-domain.name{uri} permanent
+}
+
+# Catch-all wildcard sur numerique-interieur.com — 404 propre.
+*.openrag-mirai.numerique-interieur.com {
+    tls {
+        on_demand
+    }
+    respond "Not found" 404
+}

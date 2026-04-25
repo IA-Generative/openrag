@@ -150,6 +150,64 @@ def test_keycloak_client_secret_is_valid():
     assert r.status_code in (200, 400, 401), r.status_code
 
 
+# ----------------------------------------------------------------------------
+# Multi-domaine — la VM doit accepter les hosts numerique-interieur.com mais
+# en redirigeant (301) vers le canonical fake-domain.name avant l'auth.
+# ----------------------------------------------------------------------------
+
+NON_CANONICAL_BASE = os.environ.get(
+    "NON_CANONICAL_BASE_HOST", "openrag-mirai.numerique-interieur.com"
+)
+NC_API = f"https://api.{NON_CANONICAL_BASE}"
+NC_INDEXER = f"https://indexer.{NON_CANONICAL_BASE}"
+NC_CHAT = f"https://chat.{NON_CANONICAL_BASE}"
+
+
+def _expects_redirect_to_canonical(url: str, canonical_host: str) -> None:
+    """Vérifie qu'un GET sur `url` retourne 301/308 avec Location pointant vers
+    le canonical_host correspondant (même chemin)."""
+    r = requests.get(url, allow_redirects=False, timeout=10)
+    assert r.status_code in (301, 308), f"{url} -> {r.status_code} (attendu 301/308)"
+    loc = r.headers.get("Location", "")
+    parsed = urlparse(loc)
+    assert parsed.hostname == canonical_host, (
+        f"{url} redirige vers {parsed.hostname}, attendu {canonical_host}"
+    )
+    assert parsed.scheme == "https", f"redirect {url} non HTTPS : {loc}"
+
+
+def test_non_canonical_api_redirects_to_canonical():
+    """api.openrag-mirai.numerique-interieur.com → 301 vers
+    api.openrag-mirai.fake-domain.name (préserve le path)."""
+    _expects_redirect_to_canonical(
+        f"{NC_API}/health_check", f"api.{BASE}"
+    )
+
+
+def test_non_canonical_indexer_redirects_to_canonical():
+    _expects_redirect_to_canonical(
+        f"{NC_INDEXER}/", f"indexer.{BASE}"
+    )
+
+
+def test_non_canonical_chat_redirects_to_canonical():
+    _expects_redirect_to_canonical(
+        f"{NC_CHAT}/", f"chat.{BASE}"
+    )
+
+
+def test_non_canonical_auth_login_redirects_then_to_sso():
+    """Le path /auth/login sur le non-canonical doit d'abord rediriger vers
+    le canonical (Caddy 301), puis le canonical redirige vers Keycloak.
+    On suit la chaîne complète et on vérifie la destination finale."""
+    r = requests.get(
+        f"{NC_API}/auth/login", allow_redirects=True, timeout=15
+    )
+    # Le suivi des redirects doit arriver chez Keycloak Mirai
+    final = r.url
+    assert "sso.mirai.interieur.gouv.fr" in final, f"chaîne de redirect inattendue, final = {final}"
+
+
 @pytest.mark.skipif(not OIDC_CLIENT_SECRET, reason="OIDC_CLIENT_SECRET non défini")
 def test_keycloak_rejects_wrong_secret():
     """Sanity check : un mauvais secret doit retourner invalid_client.
