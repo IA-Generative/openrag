@@ -1,5 +1,16 @@
-# Ignore environment files
+# Ignore environment files (secrets — never commit)
 .env
+.env.local
+.env.production
+.env.*.local
+*.secret
+*-secret
+*-secret.*
+credentials.json
+credentials.yaml
+credentials.yml
+**/scw-key*.json
+**/oidc-secret*
 
 # generated files and folders
 .files/
