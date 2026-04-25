@@ -59,37 +59,30 @@ indexer.openrag-mirai.fake-domain.name {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Chat (Chainlit, sub-path FastAPI sur le même port 8080)
+# Chat (Chainlit) — redirect 301 vers /chainlit/ sur le canonical api.…
+#
+# Pourquoi pas un reverse_proxy direct vers localhost:8080 :
+# OpenRAG pose son cookie de session OIDC sur l'host qui sert /auth/login.
+# Si chat.openrag-mirai.fake-domain.name sert /auth/login lui-même, le
+# cookie est posé sur ce host. Mais OIDC_REDIRECT_URI pointe sur
+# api.openrag-mirai/auth/callback → le browser n'envoie pas le cookie au
+# callback → erreur "OIDC state cookie missing".
+# Solution : router tout le trafic chat vers le canonical api.openrag-mirai/chainlit
+# avant que l'utilisateur ait un cookie. Le cookie de session est alors
+# posé une seule fois sur api.openrag-mirai et reste consistant pour
+# toute la session Chainlit.
 # ─────────────────────────────────────────────────────────────────────────────
 chat.openrag-mirai.fake-domain.name {
-    encode zstd gzip
-
-    reverse_proxy localhost:8080 {
-        header_up X-Forwarded-Proto {scheme}
-        header_up X-Forwarded-Host {host}
-        # Chainlit utilise WebSocket pour le streaming des messages
-        transport http {
-            keepalive 10m
-            keepalive_idle_conns 100
-        }
-    }
-
-    log {
-        output file /var/log/caddy/chat.log
-        format json
-    }
+    redir https://api.openrag-mirai.fake-domain.name/chainlit{uri} permanent
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Catch-all pour les autres sous-noms (le wildcard DNS résout tout vers
-# l'IP de la VM ; ce vhost retourne 404 propre pour les hôtes non gérés).
-# ─────────────────────────────────────────────────────────────────────────────
-*.openrag-mirai.fake-domain.name {
-    tls {
-        on_demand
-    }
-    respond "Not found" 404
-}
+# Note : pas de bloc catch-all ``*.openrag-mirai.fake-domain.name`` —
+# Caddy 2.x rejette ``tls { on_demand }`` sans ``permission module``
+# (mécanisme anti-abus qui demande une whitelist d'hôtes ou un endpoint
+# ``ask=…`` pour autoriser l'émission de certs LE à la volée).
+# Conséquence : un Host header non listé reçoit 421 Misdirected Request
+# au lieu d'un 404 maquillé. Acceptable — la liste explicite des vhosts
+# est la source de vérité.
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Domaine non-canonical : numerique-interieur.com → redirect 301 permanent
@@ -120,10 +113,5 @@ chat.openrag-mirai.numerique-interieur.com {
     redir https://chat.openrag-mirai.fake-domain.name{uri} permanent
 }
 
-# Catch-all wildcard sur numerique-interieur.com — 404 propre.
-*.openrag-mirai.numerique-interieur.com {
-    tls {
-        on_demand
-    }
-    respond "Not found" 404
-}
+# Idem côté numerique-interieur.com : pas de catch-all on_demand pour la
+# même raison (Caddy 2.x exige un permission module).
