@@ -82,19 +82,25 @@ Si `OIDC_CLAIM_MAPPING` est positionné, le `display_name` et l'`email` sont syn
 
 ## Multi-VM (notes)
 
-Le client `openrag` est **partagé entre les 2 VMs** OpenRAG, qui vivent chacune dans leur propre **sous-zone DNS Scaleway** sur `fake-domain.name` :
+Le client `openrag` est **partagé entre les 2 VMs** OpenRAG, qui vivent chacune dans leur propre **sous-zone DNS** :
 
-| VM | Sous-zone DNS | Hôtes publics | IP |
+| VM | Sous-zone DNS principale | Hôtes publics | IP |
 |---|---|---|---|
 | **VM 1** (existante / legacy) | `openrag.fake-domain.name` | `api.openrag.…`, `indexer.openrag.…`, `chat.openrag.…` | `51.159.119.187` |
 | **VM 2** (nouvelle, openrag-01-et) | `openrag-mirai.fake-domain.name` | `api.openrag-mirai.…`, `indexer.openrag-mirai.…`, `chat.openrag-mirai.…` | `51.159.184.192` |
 
-Le manifest `openrag-client.json` déclare donc **6 `redirectUris`** (3 par zone) et **6 `webOrigins`**. Vérifier dans la console Keycloak après import qu'aucun n'a été tronqué.
+Chaque VM est en plus exposée (à venir) sur le **domaine cible production** `numerique-interieur.com` avec la même structure de sous-zones :
+- `api.openrag.numerique-interieur.com`, `indexer.openrag.…`, `chat.openrag.…` → VM 1
+- `api.openrag-mirai.numerique-interieur.com`, `indexer.openrag-mirai.…`, `chat.openrag-mirai.…` → VM 2
+
+> Les sous-zones `openrag.numerique-interieur.com` et `openrag-mirai.numerique-interieur.com` ne sont **pas encore créées** ; les redirect URIs sont whitelistés dès maintenant pour qu'aucun roundtrip Keycloak ne soit nécessaire au moment du go-live sur le domaine officiel.
+
+Le manifest `openrag-client.json` déclare donc **12 `redirectUris`** (3 préfixes × 2 sous-zones × 2 domaines) et **12 `webOrigins`**. Vérifier dans la console Keycloak après import qu'aucun n'a été tronqué.
 
 - `chat.openrag.fake-domain.name` retourne actuellement 404 sur la VM 1 (Chainlit non servi côté legacy). Le redirect URI est néanmoins whitelisté de manière préventive — si Chainlit est activé plus tard, pas de modif Keycloak nécessaire.
 - Chaque VM stocke ses sessions dans sa propre table PostgreSQL `oidc_sessions` — il n'y a pas d'affinité ni de session sharing à mettre en place.
 - Le `client_secret` est **partagé** entre les 2 VMs (un seul client → un seul secret). Distribuer via votre canal sécurisé habituel (Vault, ou env injection au déploiement). Le rotation se fait dans la console Keycloak (onglet *Credentials*) puis re-déploiement des deux VMs simultanément.
-- Le back-channel logout est configuré sur **deux URLs** (séparées par un espace dans `attributes.backchannel.logout.url`) — Keycloak les notifie toutes les deux, garantissant que la révocation côté IdP atteint les deux instances.
+- Le back-channel logout est configuré sur **quatre URLs** (séparées par un espace dans `attributes.backchannel.logout.url`) — Keycloak les notifie toutes, garantissant que la révocation côté IdP atteint les deux instances quel que soit le domaine d'accès. Tant que `numerique-interieur.com` n'est pas servi, les notifications back-channel sur ces URLs échoueront silencieusement (pas d'impact, juste un warning Keycloak).
 
 ## Sécurité
 
