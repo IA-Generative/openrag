@@ -14,7 +14,7 @@
 ### Option A — Via la console admin (recommandée)
 
 1. Se connecter à la console admin du realm Mirai (URL fournie séparément).
-2. Sélectionner le realm cible (probablement `mirai` — à confirmer avec l'admin Keycloak).
+2. Sélectionner le realm `mirai` (issuer confirmé : `https://sso.mirai.interieur.gouv.fr/realms/mirai`, discovery testée ✓).
 3. **Clients → Create client → Import client** : charger `openrag-client.json`.
 4. Vérifier que `Client ID = openrag`, `Client authentication = ON`, `Standard flow = ON`, autres flows OFF.
 5. **Save**.
@@ -26,11 +26,11 @@
 kcadm.sh config credentials --server https://sso.mirai.interieur.gouv.fr \
   --realm master --user <admin> --password <password>
 
-kcadm.sh create clients -r <realm> -f deploy/keycloak/openrag-client.json
+kcadm.sh create clients -r mirai -f deploy/keycloak/openrag-client.json
 
 # Récupérer le secret
-CID=$(kcadm.sh get clients -r <realm> -q clientId=openrag --fields id --format csv --noquotes | tail -1)
-kcadm.sh get clients/$CID/client-secret -r <realm>
+CID=$(kcadm.sh get clients -r mirai -q clientId=openrag --fields id --format csv --noquotes | tail -1)
+kcadm.sh get clients/$CID/client-secret -r mirai
 ```
 
 ## Variables `.env` à coller côté OpenRAG sur chaque VM
@@ -38,7 +38,7 @@ kcadm.sh get clients/$CID/client-secret -r <realm>
 ```bash
 AUTH_MODE=oidc
 
-OIDC_ENDPOINT=https://sso.mirai.interieur.gouv.fr/realms/<realm-mirai>
+OIDC_ENDPOINT=https://sso.mirai.interieur.gouv.fr/realms/mirai
 OIDC_CLIENT_ID=openrag
 OIDC_CLIENT_SECRET=<récupéré dans la console Keycloak — voir étape 6>
 OIDC_REDIRECT_URI=https://api.openrag-mirai.fake-domain.name/auth/callback
