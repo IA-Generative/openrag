@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 # Lance la suite de tests post-déploiement OpenRAG :
-#   1. smoke (curl/dig/openssl) — toujours
-#   2. test_llm_hub.py — si BASE_URL et API_KEY définis (à lancer EN SSH sur la VM)
-#   3. test_oidc_flow.py — toujours
-#   4. test_indexing.py — si AUTH_TOKEN défini
+#   1. smoke_test.sh         — DNS + TLS + endpoints publics — toujours
+#   2. test_oidc_flow.py     — invariants OIDC + valid. client_secret si dispo
+#   3. test_llm_hub.py       — LLM/embedder/reranker/VLM/Whisper si configs présentes
+#   4. test_indexing.py      — upload + search end-to-end (AUTH_TOKEN requis)
+#   5. test_chat_completion.py — chat /v1/* + streaming + RAG (AUTH_TOKEN requis)
 #
 # Usage :
 #   bash tests/deploy/run_all.sh                    # smoke + oidc seulement
-#   AUTH_TOKEN=... bash tests/deploy/run_all.sh     # + indexing
+#   AUTH_TOKEN=... bash tests/deploy/run_all.sh     # + indexing + chat
 #   ssh root@<vm> 'cd /opt/openrag && \
 #     env $(grep -v ^# .env | xargs) python -m pytest tests/deploy/test_llm_hub.py'
+#
+# Sur la VM, charger le .env automatiquement :
+#   set -a; source /opt/openrag/.env; set +a
+#   bash tests/deploy/run_all.sh
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -50,9 +55,12 @@ fi
 if [[ -n "${AUTH_TOKEN:-}" ]]; then
     run "4. Indexing end-to-end tests (AUTH_TOKEN détecté)" \
         python -m pytest tests/deploy/test_indexing.py -v --tb=short
+    run "5. Chat completion + RAG end-to-end tests" \
+        python -m pytest tests/deploy/test_chat_completion.py -v --tb=short
 else
     echo ""
     echo "⏭  4. Indexing tests sautés (AUTH_TOKEN absent)"
+    echo "⏭  5. Chat completion tests sautés (AUTH_TOKEN absent)"
 fi
 
 echo ""

@@ -133,6 +133,101 @@ def test_hub_url_uses_https():
             assert urlparse(url).scheme == "https", f"{label} doit être en https"
 
 
+# ----------------------------------------------------------------------------
+# VLM + Whisper Scaleway (mêmes vars OpenRAG)
+# ----------------------------------------------------------------------------
+
+VLM_BASE_URL = _env("VLM_BASE_URL")
+VLM_API_KEY = _env("VLM_API_KEY")
+VLM_MODEL = _env("VLM_MODEL", default="mistral-small-3.2-24b-instruct-2506")
+
+TRANSCRIBER_BASE_URL = _env("TRANSCRIBER_BASE_URL")
+TRANSCRIBER_API_KEY = _env("TRANSCRIBER_API_KEY")
+TRANSCRIBER_MODEL = _env("TRANSCRIBER_MODEL_NAME", default="whisper-large-v3")
+
+
+@pytest.mark.skipif(
+    not VLM_BASE_URL or not VLM_API_KEY,
+    reason="VLM_BASE_URL/API_KEY non définis (VLM désactivé)",
+)
+def test_vlm_inline_image():
+    """Le VLM Scaleway répond à un message avec image PNG inline (16x16 rouge)."""
+    import base64
+    import struct
+    import zlib
+
+    def _png_solid(w, h, r, g, b):
+        sig = b"\x89PNG\r\n\x1a\n"
+
+        def chunk(t, d):
+            c = zlib.crc32(t + d) & 0xFFFFFFFF
+            return struct.pack(">I", len(d)) + t + d + struct.pack(">I", c)
+
+        ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
+        raw = b"".join(b"\x00" + bytes([r, g, b]) * w for _ in range(h))
+        idat = zlib.compress(raw)
+        return sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", idat) + chunk(b"IEND", b"")
+
+    data_uri = "data:image/png;base64," + base64.b64encode(
+        _png_solid(16, 16, 220, 30, 30)
+    ).decode()
+
+    r = _post(
+        f"{VLM_BASE_URL.rstrip('/')}/chat/completions",
+        VLM_API_KEY,
+        {
+            "model": VLM_MODEL,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Color in 3 words?"},
+                        {"type": "image_url", "image_url": {"url": data_uri}},
+                    ],
+                }
+            ],
+            "max_tokens": 20,
+        },
+        timeout=60,
+    )
+    assert r.status_code == 200, r.text[:300]
+    body = r.json()
+    content = body.get("choices", [{}])[0].get("message", {}).get("content", "")
+    assert content, f"VLM réponse vide : {body}"
+
+
+@pytest.mark.skipif(
+    not TRANSCRIBER_BASE_URL or not TRANSCRIBER_API_KEY,
+    reason="TRANSCRIBER_BASE_URL/API_KEY non définis (transcription désactivée)",
+)
+def test_whisper_silent_wav():
+    """Whisper Scaleway transcrit un WAV silencieux 1s sans erreur (le contenu
+    'text' peut être quelconque ; on valide juste 200 + format JSON OpenAI)."""
+    import struct
+    import wave
+    from io import BytesIO
+
+    buf = BytesIO()
+    w = wave.open(buf, "wb")
+    w.setnchannels(1)
+    w.setsampwidth(2)
+    w.setframerate(16000)
+    w.writeframes(b"\x00\x00" * 16000)
+    w.close()
+    buf.seek(0)
+
+    r = requests.post(
+        f"{TRANSCRIBER_BASE_URL.rstrip('/')}/audio/transcriptions",
+        headers={"Authorization": f"Bearer {TRANSCRIBER_API_KEY}"},
+        files={"file": ("silent.wav", buf.getvalue(), "audio/wav")},
+        data={"model": TRANSCRIBER_MODEL},
+        timeout=60,
+    )
+    assert r.status_code == 200, r.text[:300]
+    body = r.json()
+    assert "text" in body, f"format inattendu : {body}"
+
+
 if __name__ == "__main__":
     import sys
 
@@ -140,4 +235,6 @@ if __name__ == "__main__":
     print(f"MODEL             = {MODEL}")
     print(f"EMBEDDER_MODEL    = {EMBEDDER_MODEL}")
     print(f"RERANKER_MODEL    = {RERANKER_MODEL}")
+    print(f"VLM_MODEL         = {VLM_MODEL or '(disabled)'}")
+    print(f"TRANSCRIBER_MODEL = {TRANSCRIBER_MODEL or '(disabled)'}")
     sys.exit(pytest.main([__file__, "-v"]))

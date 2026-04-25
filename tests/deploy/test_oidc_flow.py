@@ -111,3 +111,58 @@ def test_redirect_uri_matches_expected_host():
     qs = parse_qs(urlparse(loc).query)
     redirect_uri = qs.get("redirect_uri", [""])[0]
     assert redirect_uri == f"{API}/auth/callback", redirect_uri
+
+
+# ----------------------------------------------------------------------------
+# Validation directe du client_secret Keycloak (à exécuter sur la VM, lit env)
+# ----------------------------------------------------------------------------
+
+OIDC_CLIENT_ID = os.environ.get("OIDC_CLIENT_ID", "openrag")
+OIDC_CLIENT_SECRET = os.environ.get("OIDC_CLIENT_SECRET", "")
+
+
+@pytest.mark.skipif(not OIDC_CLIENT_SECRET, reason="OIDC_CLIENT_SECRET non défini (à exécuter sur la VM)")
+def test_keycloak_client_secret_is_valid():
+    """Vérifie que le client_secret posé sur la VM correspond bien à celui
+    enregistré dans Keycloak. On utilise le grant client_credentials —
+    Keycloak rejette typiquement avec 'unauthorized_client' parce que
+    serviceAccountsEnabled=false dans notre client, MAIS cette erreur
+    confirme déjà que le secret est validé. La vraie erreur à éviter est
+    'invalid_client' qui signifie secret incorrect."""
+    r = requests.post(
+        f"{SSO_ISSUER}/protocol/openid-connect/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": OIDC_CLIENT_ID,
+            "client_secret": OIDC_CLIENT_SECRET,
+        },
+        timeout=15,
+    )
+    body = r.json()
+    err = body.get("error")
+    # Cas acceptés : succès direct OU rejet pour raison non liée au secret
+    assert err != "invalid_client", (
+        f"client_secret incorrect (Keycloak retourne invalid_client). "
+        f"Vérifier la valeur posée vs onglet Credentials du client."
+    )
+    # 200 + access_token (cas où serviceAccountsEnabled serait true) OU
+    # 400/401 + unauthorized_client (cas attendu avec notre config)
+    assert r.status_code in (200, 400, 401), r.status_code
+
+
+@pytest.mark.skipif(not OIDC_CLIENT_SECRET, reason="OIDC_CLIENT_SECRET non défini")
+def test_keycloak_rejects_wrong_secret():
+    """Sanity check : un mauvais secret doit retourner invalid_client.
+    Sert de canary inverse — si ce test échoue, le test précédent
+    pourrait être un faux positif."""
+    r = requests.post(
+        f"{SSO_ISSUER}/protocol/openid-connect/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": OIDC_CLIENT_ID,
+            "client_secret": "definitely-not-the-real-secret-" + "x" * 32,
+        },
+        timeout=15,
+    )
+    body = r.json()
+    assert body.get("error") == "invalid_client", body

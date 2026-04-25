@@ -136,7 +136,22 @@ Tous les records ont **TTL 60s** (pivot rapide possible). La sous-zone est total
 - Aucun secret committé : `.env` réel reste sur la VM, seul `.env.example.vm` est versionné
 - Project-id Scaleway **jamais hardcodé** dans le repo (le script `deploy/scripts/dns_setup.sh` lit `default-project-id` de `scw config`)
 
-## 8. État d'avancement (référencé au plan d'exécution)
+## 8. Tests pré-déploiement validés ✓ (2026-04-25)
+
+Avant tout déploiement effectif, les composants externes ont été validés depuis la VM :
+
+| Composant | Test | Résultat |
+|---|---|---|
+| DNS `*.openrag-mirai.fake-domain.name` | `dig +short` via 1.1.1.1 | ✓ → `51.159.184.192` |
+| SSO Mirai discovery | `GET /realms/mirai/.well-known/openid-configuration` | ✓ HTTP 200, `backchannel_logout_supported: true` |
+| Hub LiteLLM Mirai | `GET /v1/models` (token `litellm`) | ✓ 14 modèles |
+| Scaleway Generative API | `GET /v1/models` (token IAM `openrag-mirai`) | ✓ 14 modèles |
+| Client OIDC `openrag` créé | onglet Credentials Keycloak | ✓ `clientSecret` 32 caractères |
+| **Validation `client_secret`** | `POST /protocol/openid-connect/token` (grant `client_credentials`) | ✓ Keycloak retourne `unauthorized_client` (attendu : `serviceAccountsEnabled=false`), prouvant que **le secret est correct** (sinon `invalid_client`) |
+
+L'environnement est prêt pour un `docker compose up -d`.
+
+## 9. État d'avancement (référencé au plan d'exécution)
 
 | Étape | Description | Statut |
 |---|---|---|
