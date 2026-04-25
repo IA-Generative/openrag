@@ -17,32 +17,35 @@
 
 Cette capacité GPU permet aussi un fallback local pour Whisper si l'on ne reçoit pas un token avec accès `audio` côté hub.
 
-## 2. Hub LLM Mirai — services testés depuis la VM
+## 2. Services IA — sources et tests depuis la VM
 
-Deux endpoints disponibles dans `/root/hub-llm.txt` :
-- **LiteLLM** (proxy unifié OpenAI-compat) — `https://llm.api.ai.numerique-interieur.com`
-- **Kevent gateway** (gateway custom Mirai pour audio) — `https://gateway.api.ai.numerique-interieur.com`
+**Trois endpoints** combinés pour couvrir l'ensemble des besoins OpenRAG :
 
-> L'admin du hub indique que l'ensemble migrera progressivement derrière Kevent, LiteLLM proposant de plus en plus de fonctionnalités payantes. Source : doc gateway https://github.com/IA-Generative/kevent-ai
+| Source | URL | Auth | Usage |
+|---|---|---|---|
+| **LiteLLM Mirai** | `https://llm.api.ai.numerique-interieur.com` | `Authorization: Bearer sk-…` | LLM, embedder, reranker |
+| **Kevent gateway Mirai** | `https://gateway.api.ai.numerique-interieur.com` | `apikey: Bearer <token>` | (whisper bloqué côté consumer_group) |
+| **Scaleway Generative API** | `https://api.scaleway.ai/<project-EricTiquet>/v1` | `Authorization: Bearer <scw-secret>` | VLM, Whisper |
 
-### Modèles utiles à OpenRAG, **testés ✓ depuis la VM**
+> L'admin du hub Mirai indique que l'ensemble migrera progressivement derrière Kevent, LiteLLM proposant de plus en plus de fonctionnalités payantes. Source : doc gateway https://github.com/IA-Generative/kevent-ai. Scaleway est un complément actuel, pas une alternative permanente.
 
-| Usage OpenRAG | Modèle | Endpoint | Test | Latence |
-|---|---|---|---|---|
-| LLM principal | `mistral-small-24b` | LiteLLM `/v1/chat/completions` | ✓ "pong" | **124 ms** |
-| LLM qualité (Albert / État) | `mistral-medium-albert` | LiteLLM `/v1/chat/completions` | ✓ + carbon footprint | 307 ms |
-| LLM rapide (alias) | `chat-small` | LiteLLM `/v1/chat/completions` | ✓ | 161 ms |
-| Embedder principal | `bge-multilingual-gemma2` | LiteLLM `/v1/embeddings` | ✓ dim=3584 | **97 ms** |
-| Reranker | `bge-multilingual-gemma2` | LiteLLM `/v1/rerank` (Cohere-compat) | ✓ scores | **65 ms** |
-| Transcription | `faster-whisper-large-v3-turbo` | Kevent `/v1/audio/transcriptions` | **bloqué** : token `kserve` reconnu mais `consumer_group` ne couvre pas la route audio | — |
+### Modèles utilisés, **tous testés ✓ depuis la VM**
 
-Modèles disponibles non retenus pour l'instant : `gptoss-120b`, `qwen3-coder-30b`, `code`, `tools`, `tools-fast`, `classifier`, `guardrail`, `chat-smart`, `pyannote-diarization`.
+| Usage | Modèle | Source | Latence |
+|---|---|---|---|
+| LLM principal | `mistral-small-24b` | LiteLLM Mirai | **124 ms** |
+| Embedder | `bge-multilingual-gemma2` (dim=3584) | LiteLLM Mirai | **97 ms** |
+| Reranker | `bge-multilingual-gemma2` (Cohere-compat) | LiteLLM Mirai `/v1/rerank` | **65 ms** |
+| **VLM** (image captioning) | `mistral-small-3.2-24b-instruct-2506` | **Scaleway** | **177 ms** |
+| **Transcription** | `whisper-large-v3` | **Scaleway** `/v1/audio/transcriptions` | **260 ms** |
 
-VLM : **aucun** (pas de `gpt-4-vision`, `mistral-medium-vision`, etc.). Image captioning sera désactivé au démarrage.
+Alternatives Scaleway si besoin : `pixtral-12b-2409` (VLM 12B plus léger), `voxtral-small-24b-2507` (audio Mistral), `qwen3-embedding-8b` (embedder alternatif).
 
-### Statut Whisper
+Modèles Mirai disponibles non utilisés : `gptoss-120b`, `qwen3-coder-30b`, `code`, `tools`, `tools-fast`, `classifier`, `guardrail`, `chat-smart`, `mistral-medium-albert` (Albert État, plus lent).
 
-L'endpoint `/v1/audio/transcriptions` existe et est accessible, mais le token disponible (`kserve` du `hub-llm.txt`) renvoie 401 *"please check the consumer_group_id for this request"*. Demande envoyée à l'admin du hub pour ajouter la route audio au consumer group du token, ou émettre un token dédié à OpenRAG. En attendant, transcription désactivée (`TRANSCRIBER_BASE_URL` vide). Aucune incidence sur la chaîne RAG documentaire.
+### Statut Whisper Mirai (Kevent)
+
+Endpoint `gateway.api.ai.numerique-interieur.com/v1/audio/transcriptions` accessible mais le token Kevent fourni dans `/root/hub-llm.txt` renvoie 401 *"please check the consumer_group_id for this request"* — son consumer_group APISIX ne couvre pas la route audio. Demande envoyée à l'admin du hub pour étendre les droits, mais **non bloquant** : Whisper passe désormais par Scaleway.
 
 ## 3. SSO Keycloak Mirai
 
@@ -79,13 +82,13 @@ L'endpoint `/v1/audio/transcriptions` existe et est accessible, mais le token di
 
 Tous les services IA passent par le hub Mirai via env vars :
 
-| Variable | Valeur | Service |
+| Variable | Valeur | Source |
 |---|---|---|
-| `BASE_URL`, `API_KEY`, `MODEL` | `https://llm.api.ai.numerique-interieur.com/v1` + `sk-AD…` + `mistral-small-24b` | LLM principal |
-| `EMBEDDER_BASE_URL`, `EMBEDDER_API_KEY`, `EMBEDDER_MODEL_NAME` | (idem) + `bge-multilingual-gemma2` | Embeddings |
-| `RERANKER_PROVIDER=openai`, `RERANKER_BASE_URL`, `RERANKER_API_KEY`, `RERANKER_MODEL_NAME` | (idem) + `bge-multilingual-gemma2` | Rerank (Cohere-compat) |
-| `TRANSCRIBER_BASE_URL`, `TRANSCRIBER_API_KEY` | **vide** au démarrage (en attente du token audio) | Whisper |
-| `VLM_BASE_URL` | **vide** | (aucun VLM exposé par le hub) |
+| `BASE_URL`, `API_KEY`, `MODEL` | `https://llm.api.ai.numerique-interieur.com/v1` + `sk-AD…` + `mistral-small-24b` | **Mirai** LiteLLM |
+| `EMBEDDER_BASE_URL`, `EMBEDDER_API_KEY`, `EMBEDDER_MODEL_NAME` | (idem) + `bge-multilingual-gemma2` | **Mirai** LiteLLM |
+| `RERANKER_PROVIDER=openai`, `RERANKER_BASE_URL`, `RERANKER_API_KEY`, `RERANKER_MODEL_NAME` | (idem) + `bge-multilingual-gemma2` | **Mirai** LiteLLM `/v1/rerank` |
+| `VLM_BASE_URL`, `VLM_API_KEY`, `VLM_MODEL` | `https://api.scaleway.ai/a9158aac…/v1` + `<scw-secret>` + `mistral-small-3.2-24b-instruct-2506` | **Scaleway** GenAI |
+| `TRANSCRIBER_BASE_URL`, `TRANSCRIBER_API_KEY`, `TRANSCRIBER_MODEL_NAME` | (même endpoint Scaleway) + `whisper-large-v3` | **Scaleway** GenAI |
 
 Conséquence : **vLLM, Reranker Infinity, Whisper local — tous désactivés** dans `docker-compose`. La VM peut tourner sans GPU pour OpenRAG (le L4 reste disponible pour Marker accéléré ou un fallback whisper local plus tard).
 
