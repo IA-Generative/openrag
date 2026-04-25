@@ -55,8 +55,9 @@ Endpoint `gateway.api.ai.numerique-interieur.com/v1/audio/transcriptions` access
 - Les 2 VMs vivent dans 2 sous-zones DNS distinctes du domaine `fake-domain.name` :
   - VM 1 (existante, `51.159.119.187`) → `openrag.fake-domain.name` (api/indexer/chat)
   - VM 2 (nouvelle, `51.159.184.192`) → `openrag-mirai.fake-domain.name` (api/indexer/chat)
-- 6 `redirectUris` whitelistés (3 par zone), back-channel logout configuré sur les 2 instances API
+- 12 `redirectUris` whitelistés (3 préfixes × 2 sous-zones × 2 domaines `fake-domain.name` / `numerique-interieur.com`), back-channel logout configuré sur les 4 hosts API
 - Sessions indépendantes par VM (table `oidc_sessions` PostgreSQL locale à chaque VM)
+- **Audience cross-services** : `openrag` est inclus comme audience explicite dans les tokens Keycloak (mapper `oidc-audience-mapper` côté `openrag-client.json`), et OpenRAG active son validateur bearer JWT (`OIDC_ISSUER_URL` + `OIDC_AUDIENCE=openrag` côté `.env`). Cela prépare la propagation imminente du token utilisateur depuis **Open WebUI vers OpenRAG** : il restera juste à demander à l'admin Keycloak d'ajouter un mapper audience symétrique sur le client `open-webui`.
 
 ## 4. Topologie de déploiement
 

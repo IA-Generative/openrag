@@ -116,6 +116,19 @@
         "access.token.claim": "true",
         "userinfo.token.claim": "true"
       }
+    },
+    {
+      "name": "openrag audience",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-audience-mapper",
+      "consentRequired": false,
+      "config": {
+        "included.client.audience": "openrag",
+        "included.custom.audience": "",
+        "id.token.claim": "false",
+        "access.token.claim": "true",
+        "userinfo.token.claim": "false"
+      }
     }
   ],
   "defaultClientScopes": [

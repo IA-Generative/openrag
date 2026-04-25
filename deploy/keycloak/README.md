@@ -80,6 +80,39 @@ Le `sub` Keycloak est récupérable :
 
 Si `OIDC_CLAIM_MAPPING` est positionné, le `display_name` et l'`email` sont synchronisés à chaque login depuis l'ID token (whitelist stricte : seuls `display_name` et `email` sont écrasables, jamais `is_admin`, `external_user_id`, `file_quota` ou `token`).
 
+## Audience pour la propagation Open WebUI → OpenRAG
+
+Open WebUI obtiendra des tokens via son propre client Keycloak (`open-webui`) et les **propagera** dans le header `Authorization: Bearer …` lors des appels à l'API OpenRAG. Pour qu'OpenRAG accepte ces tokens, le claim `aud` du token Open WebUI doit contenir `openrag`.
+
+Trois modifications coordonnées :
+
+1. **Côté client Keycloak `open-webui`** — *à demander à l'admin Keycloak qui gère ce client* — ajouter un mapper audience qui inclut `openrag` :
+
+   ```json
+   {
+     "name": "openrag audience (delegated)",
+     "protocol": "openid-connect",
+     "protocolMapper": "oidc-audience-mapper",
+     "config": {
+       "included.client.audience": "openrag",
+       "access.token.claim": "true",
+       "id.token.claim": "false"
+     }
+   }
+   ```
+   Effet : tout token émis pour le client `open-webui` aura `aud: ["open-webui", "openrag"]`.
+
+2. **Côté client Keycloak `openrag`** — *déjà inclus dans `openrag-client.json`* : un mapper symétrique qui force `aud=openrag` sur les tokens émis directement à OpenRAG (cohérence avec `fullScopeAllowed: false`).
+
+3. **Côté `.env` OpenRAG sur la VM** — *déjà inclus dans `.env.example.vm`* :
+   ```
+   OIDC_ISSUER_URL=https://sso.mirai.interieur.gouv.fr/realms/mirai
+   OIDC_AUDIENCE=openrag
+   ```
+   Active le module `openrag/auth/oidc.py` (resource-server) qui valide signature + issuer + audience pour les bearer tokens externes.
+
+> Modèle de menace : ce schéma fait confiance à `open-webui` pour ne pas envoyer de tokens à OpenRAG pour le compte d'utilisateurs qui ne sont pas authentifiés à open-webui. Si ce niveau de confiance n'est pas acceptable, basculer plus tard sur un **token-exchange RFC 8693** (Open WebUI demande à Keycloak un token spécifiquement échangé pour OpenRAG, isolant les scopes par service).
+
 ## Multi-VM (notes)
 
 Le client `openrag` est **partagé entre les 2 VMs** OpenRAG, qui vivent chacune dans leur propre **sous-zone DNS** :
