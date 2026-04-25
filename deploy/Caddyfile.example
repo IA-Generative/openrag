@@ -1,0 +1,92 @@
+# Caddyfile — déploiement OpenRAG sur VM openrag-01-et (51.159.184.192)
+# - TLS Let's Encrypt automatique (Caddy gère les renouvellements)
+# - 3 vhosts (api / indexer / chat) tous sur la même IP, routage par Host
+# - Le wildcard DNS *.openrag-mirai.fake-domain.name permet d'ajouter d'autres
+#   vhosts sans toucher au DNS (ex. metrics.openrag-mirai... pour Grafana plus
+#   tard).
+#
+# Installation sur la VM :
+#   sudo apt-get install -y caddy
+#   sudo cp Caddyfile.example /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# Vérif TLS :
+#   curl -fsSL https://api.openrag-mirai.fake-domain.name/health_check
+#
+# Adresse email pour Let's Encrypt (à remplir avec une mailing-list opérée)
+{
+    email ops@example.gouv.fr
+    # Pour tester sans cramer de quota Let's Encrypt, dé-commenter :
+    # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# API FastAPI (Ray) — endpoint principal + endpoints OIDC (/auth/*)
+# ─────────────────────────────────────────────────────────────────────────────
+api.openrag-mirai.fake-domain.name {
+    encode zstd gzip
+
+    # Préserver les en-têtes upstream pour la détection HTTPS derrière proxy
+    # (cf. PR #331 upstream — fix(auth): detect HTTPS behind TLS-terminating reverse proxy).
+    reverse_proxy localhost:8080 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+        header_up X-Real-IP {remote_host}
+    }
+
+    # Logs structurés JSON pour ingestion Loki/Grafana
+    log {
+        output file /var/log/caddy/api.log
+        format json
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Indexer admin UI (Vite static, port 3042)
+# ─────────────────────────────────────────────────────────────────────────────
+indexer.openrag-mirai.fake-domain.name {
+    encode zstd gzip
+
+    reverse_proxy localhost:3042 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+    }
+
+    log {
+        output file /var/log/caddy/indexer.log
+        format json
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Chat (Chainlit, sub-path FastAPI sur le même port 8080)
+# ─────────────────────────────────────────────────────────────────────────────
+chat.openrag-mirai.fake-domain.name {
+    encode zstd gzip
+
+    reverse_proxy localhost:8080 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+        # Chainlit utilise WebSocket pour le streaming des messages
+        transport http {
+            keepalive 10m
+            keepalive_idle_conns 100
+        }
+    }
+
+    log {
+        output file /var/log/caddy/chat.log
+        format json
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Catch-all pour les autres sous-noms (le wildcard DNS résout tout vers
+# l'IP de la VM ; ce vhost retourne 404 propre pour les hôtes non gérés).
+# ─────────────────────────────────────────────────────────────────────────────
+*.openrag-mirai.fake-domain.name {
+    tls {
+        on_demand
+    }
+    respond "Not found" 404
+}
