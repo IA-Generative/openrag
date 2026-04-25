@@ -93,7 +93,11 @@ Tous les services IA passent par le hub Mirai via env vars :
 | `EMBEDDER_BASE_URL`, `EMBEDDER_API_KEY`, `EMBEDDER_MODEL_NAME` | (idem) + `bge-multilingual-gemma2` | **Mirai** LiteLLM |
 | `RERANKER_PROVIDER=openai`, `RERANKER_BASE_URL`, `RERANKER_API_KEY`, `RERANKER_MODEL_NAME` | (idem) + `bge-multilingual-gemma2` | **Mirai** LiteLLM `/v1/rerank` |
 | `VLM_BASE_URL`, `VLM_API_KEY`, `VLM_MODEL` | `https://api.scaleway.ai/a9158aac…/v1` + `<scw-secret>` + `mistral-small-3.2-24b-instruct-2506` | **Scaleway** GenAI |
-| `TRANSCRIBER_BASE_URL`, `TRANSCRIBER_API_KEY`, `TRANSCRIBER_MODEL_NAME` | (même endpoint Scaleway) + `whisper-large-v3` | **Scaleway** GenAI |
+| `TRANSCRIBER_BASE_URL`, `TRANSCRIBER_API_KEY`, `TRANSCRIBER_MODEL` | (même endpoint Scaleway) + `whisper-large-v3` | **Scaleway** GenAI |
+| `AUDIOLOADER=OpenAIAudioLoader`, `USE_WHISPER_LANG_DETECTOR=false` | overrides nécessaires pour bypasser le `LocalWhisperLoader` câblé dans `conf/config.yaml` | flags runtime |
+| `OIDC_AUTO_PROVISION_LOGIN=true` | crée les utilisateurs au premier login OIDC (non-admin, claims IdP) | flag runtime, cf. PR #341 upstream |
+
+> **Note technique critique** : sans `AUDIOLOADER=OpenAIAudioLoader`, OpenRAG ignore `TRANSCRIBER_BASE_URL` pour la transcription parce que le mapping `file_loaders.{wav,mp3,...} = LocalWhisperLoader` du yaml est plus prioritaire. Le code [`config/loader.py:236-241`](../openrag/config/loader.py) supporte explicitement cette env var pour basculer en masse les 8 extensions audio/video vers `OpenAIAudioLoader`.
 
 Conséquence : **vLLM, Reranker Infinity, Whisper local — tous désactivés** dans `docker-compose`. La VM peut tourner sans GPU pour OpenRAG (le L4 reste disponible pour Marker accéléré ou un fallback whisper local plus tard).
 
@@ -112,6 +116,30 @@ Conséquence : **vLLM, Reranker Infinity, Whisper local — tous désactivés** 
 ### Profil Docker
 
 `docker compose up -d` (profil GPU activable si on choisit d'utiliser le L4 pour Marker), sans `vllm-gpu` ni `reranker` (ces services sont externalisés). L'option `--profile cpu` reste disponible si on veut neutraliser totalement la dépendance NVIDIA.
+
+### Image OpenRAG : custom build vs pull upstream
+
+Le `docker-compose.yaml` template définit pour chaque service openrag :
+
+```yaml
+x-openrag: &openrag_template
+  image: linagoraai/openrag:latest    # tag, override-able
+  build:
+    context: .
+    dockerfile: Dockerfile             # build local depuis le repo
+```
+
+→ `docker compose pull openrag-cpu` tire l'image upstream Linagora ; `docker compose build openrag-cpu` build une image locale **avec le même tag** (l'image custom écrase la pull). Pour ce déploiement Mirai on **build localement** car :
+1. Le repo contient un commit pypdfium2 fix (`1cab9c5e`) et la PR auto-provision OIDC (`286294d1`) qui ne sont pas encore upstream.
+2. Le bind mount du compose ne couvre que `/opt/openrag/openrag → /app/openrag` (le code Python) — **pas `/app/conf/`**, donc une modif yaml côté host nécessite un rebuild d'image. C'est ce piège qu'on a documenté ci-dessus en passant aux env vars (`AUDIOLOADER`, `USE_WHISPER_LANG_DETECTOR`) qui sont lues à runtime.
+
+Procédure de rebuild (à refaire après chaque update du repo) :
+
+```bash
+ssh root@<vm> 'cd /opt/openrag && git pull --ff-only origin dev && \
+    docker compose build openrag-cpu && \
+    docker compose up -d --force-recreate --no-deps openrag-cpu'
+```
 
 ## 6. Mapping ports / hosts
 
