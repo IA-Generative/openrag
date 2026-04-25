@@ -49,10 +49,14 @@ Endpoint `gateway.api.ai.numerique-interieur.com/v1/audio/transcriptions` access
 
 ## 3. SSO Keycloak Mirai
 
-- Issuer : `https://sso.mirai.interieur.gouv.fr/realms/<realm-mirai>`
+- Issuer : `https://sso.mirai.interieur.gouv.fr/realms/mirai` (discovery OIDC testée ✓)
 - `AUTH_MODE=oidc` (mode OpenID Connect autorisation code + PKCE)
-- Client OIDC à créer (cf. `deploy/keycloak/openrag-client.json` à venir, étape 5 du plan)
-- 1 seul client Keycloak partagé entre les VMs OpenRAG (plusieurs `redirect_uris`), sessions indépendantes par VM (table `oidc_sessions` PostgreSQL locale à chaque VM)
+- **Un seul client Keycloak `openrag`** partagé entre les 2 VMs OpenRAG (cf. `deploy/keycloak/openrag-client.json`)
+- Les 2 VMs vivent dans 2 sous-zones DNS distinctes du domaine `fake-domain.name` :
+  - VM 1 (existante, `51.159.119.187`) → `openrag.fake-domain.name` (api/indexer/chat)
+  - VM 2 (nouvelle, `51.159.184.192`) → `openrag-mirai.fake-domain.name` (api/indexer/chat)
+- 6 `redirectUris` whitelistés (3 par zone), back-channel logout configuré sur les 2 instances API
+- Sessions indépendantes par VM (table `oidc_sessions` PostgreSQL locale à chaque VM)
 
 ## 4. Topologie de déploiement
 

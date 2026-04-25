@@ -12,12 +12,17 @@
     "https://api.openrag-mirai.fake-domain.name/auth/callback",
     "https://indexer.openrag-mirai.fake-domain.name/auth/callback",
     "https://chat.openrag-mirai.fake-domain.name/auth/callback",
-    "https://<2nd-vm-hostname>/auth/callback"
+    "https://api.openrag.fake-domain.name/auth/callback",
+    "https://indexer.openrag.fake-domain.name/auth/callback",
+    "https://chat.openrag.fake-domain.name/auth/callback"
   ],
   "webOrigins": [
     "https://api.openrag-mirai.fake-domain.name",
     "https://indexer.openrag-mirai.fake-domain.name",
-    "https://chat.openrag-mirai.fake-domain.name"
+    "https://chat.openrag-mirai.fake-domain.name",
+    "https://api.openrag.fake-domain.name",
+    "https://indexer.openrag.fake-domain.name",
+    "https://chat.openrag.fake-domain.name"
   ],
   "notBefore": 0,
   "bearerOnly": false,
@@ -34,7 +39,7 @@
     "oauth2.device.authorization.grant.enabled": "false",
     "backchannel.logout.session.required": "true",
     "backchannel.logout.revoke.offline.tokens": "true",
-    "backchannel.logout.url": "https://api.openrag-mirai.fake-domain.name/auth/backchannel-logout",
+    "backchannel.logout.url": "https://api.openrag-mirai.fake-domain.name/auth/backchannel-logout https://api.openrag.fake-domain.name/auth/backchannel-logout",
     "post.logout.redirect.uris": "+",
     "client.session.idle.timeout": "0",
     "client.session.max.lifespan": "0",

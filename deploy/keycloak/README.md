@@ -82,10 +82,19 @@ Si `OIDC_CLAIM_MAPPING` est positionné, le `display_name` et l'`email` sont syn
 
 ## Multi-VM (notes)
 
-- Les `redirectUris` du JSON listent **3 hôtes** pour la VM `openrag-01-et` (api / indexer / chat) + un placeholder `<2nd-vm-hostname>` à compléter quand la 2e VM est connue.
+Le client `openrag` est **partagé entre les 2 VMs** OpenRAG, qui vivent chacune dans leur propre **sous-zone DNS Scaleway** sur `fake-domain.name` :
+
+| VM | Sous-zone DNS | Hôtes publics | IP |
+|---|---|---|---|
+| **VM 1** (existante / legacy) | `openrag.fake-domain.name` | `api.openrag.…`, `indexer.openrag.…`, `chat.openrag.…` | `51.159.119.187` |
+| **VM 2** (nouvelle, openrag-01-et) | `openrag-mirai.fake-domain.name` | `api.openrag-mirai.…`, `indexer.openrag-mirai.…`, `chat.openrag-mirai.…` | `51.159.184.192` |
+
+Le manifest `openrag-client.json` déclare donc **6 `redirectUris`** (3 par zone) et **6 `webOrigins`**. Vérifier dans la console Keycloak après import qu'aucun n'a été tronqué.
+
+- `chat.openrag.fake-domain.name` retourne actuellement 404 sur la VM 1 (Chainlit non servi côté legacy). Le redirect URI est néanmoins whitelisté de manière préventive — si Chainlit est activé plus tard, pas de modif Keycloak nécessaire.
 - Chaque VM stocke ses sessions dans sa propre table PostgreSQL `oidc_sessions` — il n'y a pas d'affinité ni de session sharing à mettre en place.
-- Le `client_secret` est **partagé** entre les 2 VMs (un seul client → un seul secret). Distribuer via votre canal sécurisé habituel (Vault, ou env injection au déploiement).
-- Le back-channel logout pointe par défaut sur la VM 1 (`api.openrag-mirai…`). Si la 2e VM doit aussi être notifiée, déclarer plusieurs URLs séparées par des espaces dans `attributes.backchannel.logout.url` côté Keycloak (ce n'est pas standard OIDC mais Keycloak l'accepte) — sinon laisser une seule URL et accepter que la 2e VM ne reçoive pas la notification de logout.
+- Le `client_secret` est **partagé** entre les 2 VMs (un seul client → un seul secret). Distribuer via votre canal sécurisé habituel (Vault, ou env injection au déploiement). Le rotation se fait dans la console Keycloak (onglet *Credentials*) puis re-déploiement des deux VMs simultanément.
+- Le back-channel logout est configuré sur **deux URLs** (séparées par un espace dans `attributes.backchannel.logout.url`) — Keycloak les notifie toutes les deux, garantissant que la révocation côté IdP atteint les deux instances.
 
 ## Sécurité
 
