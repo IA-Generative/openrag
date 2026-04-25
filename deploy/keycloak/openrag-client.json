@@ -51,7 +51,7 @@
     "oauth2.device.authorization.grant.enabled": "false",
     "backchannel.logout.session.required": "true",
     "backchannel.logout.revoke.offline.tokens": "true",
-    "backchannel.logout.url": "https://api.openrag-mirai.fake-domain.name/auth/backchannel-logout https://api.openrag.fake-domain.name/auth/backchannel-logout https://api.openrag-mirai.numerique-interieur.com/auth/backchannel-logout https://api.openrag.numerique-interieur.com/auth/backchannel-logout",
+    "backchannel.logout.url": "https://api.openrag-mirai.fake-domain.name/auth/backchannel-logout",
     "post.logout.redirect.uris": "+",
     "client.session.idle.timeout": "0",
     "client.session.max.lifespan": "0",
