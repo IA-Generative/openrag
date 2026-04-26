@@ -15,6 +15,12 @@ credentials.yml
 # generated files and folders
 .files/
 .chainlit/
+# Allow our custom Chainlit translation overrides (deployment-specific UX
+# customizations only — the other locale files are upstream Chainlit defaults
+# and re-generate on first run, no need to commit).
+!openrag/.chainlit/
+!openrag/.chainlit/translations/
+!openrag/.chainlit/translations/en-US.json
 **/*chainlit.md
 .venv/
 qdrant_storage/
