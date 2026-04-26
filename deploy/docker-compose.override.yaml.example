@@ -1,0 +1,23 @@
+# Override local pour le déploiement Mirai :
+# - vllm/reranker sont externalisés (LiteLLM Mirai), on désactive les services
+#   locaux qui auraient consommé GPU/RAM pour rien.
+# - openrag-cpu garde rdb + milvus comme depends_on (suppression de vllm-cpu).
+services:
+  openrag-cpu:
+    depends_on:
+      rdb:
+        condition: service_started
+      milvus:
+        condition: service_started
+
+  # Services désactivés via un profil qui ne sera jamais activé :
+  vllm-cpu:
+    profiles: ["_disabled_"]
+  vllm-gpu:
+    profiles: ["_disabled_"]
+  reranker:
+    profiles: ["_disabled_"]
+  reranker-gpu:
+    profiles: ["_disabled_"]
+  reranker-cpu:
+    profiles: ["_disabled_"]
