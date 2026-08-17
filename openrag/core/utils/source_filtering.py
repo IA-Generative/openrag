@@ -160,7 +160,11 @@ def format_sources_as_markdown(
         if not key:
             continue
         score = _source_score(source)
-        if score < threshold:
+        # A scoreless source can't be judged against the threshold. Dropping it
+        # would silently empty the whole block wherever retrieval doesn't
+        # propagate a score into the source metadata — so only filter out what
+        # is actually comparable.
+        if score != float("-inf") and score < threshold:
             continue
         if key not in best or score > _source_score(best[key]):
             best[key] = source

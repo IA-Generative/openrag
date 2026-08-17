@@ -754,6 +754,16 @@ class TestFormatSourcesAsMarkdown:
         assert "a.pdf" in md
         assert "b.pdf" not in md
 
+    def test_min_score_keeps_scoreless_sources(self):
+        """A threshold must not silently delete sources it cannot compare."""
+        sources = [
+            {"file_url": "http://x/a.pdf", "filename": "a.pdf"},
+            {"file_url": "http://x/b.pdf", "filename": "b.pdf", "relevance_score": 0.1},
+        ]
+        md = format_sources_as_markdown(sources, min_score=0.5)
+        assert "a.pdf" in md
+        assert "b.pdf" not in md
+
     def test_min_score_can_empty_the_block(self):
         sources = [{"file_url": "http://x/a.pdf", "filename": "a.pdf", "relevance_score": 0.1}]
         assert format_sources_as_markdown(sources, min_score=0.9) == ""
