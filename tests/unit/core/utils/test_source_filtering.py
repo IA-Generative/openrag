@@ -9,6 +9,7 @@ from core.utils.source_filtering import (
     _sanitize_log_preview,
     extract_and_strip_sources_block,
     filter_sources_by_citations,
+    format_sources_as_markdown,
     stream_with_source_filtering,
 )
 
@@ -704,3 +705,136 @@ class TestStreamWithManySources:
         assert content.startswith("This is the answer body.")
         assert content.endswith("This is the answer body.")
         assert _parse_finish_sources(result) == sources
+
+
+class TestFormatSourcesAsMarkdown:
+    """The opt-in markdown block appended for clients that ignore ``extra``."""
+
+    def test_empty_sources_render_nothing(self):
+        assert format_sources_as_markdown([]) == ""
+
+    def test_zero_max_items_renders_nothing(self):
+        sources = [{"file_url": "http://x/a.pdf", "filename": "a.pdf"}]
+        assert format_sources_as_markdown(sources, max_items=0) == ""
+
+    def test_renders_numbered_links(self):
+        sources = [
+            {"file_url": "http://x/a.pdf", "filename": "a.pdf", "relevance_score": 0.9},
+            {"file_url": "http://x/b.pdf", "filename": "b.pdf", "relevance_score": 0.5},
+        ]
+        md = format_sources_as_markdown(sources)
+        assert md.startswith("\n---\n**Sources :**\n")
+        assert "1. [a.pdf](http://x/a.pdf) — score 0.90" in md
+        assert "2. [b.pdf](http://x/b.pdf) — score 0.50" in md
+
+    def test_deduplicates_chunks_of_the_same_document_keeping_best_score(self):
+        sources = [
+            {"file_url": "http://x/a.pdf", "filename": "a.pdf", "relevance_score": 0.4},
+            {"file_url": "http://x/a.pdf", "filename": "a.pdf", "relevance_score": 0.8},
+        ]
+        md = format_sources_as_markdown(sources)
+        assert md.count("a.pdf](http://x/a.pdf)") == 1
+        assert "score 0.80" in md
+
+    def test_ranks_by_score_and_caps_at_max_items(self):
+        sources = [
+            {"file_url": f"http://x/{i}.pdf", "filename": f"{i}.pdf", "relevance_score": i / 10} for i in range(1, 6)
+        ]
+        md = format_sources_as_markdown(sources, max_items=2)
+        assert "1. [5.pdf]" in md
+        assert "2. [4.pdf]" in md
+        assert "3." not in md
+
+    def test_min_score_drops_low_scoring_sources(self):
+        sources = [
+            {"file_url": "http://x/a.pdf", "filename": "a.pdf", "relevance_score": 0.9},
+            {"file_url": "http://x/b.pdf", "filename": "b.pdf", "relevance_score": 0.1},
+        ]
+        md = format_sources_as_markdown(sources, min_score=0.5)
+        assert "a.pdf" in md
+        assert "b.pdf" not in md
+
+    def test_min_score_can_empty_the_block(self):
+        sources = [{"file_url": "http://x/a.pdf", "filename": "a.pdf", "relevance_score": 0.1}]
+        assert format_sources_as_markdown(sources, min_score=0.9) == ""
+
+    def test_falls_back_through_score_keys(self):
+        sources = [{"file_url": "http://x/a.pdf", "filename": "a.pdf", "rerank_score": 0.42}]
+        assert "score 0.42" in format_sources_as_markdown(sources)
+
+    def test_scoreless_source_renders_without_suffix(self):
+        sources = [{"url": "http://web/page", "title": "A page", "source_type": "web"}]
+        md = format_sources_as_markdown(sources)
+        assert "1. [A page](http://web/page)" in md
+        assert "score" not in md
+
+    def test_page_number_shown_when_meaningful(self):
+        assert "(p. 7)" in format_sources_as_markdown([{"file_url": "u", "filename": "a.pdf", "page": 7}])
+        assert "(p. 1)" not in format_sources_as_markdown([{"file_url": "u", "filename": "a.pdf", "page": 1}])
+
+    def test_label_uses_basename_of_a_path_source(self):
+        md = format_sources_as_markdown([{"file_url": "u", "source": "/data/docs/report.pdf"}])
+        assert "[report.pdf](u)" in md
+
+    def test_falls_back_to_chunk_url_then_to_plain_text(self):
+        assert "[a.pdf](http://x/chunk/1)" in format_sources_as_markdown(
+            [{"source": "a.pdf", "chunk_url": "http://x/chunk/1"}]
+        )
+        assert "1. a.pdf" in format_sources_as_markdown([{"source": "a.pdf"}])
+
+    def test_source_without_identity_is_skipped(self):
+        assert format_sources_as_markdown([{"relevance_score": 0.9}]) == ""
+
+    def test_pipe_in_label_is_escaped_for_markdown_tables(self):
+        md = format_sources_as_markdown([{"file_url": "u", "filename": "a|b.pdf"}])
+        assert "a\\|b.pdf" in md
+
+
+class TestStreamInlineSources:
+    SOURCES = [{"file_url": "http://x/a.pdf", "filename": "a.pdf", "relevance_score": 0.9}]
+
+    @pytest.mark.asyncio
+    async def test_no_formatter_leaves_content_untouched(self):
+        lines = [_make_chunk("Answer."), _make_chunk("\n[Sources: 1]"), _make_finish(), DONE_LINE]
+        result = await _collect(stream_with_source_filtering(_fake_stream(lines), self.SOURCES, "test-model"))
+        assert _collect_content(result) == "Answer."
+
+    @pytest.mark.asyncio
+    async def test_formatter_appends_block_before_finish_chunk(self):
+        lines = [_make_chunk("Answer."), _make_chunk("\n[Sources: 1]"), _make_finish(), DONE_LINE]
+        result = await _collect(
+            stream_with_source_filtering(
+                _fake_stream(lines),
+                self.SOURCES,
+                "test-model",
+                format_sources=format_sources_as_markdown,
+            )
+        )
+        content = _collect_content(result)
+        assert content.startswith("Answer.")
+        assert "**Sources :**" in content
+        assert "[a.pdf](http://x/a.pdf)" in content
+
+        # The block must land before the terminal chunk, or clients that stop
+        # at finish_reason never render it.
+        finish_index = next(
+            i
+            for i, line in enumerate(result)
+            if line.strip() != "data: [DONE]" and json.loads(line[len("data: ") :])["choices"][0].get("finish_reason")
+        )
+        block_index = next(i for i, line in enumerate(result) if "**Sources :**" in line)
+        assert block_index < finish_index
+
+    @pytest.mark.asyncio
+    async def test_formatter_skipped_when_no_source_survives_filtering(self):
+        lines = [_make_chunk("Answer."), _make_chunk("\n[Sources: none]"), _make_finish(), DONE_LINE]
+        result = await _collect(
+            stream_with_source_filtering(
+                _fake_stream(lines),
+                self.SOURCES,
+                "test-model",
+                format_sources=format_sources_as_markdown,
+            )
+        )
+        assert "**Sources :**" not in _collect_content(result)
+        assert _parse_finish_sources(result) == []

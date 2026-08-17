@@ -55,6 +55,7 @@ from core.utils.logging import get_logger
 from core.utils.source_filtering import (
     extract_and_strip_sources_block,
     filter_sources_by_citations,
+    format_sources_as_markdown,
     stream_with_source_filtering,
 )
 from core.utils.text import get_num_tokens
@@ -149,6 +150,22 @@ class QueryService:
         self._mr_initial = mr.initial_batch_size
         self._mr_expansion = mr.expansion_batch_size
         self._mr_max = mr.max_total_documents
+
+    def _inline_sources_formatter(self) -> Callable[[list], str] | None:
+        """Renderer for the inline markdown source block, or ``None`` when off.
+
+        Read per request (not snapshotted in ``__init__``) so an admin toggling
+        ``rag.inline_sources_in_content`` takes effect without a restart, like
+        the other live-config reads in this service.
+        """
+        rag = self._config.rag
+        if not rag.inline_sources_in_content:
+            return None
+        return lambda sources: format_sources_as_markdown(
+            sources,
+            max_items=rag.inline_sources_top_k,
+            min_score=rag.inline_sources_min_score,
+        )
 
     def _resolve_chat_history_depth(self, partition: list[str] | None) -> int:
         """Effective chat-history depth for this request.
@@ -668,16 +685,12 @@ class QueryService:
             )
         else:
             clean, citations = content, None
+        filtered = filter_sources_by_citations(sources, citations, allow_uncited=structured_output)
+        inline = self._inline_sources_formatter()
+        if inline is not None:
+            clean += inline(filtered)
         chunk["choices"][0]["message"]["content"] = clean
-        chunk["extra"] = json.dumps(
-            {
-                "sources": filter_sources_by_citations(
-                    sources,
-                    citations,
-                    allow_uncited=structured_output,
-                )
-            }
-        )
+        chunk["extra"] = json.dumps({"sources": filtered})
         return chunk
 
     async def chat_stream(
@@ -707,6 +720,7 @@ class QueryService:
             model_name,
             allow_uncited_sources=structured_output,
             citation_protocol_active=citation_protocol_active and not structured_output,
+            format_sources=self._inline_sources_formatter(),
         ):
             yield sse_line
 
@@ -736,16 +750,12 @@ class QueryService:
             )
         else:
             clean, citations = text, None
+        filtered = filter_sources_by_citations(sources, citations, allow_uncited=structured_output)
+        inline = self._inline_sources_formatter()
+        if inline is not None:
+            clean += inline(filtered)
         resp["choices"][0]["text"] = clean
-        resp["extra"] = json.dumps(
-            {
-                "sources": filter_sources_by_citations(
-                    sources,
-                    citations,
-                    allow_uncited=structured_output,
-                )
-            }
-        )
+        resp["extra"] = json.dumps({"sources": filtered})
         return resp
 
 

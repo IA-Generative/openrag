@@ -161,6 +161,9 @@ _ENV_OVERRIDES: list[tuple[str, str, type]] = [
     ("RETRIEVER_MAX_PARTITION_CONCURRENCY", "retriever.max_partition_concurrency", int),
     # RAG
     ("RAG_MODE", "rag.mode", str),
+    ("INLINE_SOURCES_IN_CONTENT", "rag.inline_sources_in_content", bool),
+    ("INLINE_SOURCES_TOP_K", "rag.inline_sources_top_k", int),
+    ("INLINE_SOURCES_MIN_SCORE", "rag.inline_sources_min_score", float),
     # WebSearch
     ("WEBSEARCH_PROVIDER", "websearch.provider", str),
     ("WEBSEARCH_API_TOKEN", "websearch.api_token", str),

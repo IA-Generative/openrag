@@ -105,6 +105,14 @@ class RAGConfig(ConfigMixin):
     mode: str = "ChatBotRag"
     chat_history_depth: int = 4
     max_contextualized_query_len: int = 512
+    # Write the cited sources into the assistant message ``content`` as a
+    # markdown block, on top of the structured ``extra.sources`` field. Off by
+    # default: it changes the visible content, which only clients that ignore
+    # ``extra`` (Open WebUI, LibreChat, Continue, …) actually want.
+    inline_sources_in_content: bool = False
+    inline_sources_top_k: int = 5
+    # ``None`` keeps every cited source; set a float to drop the low-scoring ones.
+    inline_sources_min_score: float | None = None
 
 
 # ---------------------------------------------------------------------------

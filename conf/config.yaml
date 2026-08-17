@@ -325,10 +325,15 @@ retriever:
 
 # --- RAG ---
 # Env: RAG_MODE
+# Env: RAG_MODE, INLINE_SOURCES_IN_CONTENT, INLINE_SOURCES_TOP_K,
+#      INLINE_SOURCES_MIN_SCORE
 rag:
   mode: ChatBotRag
   chat_history_depth: 4
   max_contextualized_query_len: 512
+  inline_sources_in_content: false
+  inline_sources_top_k: 5
+  inline_sources_min_score: null
 
 # --- Web Search ---
 # Env: WEBSEARCH_PROVIDER, WEBSEARCH_API_TOKEN, WEBSEARCH_BASE_URL,

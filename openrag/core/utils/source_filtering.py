@@ -6,6 +6,8 @@ import asyncio
 import copy
 import json
 import re
+from collections.abc import Callable
+from pathlib import Path
 
 from core.utils.logging import get_logger
 
@@ -93,6 +95,90 @@ def filter_sources_by_citations(
     return [source for i, source in enumerate(sources, start=1) if i in citations]
 
 
+#: Score keys a source dict may carry, most specific first. The retrieval
+#: pipeline names its score differently depending on whether a reranker ran,
+#: and web results carry none at all — so probe rather than assume.
+_SCORE_KEYS = ("relevance_score", "rerank_score", "combined_score", "score")
+
+
+def _source_score(source: dict) -> float:
+    for key in _SCORE_KEYS:
+        value = source.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return float("-inf")
+
+
+def _source_key(source: dict) -> str:
+    """Identity used to collapse several chunks of the same document."""
+    return str(source.get("file_url") or source.get("url") or source.get("source") or source.get("filename") or "")
+
+
+def _source_label(source: dict) -> str:
+    title = source.get("title") or source.get("filename") or source.get("source") or source.get("file_id")
+    if not title:
+        title = "source"
+    label = Path(str(title)).name or str(title)
+    page = source.get("page")
+    # Page 1 (or 0) carries no navigational value — every document has one.
+    if page is not None and str(page) not in {"0", "1"}:
+        return f"{label} (p. {page})"
+    return label
+
+
+def format_sources_as_markdown(
+    sources: list,
+    *,
+    max_items: int = 5,
+    min_score: float | None = None,
+) -> str:
+    """Render a deduplicated, ranked source list as a trailing markdown block.
+
+    Returns ``""`` when there is nothing to show, so callers can append the
+    result unconditionally.
+
+    Why a flat ``Sources :`` list rather than inline ``[^N]`` footnote markers:
+    the answer was generated without any awareness of the markers, so inserting
+    them after the fact would never line up with the actual claims in the text.
+    A trailing block is honest about that and renders in every markdown client.
+    """
+    if not sources or max_items <= 0:
+        return ""
+
+    threshold = float("-inf") if min_score is None else min_score
+
+    # Keep the best-scoring chunk per document: retrieval routinely returns
+    # several chunks of the same file, and listing the file five times reads
+    # as five distinct sources.
+    best: dict[str, dict] = {}
+    for source in sources:
+        key = _source_key(source)
+        if not key:
+            continue
+        score = _source_score(source)
+        if score < threshold:
+            continue
+        if key not in best or score > _source_score(best[key]):
+            best[key] = source
+
+    ranked = sorted(best.values(), key=_source_score, reverse=True)[:max_items]
+    if not ranked:
+        return ""
+
+    lines = ["", "---", "**Sources :**", ""]
+    for i, source in enumerate(ranked, start=1):
+        url = source.get("file_url") or source.get("url") or source.get("chunk_url") or ""
+        label = _source_label(source).replace("|", "\\|")
+        score = _source_score(source)
+        suffix = "" if score == float("-inf") else f" — score {score:.2f}"
+        lines.append(f"{i}. [{label}]({url}){suffix}" if url else f"{i}. {label}{suffix}")
+    return "\n".join(lines)
+
+
 def _min_sources_tag_buffer_size(n_sources: int) -> int:
     """Pessimistic upper bound on the length of a ``[Sources: ...]`` tag."""
     if n_sources <= 0:
@@ -114,6 +200,7 @@ async def stream_with_source_filtering(
     *,
     allow_uncited_sources: bool = False,
     citation_protocol_active: bool = True,
+    format_sources: Callable[[list], str] | None = None,
 ):
     """Process an LLM SSE stream and, when active, strip source tags.
 
@@ -127,6 +214,11 @@ async def stream_with_source_filtering(
     a clean completion; if nothing was ever streamed there is no tail to salvage,
     so a mid-stream error is re-raised to surface the real failure instead of a
     silent empty ``[DONE]``.
+
+    ``format_sources`` renders the filtered sources into an extra content delta
+    (see :func:`format_sources_as_markdown`). It is passed as a callable rather
+    than read from config here so this module stays free of configuration
+    lookups; the caller decides whether the feature is on.
     """
     if buffer_size is None:
         buffer_size = max(_MIN_STREAM_LOOKAHEAD, _min_sources_tag_buffer_size(len(sources)))
@@ -286,6 +378,19 @@ async def stream_with_source_filtering(
         tail_chunk["choices"][0]["finish_reason"] = None
         tail_chunk["extra"] = filtered_json
         yield f"data: {json.dumps(tail_chunk)}\n\n"
+
+    # Optional markdown source block, for clients that never read `extra`.
+    # Emitted as a plain content delta *before* the finish chunk: most clients
+    # stop appending once they see finish_reason, so a block sent after it
+    # would never be rendered.
+    if template and format_sources is not None:
+        sources_md = format_sources(filtered)
+        if sources_md:
+            inline_chunk = copy.deepcopy(template)
+            inline_chunk["choices"][0]["delta"] = {"content": sources_md}
+            inline_chunk["choices"][0]["finish_reason"] = None
+            inline_chunk["extra"] = filtered_json
+            yield f"data: {json.dumps(inline_chunk)}\n\n"
 
     if template:
         await asyncio.sleep(0.05)
