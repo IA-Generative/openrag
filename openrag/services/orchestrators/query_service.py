@@ -144,6 +144,12 @@ class QueryService:
             config.rag.chat_history_depth if config.rag.chat_history_depth >= 1 else self._CHAT_HISTORY_DEPTH_DEFAULT
         )
         self._max_contextualized_query_len = config.rag.max_contextualized_query_len
+        # Sized on the assumption that retrieval returns ~reranker.top_k chunks,
+        # but reranker_top_k is never actually applied as a cutoff in
+        # RetrieverPipeline.retrieve_docs() on the no-map-reduce path — retrieval
+        # can return up to retriever.top_k candidates, so this budget (not
+        # reranker.top_k) is what actually determines how many reach the prompt.
+        # Tracked separately: https://github.com/linagora/openrag/issues/851
         self._max_context_tokens = config.reranker.top_k * config.chunker.chunk_size
 
         mr = config.map_reduce
@@ -159,12 +165,14 @@ class QueryService:
         the other live-config reads in this service.
         """
         rag = self._config.rag
-        if not rag.inline_sources_in_content:
+        # getattr: these fields are fork-only (absent from upstream configs and
+        # test doubles) — a config without them means the feature is off.
+        if not getattr(rag, "inline_sources_in_content", False):
             return None
         return lambda sources: format_sources_as_markdown(
             sources,
-            max_items=rag.inline_sources_top_k,
-            min_score=rag.inline_sources_min_score,
+            max_items=getattr(rag, "inline_sources_top_k", 5),
+            min_score=getattr(rag, "inline_sources_min_score", None),
         )
 
     def _resolve_chat_history_depth(self, partition: list[str] | None) -> int:
@@ -488,7 +496,7 @@ class QueryService:
                     context="",
                     current_date=datetime.now().strftime("%A, %B %d, %Y, %H:%M:%S"),
                 )
-                return payload, [], [], True
+                return payload, [], [], [], [], True
             queries = SearchQueries(query_list=[Query(query=messages[-1]["content"])])
 
         web_results: list = []
@@ -504,9 +512,20 @@ class QueryService:
             chunks = []
 
         if not chunks and not web_results and partition is None:
-            return payload, [], [], False
+            return payload, [], [], [], [], False
 
         docs = [c.to_langchain() for c in chunks]
+
+        # Full retrieval set, captured right after retrieval — before map-reduce
+        # replaces `docs` with LLM-generated summaries, and before the
+        # token-budget selection below drops anything that didn't fit in the
+        # prompt. Kept separately for `all_retrieved_sources` (debugging/eval),
+        # while `docs`/`web_results` stay map-reduced and budget-truncated to
+        # match what the LLM actually saw and the citation indices it cites
+        # (#847 review — the map-reduce gap was called out in a follow-up pass).
+        retrieved_docs = docs
+        retrieved_web_results = web_results
+
         if use_map_reduce and docs:
             docs = await self._map_reduce(" ".join(q.query for q in queries.query_list), docs)
 
@@ -555,7 +574,7 @@ class QueryService:
             },
         )
         payload["messages"] = new_messages
-        return payload, docs, web_results, True
+        return payload, docs, web_results, retrieved_docs, retrieved_web_results, True
 
     async def _gather_rag_and_web(self, queries, partition, top_k, filter_params):
         # Fuse the doc branch through retrieve_multi so a partition's rrf_k drives
@@ -575,6 +594,7 @@ class QueryService:
         # partition= is ours: the retrieval preset's query_contextualizer is
         # resolved per partition. The skip below is from #807.
         queries = await self.generate_query([{"role": "user", "content": prompt}], llm=llm, partition=partition)
+        retrieved_docs: list = []
         if not queries.query_list:
             if not queries.requires_retrieval:
                 docs, context = [], ""
@@ -583,6 +603,9 @@ class QueryService:
         if queries.query_list:
             chunks = await self._retrieval.retrieve_multi(partitions=partition, search_queries=queries)
             docs = [c.to_langchain() for c in chunks]
+            # Full retrieval set before the token-budget selection below, kept
+            # separately for `all_retrieved_sources` (#847).
+            retrieved_docs = docs
             context, included = format_context(
                 [doc.page_content for doc in docs],
                 max_context_tokens=self._max_context_tokens,
@@ -600,7 +623,7 @@ class QueryService:
             current_date=datetime.now().strftime("%A, %B %d, %Y, %H:%M:%S"),
         )
         payload["prompt"] = f"{instructions}\n\n# User request\n{prompt}"
-        return payload, docs
+        return payload, docs, retrieved_docs
 
     # ------------------------------------------------------------------
     # Message sanitization
@@ -665,14 +688,26 @@ class QueryService:
     ) -> dict:
         """Non-streaming chat completion → finalized OpenAI dict."""
         metadata = payload.get("metadata") or {}
+        include_all_retrieved = metadata.get("include_all_retrieved_sources") is True
         llm = self._resolve_llm(partitions)
         citation_protocol_active = False
         if partitions is None and not metadata.get("websearch", False):
-            docs, web_results = [], []
+            docs, web_results, retrieved_docs, retrieved_web_results = [], [], [], []
         else:
-            payload, docs, web_results, citation_protocol_active = await self._prepare_chat(partitions, payload, llm)
+            (
+                payload,
+                docs,
+                web_results,
+                retrieved_docs,
+                retrieved_web_results,
+                citation_protocol_active,
+            ) = await self._prepare_chat(partitions, payload, llm)
         sources = prepare_sources(docs, web_results)
-        structured_output = _allows_uncited_sources(payload)
+        # `all_retrieved_sources` is debug/eval telemetry, not needed by most
+        # callers — skip building it (and calling prepare_sources on the full,
+        # uncapped retrieval set) unless the caller opted in (#847 review).
+        all_sources = prepare_sources(retrieved_docs, retrieved_web_results) if include_all_retrieved else None
+        structured_output = _is_structured_output(payload)
 
         payload["messages"] = self._sanitize_messages(payload["messages"])
         chunk = await llm.chat(payload["messages"], **_sampling(payload))
@@ -685,12 +720,12 @@ class QueryService:
             )
         else:
             clean, citations = content, None
-        filtered = filter_sources_by_citations(sources, citations, allow_uncited=structured_output)
+        extra = _build_extra_payload(sources, citations, all_sources, include_all_retrieved=include_all_retrieved)
         inline = self._inline_sources_formatter()
         if inline is not None:
-            clean += inline(filtered)
+            clean += inline(extra["sources"])
         chunk["choices"][0]["message"]["content"] = clean
-        chunk["extra"] = json.dumps({"sources": filtered})
+        chunk["extra"] = json.dumps(extra)
         return chunk
 
     async def chat_stream(
@@ -703,14 +738,23 @@ class QueryService:
     ) -> AsyncIterator[str]:
         """Streaming chat completion → SSE strings with filtered sources."""
         metadata = payload.get("metadata") or {}
+        include_all_retrieved = metadata.get("include_all_retrieved_sources") is True
         llm = self._resolve_llm(partitions)
         citation_protocol_active = False
         if partitions is None and not metadata.get("websearch", False):
-            docs, web_results = [], []
+            docs, web_results, retrieved_docs, retrieved_web_results = [], [], [], []
         else:
-            payload, docs, web_results, citation_protocol_active = await self._prepare_chat(partitions, payload, llm)
+            (
+                payload,
+                docs,
+                web_results,
+                retrieved_docs,
+                retrieved_web_results,
+                citation_protocol_active,
+            ) = await self._prepare_chat(partitions, payload, llm)
         sources = prepare_sources(docs, web_results)
-        structured_output = _allows_uncited_sources(payload)
+        all_sources = prepare_sources(retrieved_docs, retrieved_web_results) if include_all_retrieved else None
+        structured_output = _is_structured_output(payload)
 
         payload["messages"] = self._sanitize_messages(payload["messages"])
         llm_stream = llm.stream_chat(payload["messages"], **_sampling(payload))
@@ -718,7 +762,8 @@ class QueryService:
             llm_stream,
             sources,
             model_name,
-            allow_uncited_sources=structured_output,
+            all_sources=all_sources,
+            include_all_retrieved=include_all_retrieved,
             citation_protocol_active=citation_protocol_active and not structured_output,
             format_sources=self._inline_sources_formatter(),
         ):
@@ -732,14 +777,17 @@ class QueryService:
         prepare_sources: PrepareSources,
     ) -> dict:
         """Non-streaming text completion → finalized OpenAI dict."""
+        metadata = payload.get("metadata") or {}
+        include_all_retrieved = metadata.get("include_all_retrieved_sources") is True
         llm = self._resolve_llm(partitions)
         citation_protocol_active = partitions is not None
         if partitions is None:
-            docs = []
+            docs, retrieved_docs = [], []
         else:
-            payload, docs = await self._prepare_completions(partitions, payload, llm)
+            payload, docs, retrieved_docs = await self._prepare_completions(partitions, payload, llm)
         sources = prepare_sources(docs, [])
-        structured_output = _allows_uncited_sources(payload)
+        all_sources = prepare_sources(retrieved_docs, []) if include_all_retrieved else None
+        structured_output = _is_structured_output(payload)
 
         resp = await llm.generate(payload["prompt"], **_sampling(payload, key="prompt"))
         text = resp.get("choices", [{}])[0].get("text", "") or ""
@@ -750,12 +798,12 @@ class QueryService:
             )
         else:
             clean, citations = text, None
-        filtered = filter_sources_by_citations(sources, citations, allow_uncited=structured_output)
+        extra = _build_extra_payload(sources, citations, all_sources, include_all_retrieved=include_all_retrieved)
         inline = self._inline_sources_formatter()
         if inline is not None:
-            clean += inline(filtered)
+            clean += inline(extra["sources"])
         resp["choices"][0]["text"] = clean
-        resp["extra"] = json.dumps({"sources": filtered})
+        resp["extra"] = json.dumps(extra)
         return resp
 
 
@@ -799,10 +847,33 @@ def _sampling(payload: dict, key: str = "messages") -> dict:
     return {k: v for k, v in payload.items() if k not in drop}
 
 
-def _allows_uncited_sources(payload: dict) -> bool:
+def _is_structured_output(payload: dict) -> bool:
     """Structured output cannot carry the plain-text citation marker."""
     response_format = payload.get("response_format")
     return isinstance(response_format, dict) and response_format.get("type") in {"json_object", "json_schema"}
+
+
+def _build_extra_payload(
+    sources: list,
+    citations: set[int] | None,
+    all_sources: list | None,
+    *,
+    include_all_retrieved: bool,
+) -> dict:
+    """Shared ``extra`` shape for ``chat``/``complete`` (mirrors
+    ``stream_with_source_filtering``'s payload, minus the streaming-only
+    ``truncated`` flag) so the three response paths can't drift apart.
+    """
+    filtered = filter_sources_by_citations(sources, citations)
+    payload = {
+        "sources": filtered,
+        "presented_sources": sources,
+        "cited_sources": filtered if citations is not None else [],
+        "citations_reported": citations is not None,
+    }
+    if include_all_retrieved:
+        payload["all_retrieved_sources"] = all_sources
+    return payload
 
 
 __all__ = ["QueryService", "RAGMODE"]
