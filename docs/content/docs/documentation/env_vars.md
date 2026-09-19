@@ -377,6 +377,16 @@ Enable only where every API caller is already trusted with both.
 |----------|------|---------|-------------|
 | `RAG_MODE` | `str` | `ChatBotRag` | How the pipeline turns the conversation into search queries. `ChatBotRag` (default) uses the LLM and the chat history to generate contextualized search queries; `SimpleRag` skips query generation and searches directly on the raw last user message. |
 
+### Inline Sources in Content
+
+Sources are returned in the `extra` field of the response, which OpenAI-compatible clients such as Open WebUI, LibreChat or Continue never read. With this option on, the same sources are also written at the end of the answer itself, as a markdown list, for `/v1/chat/completions` (streaming or not) and `/v1/completions`. `extra` is unchanged.
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `INLINE_SOURCES_IN_CONTENT` | `bool` | `false` | Append a `**Sources :**` markdown block to the answer. It lists `extra.sources`: the sources the model cited, or every source shown to it when it reported no citation. |
+| `INLINE_SOURCES_TOP_K` | `int` | `5` | Maximum number of sources listed. Several chunks of one document count as a single entry. |
+| `INLINE_SOURCES_MIN_SCORE` | `float` | unset | Drop sources scoring below this value. A source that carries no score is always kept, since it cannot be compared to the threshold. |
+
 ### Retriever Configuration
 
 The retriever fetches relevant documents from the vector database based on query similarity. Retrieved documents are then [optionally reranked](/openrag/documentation/env_vars/#reranker-configuration) to improve relevance.

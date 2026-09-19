@@ -334,7 +334,6 @@ retriever:
   allow_filterless_fallback: true
 
 # --- RAG ---
-# Env: RAG_MODE
 # Env: RAG_MODE, INLINE_SOURCES_IN_CONTENT, INLINE_SOURCES_TOP_K,
 #      INLINE_SOURCES_MIN_SCORE
 rag:
