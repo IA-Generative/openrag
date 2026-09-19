@@ -701,8 +701,10 @@ async def test_chat_casual_greeting_uses_the_dedicated_openrag_prompt_without_re
     assert answer_messages[0]["role"] == "system"
     casual_prompt = answer_messages[0]["content"]
     assert "Respond in French" in casual_prompt
-    assert "OpenRAG" in casual_prompt
-    assert "LINAGORA" in casual_prompt
+    # Fork: the casual prompt is vendor-neutral.
+    assert "OpenRAG" not in casual_prompt
+    assert "LINAGORA" not in casual_prompt
+    assert "Do not name any product, vendor, or underlying model" in casual_prompt
     assert "PDF" in casual_prompt
     assert "office documents" in casual_prompt
     assert "images" in casual_prompt
@@ -731,7 +733,7 @@ async def test_chat_casual_response_prompt_takes_priority_over_spoken_style():
     answer_system_prompt = llm.chat_calls[0][0][0]["content"]
     assert "Respond in English" in answer_system_prompt
     assert "gratitude" in answer_system_prompt
-    assert "Do not repeat the OpenRAG introduction" in answer_system_prompt
+    assert "Do not repeat the introduction" in answer_system_prompt
     assert "office documents" not in answer_system_prompt
 
 
@@ -770,7 +772,9 @@ def test_casual_response_prompt_is_intent_specific(intent, includes_introduction
 
     assert "Respond in English" in prompt
     assert f"intent is {intent}" in prompt
-    assert ("developed by LINAGORA" in prompt) is includes_introduction
+    assert ("introduce yourself as an assistant" in prompt) is includes_introduction
+    assert "LINAGORA" not in prompt
+    assert "OpenRAG" not in prompt
     assert required_text in prompt
 
 

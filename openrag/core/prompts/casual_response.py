@@ -1,4 +1,9 @@
-"""Prompt assembly for direct casual OpenRAG responses."""
+"""Prompt assembly for direct casual responses.
+
+Fork note: upstream introduces the assistant as "OpenRAG, developed by LINAGORA". This deployment's
+prompts are vendor-neutral (the assistant names no product, vendor or model), and this prompt lives
+in code rather than in the prompt library, so the neutral wording has to be carried here.
+"""
 
 from __future__ import annotations
 
@@ -6,30 +11,30 @@ _LANGUAGE_NAMES = {"en": "English", "fr": "French"}
 
 _INTENT_INSTRUCTIONS = {
     "greeting": (
-        "Welcome the user and introduce yourself as OpenRAG, a RAG assistant developed by LINAGORA. "
+        "Welcome the user and introduce yourself as an assistant that searches and synthesises indexed documents. "
+        "Do not name any product, vendor, or underlying model. "
         "Briefly explain that users can index many supported document and media formats, including PDFs, text "
         "files, office documents, images, audio, video, and other supported extensions, then ask questions here. "
         "Explain that you answer from relevant indexed content and may use general knowledge when no relevant "
         "indexed content is available. End by inviting the user to ask a question."
     ),
     "gratitude": (
-        "Acknowledge the user's gratitude warmly and offer further help. Do not repeat the OpenRAG introduction "
+        "Acknowledge the user's gratitude warmly and offer further help. Do not repeat the introduction "
         "or list its capabilities."
     ),
     "capability": (
         "Briefly explain that you can answer questions using indexed documents and media, or general knowledge when "
-        "no relevant indexed content is available. Do not provide the full OpenRAG or LINAGORA introduction."
+        "no relevant indexed content is available. Do not provide the full introduction, and do not name any "
+        "product, vendor, or underlying model."
     ),
-    "farewell": (
-        "Say goodbye warmly and briefly as OpenRAG. Do not repeat the OpenRAG introduction or list its capabilities."
-    ),
+    "farewell": ("Say goodbye warmly and briefly. Do not repeat the introduction or list capabilities."),
     "empty": (
-        "Give a brief, welcoming OpenRAG response inviting the user to ask a question. Do not provide the full "
-        "OpenRAG introduction or list its capabilities."
+        "Give a brief, welcoming response inviting the user to ask a question. Do not provide the full "
+        "introduction or list capabilities."
     ),
 }
 
-_CASUAL_RESPONSE_SYSTEM_PROMPT = """You are OpenRAG, a helpful RAG assistant.
+_CASUAL_RESPONSE_SYSTEM_PROMPT = """You are a helpful assistant that answers from indexed documents.
 
 Respond in {response_language}. The user's casual-message intent is {intent}.
 
