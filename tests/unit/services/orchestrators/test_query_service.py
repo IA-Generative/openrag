@@ -1443,6 +1443,96 @@ async def test_complete_without_citation_keeps_retrieved_sources():
     assert extra["cited_sources"] == []
 
 
+# --------------------------------------------------------------------------- #
+# inline sources in content (fork-only, opt-in via rag.inline_sources_in_content)
+# --------------------------------------------------------------------------- #
+
+
+def _inline_svc(llm) -> QueryService:
+    svc = _svc(llm=llm)
+    svc._config.rag.inline_sources_in_content = True
+    return svc
+
+
+_INLINE_SOURCES = [
+    {"source_type": "document", "filename": "report.pdf", "file_url": "https://rag.example/static/report.pdf"},
+    {"source_type": "document", "filename": "other.pdf", "file_url": "https://rag.example/static/other.pdf"},
+]
+
+
+@pytest.mark.asyncio
+async def test_chat_inline_sources_block_lands_in_returned_content():
+    """The block is built from ``extra["sources"]``, so it can only be appended
+    once ``extra`` exists — and must still reach the returned ``content``.
+    Guards the ordering: writing ``content`` back before appending the block
+    passes every other test and silently shows no sources to the client."""
+    svc = _inline_svc(FakeLLM(chat_responses=["Grounded answer.\n[Sources: 1]"]))
+
+    out = await svc.chat(
+        partitions=["p"],
+        payload={"messages": [{"role": "user", "content": "What does the report say?"}], "metadata": {}},
+        prepare_sources=lambda d, w: _INLINE_SOURCES,
+        model_name="m",
+    )
+
+    content = out["choices"][0]["message"]["content"]
+    assert content.startswith("Grounded answer.")
+    assert "[Sources:" not in content
+    assert "**Sources :**" in content
+    # Only the cited source is listed, same as extra["sources"].
+    assert "[report.pdf](https://rag.example/static/report.pdf)" in content
+    assert "other.pdf" not in content
+    assert json.loads(out["extra"])["sources"] == [_INLINE_SOURCES[0]]
+
+
+@pytest.mark.asyncio
+async def test_chat_inline_sources_block_coexists_with_attachments_extra():
+    svc = _inline_svc(FakeLLM(chat_responses=["Grounded answer.\n[Sources: 1]"]))
+
+    out = await svc.chat(
+        partitions=["p"],
+        payload={
+            "messages": [{"role": "user", "content": "What does the report say?"}],
+            "metadata": {"attachments": [{"id": "f1"}]},
+        },
+        prepare_sources=lambda d, w: _INLINE_SOURCES,
+        model_name="m",
+    )
+
+    assert "**Sources :**" in out["choices"][0]["message"]["content"]
+    assert json.loads(out["extra"])["attachments"] == ["f1"]
+
+
+@pytest.mark.asyncio
+async def test_complete_inline_sources_block_lands_in_returned_text():
+    svc = _inline_svc(FakeLLM(gen_text="Grounded answer.\n[Sources: 2]"))
+
+    out = await svc.complete(
+        partitions=["p"],
+        payload={"prompt": "What does the report say?"},
+        prepare_sources=lambda d, w: _INLINE_SOURCES,
+    )
+
+    text = out["choices"][0]["text"]
+    assert text.startswith("Grounded answer.")
+    assert "[other.pdf](https://rag.example/static/other.pdf)" in text
+    assert "report.pdf" not in text
+
+
+@pytest.mark.asyncio
+async def test_chat_inline_sources_off_by_default_leaves_content_untouched():
+    svc = _svc(llm=FakeLLM(chat_responses=["Grounded answer.\n[Sources: 1]"]))
+
+    out = await svc.chat(
+        partitions=["p"],
+        payload={"messages": [{"role": "user", "content": "What does the report say?"}], "metadata": {}},
+        prepare_sources=lambda d, w: _INLINE_SOURCES,
+        model_name="m",
+    )
+
+    assert out["choices"][0]["message"]["content"] == "Grounded answer."
+
+
 @pytest.mark.asyncio
 async def test_chat_stream_yields_sse_and_done():
     svc = _svc(llm=FakeLLM())
