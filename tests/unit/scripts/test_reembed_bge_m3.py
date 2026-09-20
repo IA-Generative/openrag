@@ -183,6 +183,10 @@ class _FakeMilvus:
         self.calls.append(f"create:{collection_name}")
 
     def insert(self, collection_name: str, data: list[dict[str, Any]]) -> None:
+        # Like Milvus: an auto-id collection refuses rows that bring their own key.
+        assert self.descs[collection_name]["properties"].get("allow_insert_auto_id") == "true", (
+            "insert of explicit _id into a collection that does not allow it"
+        )
         for row in data:
             assert row["_id"] not in self.data[collection_name], "insert over a live primary key"
             self.data[collection_name][row["_id"]] = copy.deepcopy(row)
@@ -487,6 +491,23 @@ def test_a_failed_swap_puts_the_original_collection_back(tool, helpers):
     assert client.has_collection(TARGET)
 
 
+def test_finalize_can_be_retried_after_a_failed_swap(tool, helpers):
+    """The failed run closed the target to explicit ids; the retry must reopen it to catch up."""
+    client = _built(tool, helpers)
+    client.rename_failures = {TARGET}
+    with pytest.raises(RuntimeError, match="refused"):
+        tool.finalize(client, helpers, _FakeEmbedder(), SOURCE, MODEL)
+    assert helpers.ALLOW_INSERT_AUTO_ID not in client.describe_collection(TARGET)["properties"]
+
+    client.rename_failures = set()
+    client.data[SOURCE][6] = _row(6, "indexé entre les deux essais")
+    tool.finalize(client, helpers, _FakeEmbedder(), SOURCE, MODEL)
+
+    assert set(client.data[SOURCE]) == {1, 2, 3, 4, 5, 6}
+    assert helpers._vector_dim(client.describe_collection(SOURCE)) == 1024
+    assert helpers.ALLOW_INSERT_AUTO_ID not in client.describe_collection(SOURCE)["properties"]
+
+
 def test_a_load_that_fails_after_the_swap_is_not_reported_as_a_failure(tool, helpers):
     """Once the names are swapped, an error would tell the operator nothing was done."""
     client = _built(tool, helpers)
@@ -558,6 +579,39 @@ def test_dry_run_rollback_changes_nothing(tool, helpers):
 def test_rollback_without_a_backup_fails_loudly(tool, helpers):
     with pytest.raises(tool.ReembedError, match="nothing to roll back to"):
         tool.rollback(_FakeMilvus(_rows()), helpers, SOURCE)
+
+
+# ---------------------------------------------------------------------------
+# Exit codes
+# ---------------------------------------------------------------------------
+
+
+def _main_against(tool, monkeypatch, client) -> None:
+    import core.config
+    import pymilvus
+
+    class _Cfg:
+        class vectordb:  # noqa: N801 — mirrors the settings attribute
+            collection_name, host, port = SOURCE, "milvus", 19530
+
+    monkeypatch.setattr(core.config, "load_config", lambda: _Cfg)
+    monkeypatch.setattr(pymilvus, "MilvusClient", lambda uri: client)
+    monkeypatch.setenv("REEMBED_MODEL", MODEL)
+
+
+def test_a_refusal_and_an_unexpected_failure_have_different_exit_codes(tool, helpers, monkeypatch):
+    """A wrapper restarts the application after a refusal, never after an unknown state."""
+    client = _FakeMilvus(_rows())
+    _main_against(tool, monkeypatch, client)
+
+    assert tool.main(["finalize", "--dry-run"]) == tool.EXIT_REFUSED  # nothing built yet
+
+    def broken(collection_name):
+        raise RuntimeError("etcd unreachable")
+
+    client.describe_collection = broken
+    assert tool.main(["status"]) == tool.EXIT_UNKNOWN_STATE
+    assert tool.EXIT_REFUSED != tool.EXIT_UNKNOWN_STATE
 
 
 # ---------------------------------------------------------------------------

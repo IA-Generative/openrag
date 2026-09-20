@@ -111,6 +111,12 @@ _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 #: 0.999+; a vector attached to the wrong row lands far below.
 _SAMPLE_MIN_COSINE = 0.99
 
+#: Exit codes. ``EXIT_REFUSED``: the tool stopped before changing anything that
+#: matters — the live collection is as it was. ``EXIT_UNKNOWN_STATE``: something
+#: unexpected broke; a wrapper must not restart the application on its own.
+EXIT_REFUSED = 1
+EXIT_UNKNOWN_STATE = 2
+
 logger = get_logger()
 
 
@@ -434,6 +440,15 @@ def _check_is_ours(helpers: ModuleType, client: Any, target: str, model: str) ->
         )
 
 
+def _allow_explicit_ids(helpers: ModuleType, client: Any, target: str) -> None:
+    """(Re)open the target to rows that carry their own ``_id``. Idempotent.
+
+    ``finalize`` closes it just before the swap; if the swap then fails, the
+    next run must be able to insert its catch-up rows again.
+    """
+    client.alter_collection_properties(target, properties={helpers.ALLOW_INSERT_AUTO_ID: "true"})
+
+
 def _create_target(helpers: ModuleType, client: Any, source: str, target: str, model: str) -> None:
     source_desc = client.describe_collection(source)
     target_shape = _with_vector_dim(source_desc, TARGET_DIM)
@@ -466,6 +481,8 @@ def build(
     exists = client.has_collection(target)
     if exists:
         _check_is_ours(helpers, client, target, model)
+        if not dry_run:
+            _allow_explicit_ids(helpers, client, target)
     elif not dry_run:
         _create_target(helpers, client, collection, target, model)
         exists = True
@@ -550,6 +567,7 @@ def finalize(
     if embedder is None:
         raise ReembedError("finalize needs an embedder.")
 
+    _allow_explicit_ids(helpers, client, target)
     count_before = helpers._row_count(client, collection)
     reconcile(client, helpers, embedder, collection, target)
     check = reconcile(client, helpers, None, collection, target, dry_run=True)
@@ -679,7 +697,14 @@ def main(argv: list[str] | None = None) -> int:
             finalize(client, helpers, embedder, collection, model, sample_size=args.sample)
     except ReembedError as exc:
         logger.error(str(exc))
-        return 1
+        return EXIT_REFUSED
+    except Exception as exc:  # noqa: BLE001 — the caller must tell "refused" from "state unknown"
+        logger.exception(f"Unexpected failure: {exc}")
+        logger.error(
+            f"The state of '{collection}' is NOT known. Check that it still exists before starting OpenRAG: "
+            "an application started without it creates an empty one under the same name."
+        )
+        return EXIT_UNKNOWN_STATE
     return 0
 
 
