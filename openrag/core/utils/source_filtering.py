@@ -119,10 +119,14 @@ def _source_key(source: dict) -> str:
 
 
 def _source_label(source: dict) -> str:
-    title = source.get("title") or source.get("filename") or source.get("source") or source.get("file_id")
-    if not title:
-        title = "source"
-    label = Path(str(title)).name or str(title)
+    # A title is display text: "CESEDA, art. L. 421-2 (partie 1/2)" must not be cut
+    # at its slash. Only a filename or stored path is reduced to its last component.
+    title = source.get("title")
+    if title:
+        label = str(title)
+    else:
+        path = source.get("filename") or source.get("source") or source.get("file_id") or "source"
+        label = Path(str(path)).name or str(path)
     page = source.get("page")
     # Page 1 (or 0) carries no navigational value — every document has one.
     if page is not None and str(page) not in {"0", "1"}:

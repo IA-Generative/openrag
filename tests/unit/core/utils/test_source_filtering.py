@@ -828,6 +828,10 @@ class TestFormatSourcesAsMarkdown:
         md = format_sources_as_markdown([{"file_url": "u", "filename": "a|b.pdf"}])
         assert "a\\|b.pdf" in md
 
+    def test_title_with_slash_is_kept_whole(self):
+        md = format_sources_as_markdown([{"url": "https://l/x", "title": "CESEDA, art. L. 421-2 (partie 1/2)"}])
+        assert "[CESEDA, art. L. 421-2 (partie 1/2)](https://l/x)" in md
+
     def test_public_url_preferred_over_static_file_url(self):
         # A Légifrance article must link to Légifrance, not to the session-gated /static copy.
         md = format_sources_as_markdown(
