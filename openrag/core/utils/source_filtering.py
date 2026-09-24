@@ -130,6 +130,19 @@ def _source_label(source: dict) -> str:
     return label
 
 
+def _public_url(source: dict) -> str:
+    """The document's own public address, when its metadata carries one.
+
+    ``file_url`` points to ``/static/<id>`` on OpenRAG, which requires an
+    OpenRAG session: a reader without one (an anonymous demo page, a Mon
+    assistant user who never logged into OpenRAG) gets a login redirect. A
+    corpus indexed from a public source (Légifrance articles, web results)
+    stores that source's address in ``url``, which anyone can open.
+    """
+    url = str(source.get("url") or "")
+    return url if url.startswith(("https://", "http://")) else ""
+
+
 def format_sources_as_markdown(
     sources: list,
     *,
@@ -175,7 +188,7 @@ def format_sources_as_markdown(
 
     lines = ["", "---", "**Sources :**", ""]
     for i, source in enumerate(ranked, start=1):
-        url = source.get("file_url") or source.get("url") or source.get("chunk_url") or ""
+        url = _public_url(source) or source.get("file_url") or source.get("chunk_url") or ""
         label = _source_label(source).replace("|", "\\|")
         score = _source_score(source)
         suffix = "" if score == float("-inf") else f" — score {score:.2f}"

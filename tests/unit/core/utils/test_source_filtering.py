@@ -828,6 +828,23 @@ class TestFormatSourcesAsMarkdown:
         md = format_sources_as_markdown([{"file_url": "u", "filename": "a|b.pdf"}])
         assert "a\\|b.pdf" in md
 
+    def test_public_url_preferred_over_static_file_url(self):
+        # A Légifrance article must link to Légifrance, not to the session-gated /static copy.
+        md = format_sources_as_markdown(
+            [
+                {
+                    "file_url": "https://rag/static/42",
+                    "url": "https://www.legifrance.gouv.fr/codes/article_lc/X",
+                    "title": "CRPA, art. L. 231-1",
+                }
+            ]
+        )
+        assert "[CRPA, art. L. 231-1](https://www.legifrance.gouv.fr/codes/article_lc/X)" in md
+
+    def test_non_http_url_metadata_falls_back_to_file_url(self):
+        md = format_sources_as_markdown([{"file_url": "https://rag/static/42", "url": "ftp://x", "filename": "a.pdf"}])
+        assert "[a.pdf](https://rag/static/42)" in md
+
 
 class TestStreamInlineSources:
     SOURCES = [{"file_url": "http://x/a.pdf", "filename": "a.pdf", "relevance_score": 0.9}]
