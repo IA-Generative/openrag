@@ -493,3 +493,36 @@ async def test_quota_allows_when_indexed_plus_pending_is_under_limit():
         config=_config(default_file_quota=10),
     )
     assert user["id"] == 7
+
+
+# A non-member's synthetic entry for a public partition, as
+# AuthService.list_user_partitions_for_request builds it.
+_PUBLIC_VIEWER_ENTRY = {"partition": "legal-public", "role": "viewer", "created_at": None, "public": True}
+
+
+@pytest.mark.asyncio
+async def test_public_partition_grants_viewer_to_authenticated_non_member():
+    result = await ensure_partition_role(
+        partition="legal-public",
+        user={"id": 42, "is_admin": False},
+        user_partitions=[_PUBLIC_VIEWER_ENTRY],
+        required_role="viewer",
+        auth_service=AuthService,
+        partition_service=FakePartitionService(existing={"legal-public"}),
+    )
+    assert result is True
+
+
+@pytest.mark.parametrize("role", ["editor", "owner"])
+@pytest.mark.asyncio
+async def test_public_partition_does_not_grant_editor_or_owner(role):
+    with pytest.raises(HTTPException) as exc:
+        await ensure_partition_role(
+            partition="legal-public",
+            user={"id": 42, "is_admin": False},
+            user_partitions=[_PUBLIC_VIEWER_ENTRY],
+            required_role=role,
+            auth_service=AuthService,
+            partition_service=FakePartitionService(existing={"legal-public"}),
+        )
+    assert exc.value.status_code == 403

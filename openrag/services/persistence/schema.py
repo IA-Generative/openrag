@@ -176,6 +176,10 @@ partitions = Table(
     Column("collection_name", String, nullable=True),
     Column("chat_history_depth", Integer, server_default="0", nullable=False),
     Column("chat_llm", String, nullable=True),
+    # Public partitions: their source files are downloadable anonymously via
+    # ``GET /static/{extract_id}`` and every authenticated user gets
+    # viewer-level read access (search, chat, listing). Never grants editing.
+    Column("is_public", Boolean, server_default=text("false"), nullable=False),
     # {prompt_type: library_prompt_name} for final-answer prompts selected on a
     # partition (sys_prompt, spoken_style_answer). Parsing, indexation, and
     # retrieval prompts are named on their respective presets instead.

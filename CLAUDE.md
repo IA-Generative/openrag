@@ -222,9 +222,26 @@ await vectordb.list_partition_members.remote(partition)
 **Multi-Partition Search**: Users can search across all their accessible partitions:
 - Search endpoint: `GET /search?partitions=all&text=query`
 - Chat completions: `POST /v1/chat/completions` with `"model": "openrag-all"`
-- For regular users, `all` resolves to their partition memberships only
+- For regular users, `all` resolves to their partition memberships plus every public partition
 - For admins with `SUPER_ADMIN_MODE=true`, `all` resolves to all system partitions
 - Model prefix is `openrag-` (legacy: `ragondin-`)
+
+**Public Partitions** (`partitions.is_public`, bool, default `false`; migration `c6d7e8f9a0b1`):
+- Set via `PATCH /partition/{partition}` `{"is_public": true|false}` (owner role, or admin under
+  `SUPER_ADMIN_MODE`) or at creation `POST /partition/{partition}?is_public=true`; returned by
+  `/partition/{partition}/config`, the PATCH response and `GET /partition/`.
+- **Anonymous file download**: `AuthMiddleware` lets an unauthenticated `GET`/`HEAD /static/{extract_id}`
+  through only after `resolve_public_download_partition` (chunk via `ConversionService.get_chunk` →
+  `PartitionService.is_partition_public`, one DB read, no cache, fails closed) confirms the chunk's
+  partition is public. It forwards with `request.state.user = None` and `request.state.public_partition`;
+  `download.py` serves only if the chunk is in that partition. Private partitions keep 403 "Missing
+  token" (token mode) / 302 to login (OIDC). Nothing else (`/extract`, search, chat) is opened anonymously.
+- **Authenticated read**: `AuthService.list_user_partitions_for_request` — the single place — appends a
+  synthetic `{"role": "viewer", "public": True}` entry for each public partition the user is not a member
+  of, so search, `/v1/models`, `openrag-<p>`/`openrag-all` and `require_partition_viewer` include it;
+  editor/owner checks still fail. Members keep their own role.
+- Risk: chunk ids are monotonic Milvus auto-ids, so every source file of a public partition should be
+  considered published.
 
 ### Web Search Integration
 

@@ -17,6 +17,13 @@ without modification. The middleware supports both auth modes:
     - UI paths → **302** to ``/auth/login?next=<encoded>``
     - API paths → **401** JSON ``{"detail": "Unauthenticated"}``
 
+Public partitions (``partitions.is_public``): in both modes, an
+unauthenticated ``GET``/``HEAD /static/{extract_id}`` is let through — with
+``request.state.user = None`` and ``request.state.public_partition`` set —
+only after a lookup confirms the chunk belongs to a public partition. Any
+other anonymous request (including ``/static`` on a private partition) keeps
+the responses above; ``/extract``, search and chat are never opened.
+
 Environment configuration (``AUTH_MODE``, ``AUTH_TOKEN``,
 ``OIDC_TOKEN_ENCRYPTION_KEY``) is read at **dispatch** time via
 ``os.getenv`` so tests can monkeypatch ``os.environ`` per case.
@@ -30,13 +37,15 @@ and deleted the ``components/auth/middleware.py`` shim.
 from __future__ import annotations
 
 import os
+import re
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import quote
 
 from core.auth.chainlit import CHAINLIT_TOKEN_COOKIE_NAME
 from core.config.auth import AuthBypassConfig
+from core.indexing.validators import validate_file_id
 from core.utils.logging import get_logger
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -94,6 +103,34 @@ def is_bypass_path(path: str, *, bypass_config: AuthBypassConfig | None = None) 
     """
     cfg = bypass_config or _DEFAULT_BYPASS_CONFIG
     return path in cfg.bypass_paths or path == "/chainlit" or path.startswith(("/chainlit/", "/assets/"))
+
+
+# ``/static/{extract_id}`` — exactly one path segment, the download route's shape.
+_STATIC_DOWNLOAD_PATH = re.compile(r"^/static/([^/]+)$")
+
+PublicDownloadResolver = Callable[[Request, str], Awaitable[str | None]]
+
+
+async def resolve_public_download_partition(request: Request, extract_id: str) -> str | None:
+    """Return the chunk's partition when it is public, else ``None``.
+
+    Default resolver for the anonymous ``/static/{extract_id}`` path: looks the
+    chunk up in the vector store (``ConversionService.get_chunk``) and its
+    partition's ``is_public`` flag in Postgres (``PartitionService``) through the
+    request-time service container — one vector lookup plus one indexed DB read,
+    no cache, so un-publishing a partition takes effect on the next request.
+    """
+    extract_id = validate_file_id(extract_id)
+    container = request.app.state.container
+    chunk = await container.conversion_service.get_chunk(extract_id)
+    if not chunk:
+        return None
+    partition = (chunk.get("metadata") or {}).get("partition")
+    if not partition:
+        return None
+    if await container.partition_service.is_partition_public(partition):
+        return partition
+    return None
 
 
 def _allow_no_auth() -> bool:
@@ -183,11 +220,40 @@ class AuthMiddleware(BaseHTTPMiddleware):
         *,
         get_auth_service: Callable[[Request], Any],
         bypass_config: AuthBypassConfig | None = None,
+        resolve_public_download: PublicDownloadResolver | None = None,
     ):
         super().__init__(app)
         self._get_auth_service = get_auth_service
         self._bypass_config = bypass_config or AuthBypassConfig()
         self._auth_failure_limiter = AuthFailureRateLimiter()
+        self._resolve_public_download = resolve_public_download or resolve_public_download_partition
+
+    async def _public_download_partition(self, request: Request) -> str | None:
+        """Partition name when this anonymous request may download a public file.
+
+        Only ``GET``/``HEAD /static/{extract_id}`` qualifies. Fails closed: any
+        lookup error (bad id, store down, no container) means "not public", so the
+        caller falls through to the normal 401/403/redirect.
+        """
+        if request.method not in ("GET", "HEAD"):
+            return None
+        match = _STATIC_DOWNLOAD_PATH.match(request.url.path)
+        if match is None:
+            return None
+        try:
+            return await self._resolve_public_download(request, match.group(1))
+        except Exception as e:
+            logger.bind(error=str(e)).debug("Public download check failed; treating as private")
+            return None
+
+    async def _serve_public_download(self, request: Request, call_next, partition: str):
+        """Forward an anonymous request vetted by :meth:`_public_download_partition`."""
+        request.state.user = None
+        request.state.user_partitions = []
+        request.state.oidc_session = None
+        # The download route authorizes an anonymous caller on this value only.
+        request.state.public_partition = partition
+        return await call_next(request)
 
     async def _auth_failure(self, request: Request, *, status_code: int, detail: str) -> JSONResponse:
         limited = await self._auth_failure_limiter.record_failure(request)
@@ -361,12 +427,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         # Legacy test contract: robot suite asserts 403 + "Invalid token".
                         return await self._auth_failure(request, status_code=403, detail="Invalid token")
             elif auth_mode == "token":
+                # Public-partition source file: served anonymously, no failure recorded.
+                public_partition = await self._public_download_partition(request)
+                if public_partition is not None:
+                    return await self._serve_public_download(request, call_next, public_partition)
                 # Token mode: no cookie + no bearer → legacy 403 "Missing token".
                 return await self._auth_failure(request, status_code=403, detail="Missing token")
 
         # --- 3) Unauthenticated: redirect UI (and the oidc-gated docs) in oidc
         #        mode, else 401 JSON. ``oidc_gated`` is already mode-checked.
         if user is None:
+            public_partition = await self._public_download_partition(request)
+            if public_partition is not None:
+                return await self._serve_public_download(request, call_next, public_partition)
             if oidc_gated or (auth_mode == "oidc" and is_ui_path(path, bypass_config=self._bypass_config)):
                 next_path = path
                 if request.url.query:
@@ -386,7 +459,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
 __all__ = [
     "AuthMiddleware",
+    "PublicDownloadResolver",
     "SESSION_COOKIE_NAME",
     "is_bypass_path",
     "is_ui_path",
+    "resolve_public_download_partition",
 ]

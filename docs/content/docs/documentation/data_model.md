@@ -102,6 +102,7 @@ Represents a logical workspace or "space" that groups files and users.
 | `id`          | Integer (PK) | Unique partition identifier |
 | `partition`   | String (unique, indexed) | Human-readable name / key |
 | `created_at`  | DateTime | Timestamp of creation |
+| `is_public`   | Boolean (default `false`) | Public partition: anonymous source-file download + read access for every authenticated user (see [User auth](./user_auth)) |
 
 **Relationships:**
 - `files` one-to-many → `File`

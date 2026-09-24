@@ -365,8 +365,16 @@ class AuthService:
         return self._user_to_request_dict(user) if user else None
 
     async def list_user_partitions_for_request(self, user_id: int) -> list[dict[str, Any]]:
+        """Partitions an authenticated user may access, as ``request.state.user_partitions``.
+
+        Real memberships first, then every public partition (``partitions.is_public``)
+        the user is not already a member of, as a synthetic ``viewer`` entry flagged
+        ``"public": True``. This is the single place public partitions widen access:
+        search, chat models, ``openrag-all`` and ``require_partition_viewer`` all read
+        this list, while editor/owner checks still fail on the ``viewer`` role.
+        """
         memberships = await self._membership_repo.list_user_partitions(user_id)
-        return [
+        result = [
             {
                 "partition": membership.partition,
                 "role": membership.role.value,
@@ -374,6 +382,13 @@ class AuthService:
             }
             for membership in memberships
         ]
+        member_of = {entry["partition"] for entry in result}
+        for name in await self._membership_repo.list_public_partitions():
+            if name not in member_of:
+                result.append(
+                    {"partition": name, "role": PartitionRole.VIEWER.value, "created_at": None, "public": True}
+                )
+        return result
 
     async def get_oidc_session_by_token_for_request(self, token: str) -> dict[str, Any] | None:
         session = await self._oidc_session_repo.get_by_token_hash(hash_session_token(token))

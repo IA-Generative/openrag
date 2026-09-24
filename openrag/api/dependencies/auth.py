@@ -34,6 +34,18 @@ def current_user_or_admin_partitions_list(request: Request):
     return [p["partition"] for p in current_user_or_admin_partitions(request)]
 
 
+def optional_user_partitions_list(request: Request) -> list[str] | None:
+    """Like :func:`current_user_or_admin_partitions_list`, but ``None`` for an anonymous request.
+
+    Only the source-download route uses it: ``AuthMiddleware`` lets an
+    unauthenticated request reach that route solely for a public partition
+    (``request.state.user is None`` and ``request.state.public_partition`` set).
+    """
+    if getattr(request.state, "user", None) is None:
+        return None
+    return current_user_or_admin_partitions_list(request)
+
+
 def partitions_with_details(request: Request):
     return current_user_or_admin_partitions(request)
 

@@ -35,6 +35,7 @@ class CreatePartitionRequest(BaseModel):
     retrieval_preset: str = "default"
     chat_history_depth: int = Field(default=4, ge=1)
     chat_llm: str | None = None
+    is_public: bool = False
 
     @field_validator("name", "embedder", "indexation_preset", "retrieval_preset")
     @classmethod
@@ -65,6 +66,15 @@ class UpdatePartitionRequest(BaseModel):
     # {prompt_type: library_prompt_name} for prompts selected on this partition.
     # ``{}`` clears every partition-level prompt override.
     generation_prompt_names: dict[str, str] | None = None
+    # Public partition: anonymous source-file download + read access for every
+    # authenticated user. Owner/admin only (the PATCH route's permission).
+    is_public: bool | None = None
+
+    @field_validator("is_public")
+    @classmethod
+    def reject_null_is_public(cls, value: bool | None) -> bool:
+        """Reject explicit null: send ``false`` to make a partition private again."""
+        return _reject_explicit_null("is_public", value)
 
     @field_validator("generation_prompt_names")
     @classmethod
@@ -132,6 +142,7 @@ class PartitionDetailResponse(BaseModel):
     chat_history_depth: int = 4
     chat_llm: str | None = None
     generation_prompt_names: dict[str, str] = Field(default_factory=dict)
+    is_public: bool = False
 
 
 __all__ = [

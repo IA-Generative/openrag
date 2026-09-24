@@ -89,6 +89,18 @@ class PgPartitionMembershipRepository(PartitionMembershipRepository):
         )
         return [self._row_to_user_partition(r) for r in rows]
 
+    async def list_public_partitions(self) -> list[str]:
+        """Names of every ``is_public`` partition, oldest first.
+
+        Lives on the membership repo because it answers the same question as
+        :meth:`list_user_partitions` — which partitions a user may read — and
+        ``AuthService`` only holds this repository.
+        """
+        rows = await self.pool.fetch(
+            "SELECT partition FROM partitions WHERE is_public ORDER BY created_at",
+        )
+        return [r["partition"] for r in rows]
+
     async def list_partition_users(self, partition: str) -> list[UserPartition]:
         rows = await self.pool.fetch(
             """

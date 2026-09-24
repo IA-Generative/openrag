@@ -102,6 +102,52 @@ Role-based restrictions are enforced via dependency guards:
 - `require_partition_editor`
 - `require_partition_viewer`
 
+### Public partitions (`is_public`)
+
+A partition can be flagged **public** (`partitions.is_public`, default `false`). Only the
+partition **owner** (or an admin under `SUPER_ADMIN_MODE`) can change it, through the
+existing update endpoint — or at creation with `POST /partition/{partition}?is_public=true`:
+
+```bash
+curl -X PATCH https://openrag.example.com/partition/my-collection \
+  -H "Authorization: Bearer <OWNER_OR_ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"is_public": true}'    # {"is_public": false} makes it private again
+```
+
+`is_public` is returned by `GET /partition/{partition}/config`, the `PATCH` response and
+`GET /partition/`.
+
+What a public partition **opens**:
+
+- **Anonymous source-file download.** `GET /static/{extract_id}` (the source links in
+  chat answers) serves the file **without any login** when the chunk belongs to a public
+  partition — in both `AUTH_MODE=token` and `AUTH_MODE=oidc`. The auth middleware only
+  lets an unauthenticated `GET`/`HEAD /static/{id}` through after checking the chunk's
+  partition is public; the download route then re-checks that the chunk is in that
+  partition. `DATA_DIR` confinement, inline/attachment and `nosniff` handling are unchanged.
+- **Read access for every authenticated user.** Each logged-in user gets a synthetic
+  `viewer` entry for every public partition they are not already a member of: it appears
+  in `GET /partition/`, `/v1/models` (`openrag-<partition>`), is included in
+  `openrag-all` and `/search?partitions=all`, and passes `require_partition_viewer`.
+
+What it does **not** open:
+
+- No anonymous search, chat, `/extract`, partition listing or any other route — those
+  still require authentication.
+- No write access: `editor`/`owner` checks still fail for non-members (no upload, edit,
+  delete, membership or flag changes). An existing member keeps their own role.
+
+Private partitions behave exactly as before: an anonymous `/static` request still gets
+`403 Missing token` (token mode) or a redirect to `/auth/login` (OIDC mode).
+
+:::caution
+Chunk ids are Milvus auto-generated integers: monotonic, not secret. Treat every
+source file of a public partition as downloadable by anyone who can reach the API (ids
+can be probed, and links get shared). Only mark a partition public if all its indexed
+files may be published.
+:::
+
 ---
 
 ## **7. Authorization Flow Summary**

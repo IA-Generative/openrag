@@ -315,3 +315,80 @@ async def test_create_partition_rejects_malformed_limit_before_writing(async_cli
     assert response.status_code == 500
     assert "MAX_PARTITIONS_PER_USER" in response.json()["detail"]
     assert service.created == []
+
+
+# --------------------------------------------------------------------------- #
+# is_public flag
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flag", [True, False])
+async def test_patch_partition_sets_and_unsets_is_public(async_client_factory, flag):
+    service = FakePartitionConfigService()
+    app = _build_app(service)
+
+    async with async_client_factory(app) as client:
+        response = await client.patch("/partition/legal", json={"is_public": flag})
+
+    assert response.status_code == 200
+    assert response.json()["is_public"] is flag
+    assert service.calls == [("update", {"partition": "legal", "is_public": flag})]
+
+
+@pytest.mark.asyncio
+async def test_patch_partition_rejects_null_is_public(async_client_factory):
+    service = FakePartitionConfigService()
+    app = _build_app(service)
+
+    async with async_client_factory(app) as client:
+        response = await client.patch("/partition/legal", json={"is_public": None})
+
+    assert response.status_code == 422
+    assert service.calls == []
+
+
+class _ExistingPartitionService(FakePartitionConfigService):
+    async def partition_exists(self, partition: str) -> bool:
+        return True
+
+
+@pytest.mark.asyncio
+async def test_patch_is_public_forbidden_for_public_viewer_non_owner(async_client_factory):
+    """A user who only reads the partition because it is public cannot flip the flag."""
+    from di.providers import get_auth_service
+    from services.orchestrators.auth_service import AuthService
+
+    service = _ExistingPartitionService()
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def _set_user(request, call_next):
+        request.state.user = {"id": 42, "is_admin": False}
+        request.state.user_partitions = [
+            {"partition": "legal", "role": "viewer", "created_at": None, "public": True},
+        ]
+        return await call_next(request)
+
+    app.include_router(partitions.router, prefix="/partition")
+    app.dependency_overrides[get_partition_service] = lambda: service
+    # Real role check (AuthService.check_partition_access is a classmethod).
+    app.dependency_overrides[get_auth_service] = lambda: AuthService
+
+    async with async_client_factory(app) as client:
+        response = await client.patch("/partition/legal", json={"is_public": False})
+
+    assert response.status_code == 403
+    assert service.calls == []
+
+
+@pytest.mark.asyncio
+async def test_create_partition_forwards_is_public_query(async_client_factory):
+    service = FakeCreatePartitionService()
+    app = _build_create_app(service, is_admin=True)
+
+    async with async_client_factory(app) as client:
+        response = await client.post("/partition/legal", params={"is_public": "true"})
+
+    assert response.status_code == 201
+    assert service.created[0]["is_public"] is True

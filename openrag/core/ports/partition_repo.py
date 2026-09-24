@@ -26,6 +26,10 @@ class PartitionRepository(ABC):
     async def partition_exists(self, name: str) -> bool: ...
 
     @abstractmethod
+    async def is_partition_public(self, name: str) -> bool:
+        """True when the partition exists and is flagged ``is_public``."""
+
+    @abstractmethod
     async def get_partition_row(self, name: str) -> dict | None: ...
 
     @abstractmethod

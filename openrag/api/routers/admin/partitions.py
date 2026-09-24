@@ -59,7 +59,8 @@ Returns a list of partitions you have access to, including:
 - `created_at`: Creation timestamp
 - Additional partition metadata
 
-**Note:** Admins see all partitions; regular users see only their assigned partitions.
+**Note:** Admins see all partitions; regular users see their assigned partitions
+plus every public partition (`is_public: true`, listed with `role: viewer`).
 """,
 )
 async def list_existant_partitions(
@@ -263,6 +264,9 @@ async def list_all_chunks(
 
 **Parameters:**
 - `partition`: The partition name (must be unique)
+- `is_public` (query, optional, default `false`): mark the partition public — its
+  source files become downloadable without authentication via `/static/{extract_id}`
+  and every authenticated user gets read (viewer) access
 
 **Behavior:**
 - Creates an empty partition
@@ -279,6 +283,7 @@ Returns 409 Conflict if partition already exists.
 async def create_partition(
     request: Request,
     partition: str,
+    is_public: bool = Query(default=False),
     service=Depends(get_partition_service),
 ):
     """Create a new partition owned by the current user."""
@@ -306,7 +311,7 @@ async def create_partition(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=exc.message,
         ) from exc
-    await service.create_partition(partition=partition, user_id=user_id, max_owned=max_owned)
+    await service.create_partition(partition=partition, user_id=user_id, max_owned=max_owned, is_public=is_public)
     return Response(status_code=status.HTTP_201_CREATED)
 
 
@@ -326,6 +331,9 @@ Accepts partition config fields such as:
 - `retrieval_preset`
 - `chat_history_depth`
 - `chat_llm` (must name a registered LLM endpoint — 422 otherwise; explicit `null` resets to the default LLM)
+- `is_public` (bool): `true` lets anyone download the partition's source files via
+  `/static/{extract_id}` without logging in, and gives every authenticated user
+  read (viewer) access; `false` makes it private again. Never grants editing.
 
 **Permissions:**
 - Requires partition owner role

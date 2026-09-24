@@ -155,6 +155,15 @@ class PartitionService:
     # Partition CRUD
     # ------------------------------------------------------------------
 
+    async def is_partition_public(self, partition: str) -> bool:
+        """True when ``partition`` exists and is flagged ``is_public``.
+
+        Gates the anonymous ``/static/{extract_id}`` download in ``AuthMiddleware``:
+        one indexed lookup per anonymous request, no caching, so flipping the flag
+        back to private takes effect immediately.
+        """
+        return await self._partition_repo.is_partition_public(partition)
+
     async def partition_exists(self, partition: str) -> bool:
         try:
             operation = self._active_partition_operation(partition)
@@ -278,6 +287,7 @@ class PartitionService:
                 "dimension": r.get("dimension"),
                 "chat_history_depth": r.get("chat_history_depth") or self._legacy_chat_history_depth_fallback(),
                 "chat_llm": r.get("chat_llm"),
+                "is_public": bool(r.get("is_public", False)),
                 "created_at": created.isoformat() if hasattr(created, "isoformat") else created,
                 "document_count": counts.get(name, 0),
             }
@@ -295,6 +305,7 @@ class PartitionService:
         retrieval_preset: str = "default",
         chat_history_depth: int = 4,
         chat_llm: str | None = None,
+        is_public: bool = False,
     ) -> None:
         """Create a partition owned by ``user_id`` with preset references.
 
@@ -353,6 +364,10 @@ class PartitionService:
         if self._config is not None:
             await self._update_partition_for_operation(partition, operation=operation, **config_fields)
             await self.load_partitions()
+        # ``is_public`` is an access flag, not pipeline config: persist it in
+        # both flows (the insert leaves it at its ``false`` server default).
+        if is_public:
+            await self._update_partition_for_operation(partition, operation=operation, is_public=True)
 
         logger.info(f"Partition '{partition}' created by user_id {user_id}.")
 
@@ -528,6 +543,7 @@ class PartitionService:
             "chat_history_depth": row.get("chat_history_depth") or self._legacy_chat_history_depth_fallback(),
             "chat_llm": row.get("chat_llm"),
             "generation_prompt_names": row.get("generation_prompt_names") or {},
+            "is_public": bool(row.get("is_public", False)),
         }
 
     # ------------------------------------------------------------------

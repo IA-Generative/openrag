@@ -1169,3 +1169,52 @@ async def test_get_file_ancestors_success():
     svc = _svc(drepo=FakeDocumentRepo(files={("f", "p")}))
     out = await svc.get_file_ancestors("p", "f")
     assert out[-1]["file_id"] == "f"
+
+
+# --------------------------------------------------------------------------- #
+# is_public
+# --------------------------------------------------------------------------- #
+
+
+class _PublicFlagPartitionRepo(FakePartitionRepo):
+    def __init__(self, *args, public: set[str] | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.public = public or set()
+        self.updates: list[tuple[str, dict]] = []
+
+    async def is_partition_public(self, name: str) -> bool:
+        return name in self.public
+
+    async def update_partition(self, name: str, **fields) -> dict:
+        self.updates.append((name, fields))
+        return {"partition": name, **fields}
+
+
+@pytest.mark.asyncio
+async def test_create_partition_persists_is_public_without_config():
+    prepo = _PublicFlagPartitionRepo()
+    await _svc(prepo=prepo).create_partition("new", 7, is_public=True)
+    assert prepo.updates == [("new", {"is_public": True})]
+
+
+@pytest.mark.asyncio
+async def test_create_partition_private_by_default_writes_nothing_extra():
+    prepo = _PublicFlagPartitionRepo()
+    await _svc(prepo=prepo).create_partition("new", 7)
+    assert prepo.updates == []
+
+
+@pytest.mark.asyncio
+async def test_update_partition_forwards_is_public_false():
+    """``False`` is a real value, not the omitted-field ``None`` that gets filtered."""
+    prepo = _PublicFlagPartitionRepo(existing={"p1"})
+    await _svc(prepo=prepo).update_partition("p1", is_public=False)
+    assert prepo.updates == [("p1", {"is_public": False})]
+
+
+@pytest.mark.asyncio
+async def test_is_partition_public_delegates_to_repo():
+    prepo = _PublicFlagPartitionRepo(public={"legal-public"})
+    svc = _svc(prepo=prepo)
+    assert await svc.is_partition_public("legal-public") is True
+    assert await svc.is_partition_public("private") is False

@@ -27,6 +27,10 @@ class PartitionMembershipRepository(ABC):
     async def list_user_partitions(self, user_id: int) -> list[UserPartition]: ...
 
     @abstractmethod
+    async def list_public_partitions(self) -> list[str]:
+        """Names of every partition flagged ``is_public`` (readable by any authenticated user)."""
+
+    @abstractmethod
     async def list_partition_users(self, partition: str) -> list[UserPartition]: ...
 
     @abstractmethod

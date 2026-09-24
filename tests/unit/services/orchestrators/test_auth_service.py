@@ -753,3 +753,56 @@ async def test_membership_sync_survives_list_failure():
     # Must not raise.
     await svc._sync_oidc_memberships(User(id=1), {"groups": ["/openrag/alpha/owner"]})
     assert repo.assigned == []
+
+
+# --------------------------------------------------------------------------- #
+# Public partitions widen request-time read access
+# --------------------------------------------------------------------------- #
+
+
+class _PublicMembershipRepo(FakeMembershipRepo):
+    def __init__(self, *, public=(), **kw):
+        super().__init__(**kw)
+        self._public = list(public)
+
+    async def list_public_partitions(self) -> list[str]:
+        return list(self._public)
+
+
+@pytest.mark.asyncio
+async def test_list_user_partitions_adds_public_partitions_as_viewer():
+    repo = _PublicMembershipRepo(seed=[(7, "mine", "owner")], public=["legal-public"])
+    svc = _service(membership_repo=repo)
+
+    entries = await svc.list_user_partitions_for_request(7)
+
+    assert [(e["partition"], e["role"]) for e in entries] == [("mine", "owner"), ("legal-public", "viewer")]
+    assert entries[1]["public"] is True
+    assert "public" not in entries[0]
+
+
+@pytest.mark.asyncio
+async def test_list_user_partitions_keeps_real_role_on_public_partition():
+    """A member of a public partition keeps their own (higher) role — no duplicate viewer entry."""
+    repo = _PublicMembershipRepo(seed=[(7, "legal-public", "editor")], public=["legal-public"])
+    svc = _service(membership_repo=repo)
+
+    entries = await svc.list_user_partitions_for_request(7)
+
+    assert [(e["partition"], e["role"]) for e in entries] == [("legal-public", "editor")]
+    assert "public" not in entries[0]
+
+
+@pytest.mark.asyncio
+async def test_public_viewer_entry_passes_viewer_but_not_editor_or_owner():
+    repo = _PublicMembershipRepo(public=["legal-public"])
+    svc = _service(membership_repo=repo)
+    entries = await svc.list_user_partitions_for_request(7)
+    user = {"id": 7, "is_admin": False}
+
+    assert svc.check_partition_access(
+        user=user, partition="legal-public", user_partitions=entries, required_role="viewer"
+    )
+    for role in ("editor", "owner"):
+        with pytest.raises(OpenRAGError):
+            svc.check_partition_access(user=user, partition="legal-public", user_partitions=entries, required_role=role)

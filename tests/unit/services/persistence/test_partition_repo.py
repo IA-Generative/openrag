@@ -346,3 +346,59 @@ async def test_update_partition_embedder_change_skips_the_guard():
     assert result["embedder"] == "some-embedder"
     assert conn.transactions == 0
     assert not any("FROM model_endpoints" in q for q, _ in conn.operations)
+
+
+class _PublicFlagConn:
+    def __init__(self, value):
+        self.value = value
+        self.queries: list[tuple[str, tuple]] = []
+
+    async def fetchval(self, query: str, *params):
+        self.queries.append((query, params))
+        return self.value
+
+    async def fetchrow(self, query: str, *params):
+        self.queries.append((query, params))
+        return {
+            "partition": params[0],
+            "description": "",
+            "embedder": "default",
+            "indexation_preset": "default",
+            "retrieval_preset": "default",
+            "dimension": 1024,
+            "collection_name": None,
+            "chat_history_depth": 4,
+            "chat_llm": None,
+            "generation_prompt_names": {},
+            "is_public": True,
+            "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+            "updated_at": datetime(2026, 1, 1, tzinfo=UTC),
+        }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("stored", "expected"), [(True, True), (False, False), (None, False)])
+async def test_is_partition_public_reads_flag(stored, expected):
+    """``None`` = partition row missing → not public (fail closed)."""
+    from services.persistence.partition_repo import PgPartitionRepository
+
+    conn = _PublicFlagConn(stored)
+    repo = PgPartitionRepository(pool_getter=lambda: conn)
+
+    assert await repo.is_partition_public("p") is expected
+    assert conn.queries == [("SELECT is_public FROM partitions WHERE partition = $1", ("p",))]
+
+
+@pytest.mark.asyncio
+async def test_update_partition_writes_is_public_and_returns_it():
+    from services.persistence.partition_repo import PgPartitionRepository
+
+    conn = _PublicFlagConn(None)
+    repo = PgPartitionRepository(pool_getter=lambda: conn)
+
+    row = await repo.update_partition("p", is_public=True)
+
+    query, params = conn.queries[0]
+    assert "is_public = $2" in query
+    assert params == ("p", True)
+    assert row["is_public"] is True

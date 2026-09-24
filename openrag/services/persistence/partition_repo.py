@@ -56,6 +56,7 @@ _PARTITION_UPDATE_COLUMNS = frozenset(
         "chat_history_depth",
         "chat_llm",
         "generation_prompt_names",
+        "is_public",
     }
 )
 _PARTITION_OPERATION_LOCK_NAMESPACE = 20260720
@@ -277,6 +278,15 @@ class PgPartitionRepository(PartitionRepository):
             name,
         )
 
+    async def is_partition_public(self, name: str) -> bool:
+        """True when the partition exists and is flagged ``is_public``."""
+        return bool(
+            await self.pool.fetchval(
+                "SELECT is_public FROM partitions WHERE partition = $1",
+                name,
+            )
+        )
+
     # ── Phase 14 — full config row methods ───────────────────────────
 
     async def get_partition_row(self, name: str) -> dict | None:
@@ -439,6 +449,7 @@ class PgPartitionRepository(PartitionRepository):
             "chat_history_depth": row["chat_history_depth"],
             "chat_llm": row["chat_llm"],
             "generation_prompt_names": row["generation_prompt_names"],
+            "is_public": bool(row.get("is_public", False)),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }

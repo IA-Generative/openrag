@@ -344,3 +344,12 @@ def test_update_partition_chat_llm_strips_whitespace():
 
 def test_create_partition_chat_llm_normalizes_blank_to_null():
     assert CreatePartitionRequest(name="legal", chat_llm=" ").chat_llm is None
+
+
+def test_partition_is_public_defaults_and_null_handling():
+    """``is_public`` defaults to private; a PATCH may set/unset it but not null it."""
+    assert CreatePartitionRequest(name="legal").is_public is False
+    assert UpdatePartitionRequest(is_public=True).model_dump(exclude_unset=True) == {"is_public": True}
+    assert UpdatePartitionRequest(is_public=False).model_dump(exclude_unset=True) == {"is_public": False}
+    with pytest.raises(ValidationError):
+        UpdatePartitionRequest(is_public=None)

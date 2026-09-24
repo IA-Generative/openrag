@@ -6,18 +6,24 @@ documents to any authenticated caller who learned a filename (from a source
 ``/extract``'s partition-membership check: it resolves the file from the chunk's
 stored ``source`` path and confines it to ``DATA_DIR``. The URL lives under
 ``/static`` so the middleware's browser ``?token=`` access works the same way.
+
+Public partitions (``partitions.is_public``) are the one exception: after
+checking the chunk's partition is public, ``AuthMiddleware`` forwards an
+unauthenticated request here with ``request.state.user = None`` and
+``request.state.public_partition`` set, and the file is served only if the
+chunk still belongs to that partition.
 """
 
 import mimetypes
 from pathlib import Path
 
-from api.dependencies.auth import current_user_or_admin_partitions_list
+from api.dependencies.auth import optional_user_partitions_list
 from core.config import load_config
 from core.indexing.validators import validate_file_id
 from core.utils.exceptions import ValidationError
 from core.utils.logging import get_logger
 from di.providers import get_conversion_service
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
 
 logger = get_logger()
@@ -29,8 +35,9 @@ router = APIRouter()
 
 @router.get("/static/{extract_id}", name="download_source")
 async def download_source(
+    request: Request,
     extract_id: str,
-    user_partitions=Depends(current_user_or_admin_partitions_list),
+    user_partitions=Depends(optional_user_partitions_list),
     service=Depends(get_conversion_service),
 ):
     """Download the source document a chunk came from, authorized by partition."""
@@ -46,7 +53,13 @@ async def download_source(
 
     metadata = chunk.get("metadata", {})
     chunk_partition = metadata.get("partition")
-    if chunk_partition not in user_partitions and user_partitions != ["all"]:
+    if user_partitions is None:
+        # Anonymous: only reachable when the middleware vetted a public partition.
+        public_partition = getattr(request.state, "public_partition", None)
+        allowed = public_partition is not None and chunk_partition == public_partition
+    else:
+        allowed = chunk_partition in user_partitions or user_partitions == ["all"]
+    if not allowed:
         log.warning("User does not have access to this file.")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
