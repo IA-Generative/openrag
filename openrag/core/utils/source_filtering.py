@@ -29,6 +29,15 @@ _UNCLOSED_SOURCE_NUMS_RE = re.compile(
 )
 _DANGLING_SOURCE_RE = re.compile(r"[ \t]*\[\s*Sources?\s*(?=\n|$)", re.IGNORECASE)
 
+INLINE_SOURCES_SEPARATOR = "---"
+INLINE_SOURCES_HEADING = "**Sources :**"
+# A trailing inline block: separator, heading, then only numbered list lines.
+_INLINE_SOURCES_BLOCK_RE = re.compile(
+    r"\s*\n-{3,}[ \t]*\n\*\*Sources :\*\*[ \t]*\n(?:[ \t]*\n|[ \t]*\d+\.[^\n]*\n?)*\s*$"
+)
+# "(partie 1/2)": the indexer's marker for one part of a split document.
+_PART_MARKER_RE = re.compile(r"\s*\(partie \d+/\d+\)\s*$", re.IGNORECASE)
+
 
 def _sanitize_log_preview(text: str, max_length: int = 150) -> str:
     preview = _EMAIL_RE.sub("***@***", text)
@@ -123,7 +132,7 @@ def _source_label(source: dict) -> str:
     # at its slash. Only a filename or stored path is reduced to its last component.
     title = source.get("title")
     if title:
-        label = str(title)
+        label = _PART_MARKER_RE.sub("", str(title)) or str(title)
     else:
         path = source.get("filename") or source.get("source") or source.get("file_id") or "source"
         label = Path(str(path)).name or str(path)
@@ -186,18 +195,46 @@ def format_sources_as_markdown(
         if key not in best or score > _source_score(best[key]):
             best[key] = source
 
-    ranked = sorted(best.values(), key=_source_score, reverse=True)[:max_items]
-    if not ranked:
-        return ""
-
-    lines = ["", "---", "**Sources :**", ""]
-    for i, source in enumerate(ranked, start=1):
+    # The parts of one split document ("… (partie 1/2)", "… (partie 2/2)") are
+    # distinct files with the same label and public URL once the part marker is
+    # dropped: list them once, under the best-scoring part.
+    entries: list[tuple[str, str, float]] = []
+    seen: set[tuple[str, str]] = set()
+    for source in sorted(best.values(), key=_source_score, reverse=True):
         url = _public_url(source) or source.get("file_url") or source.get("chunk_url") or ""
         label = _source_label(source).replace("|", "\\|")
-        score = _source_score(source)
+        if (label, url) in seen:
+            continue
+        seen.add((label, url))
+        entries.append((label, url, _source_score(source)))
+        if len(entries) == max_items:
+            break
+    if not entries:
+        return ""
+
+    lines = ["", INLINE_SOURCES_SEPARATOR, INLINE_SOURCES_HEADING, ""]
+    for i, (label, url, score) in enumerate(entries, start=1):
         suffix = "" if score == float("-inf") else f" — score {score:.2f}"
         lines.append(f"{i}. [{label}]({url}){suffix}" if url else f"{i}. {label}{suffix}")
     return "\n".join(lines)
+
+
+def strip_inline_sources_block(text: str) -> str:
+    """Remove the trailing block(s) written by :func:`format_sources_as_markdown`.
+
+    Clients send the conversation back with each earlier answer — Sources block
+    included. Left in the history, the model imitates it and writes its own
+    list before ours is appended, so from the second turn on the reader gets
+    the block twice. Only a trailing separator + heading + numbered list is
+    removed; a "Sources" mention inside the prose is left alone.
+    """
+    if not isinstance(text, str) or INLINE_SOURCES_HEADING not in text:
+        return text
+    previous = None
+    while previous != text:
+        previous = text
+        text = _INLINE_SOURCES_BLOCK_RE.sub("", text)
+    return text
 
 
 def _min_sources_tag_buffer_size(n_sources: int) -> int:

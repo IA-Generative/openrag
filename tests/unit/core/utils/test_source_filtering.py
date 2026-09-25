@@ -11,6 +11,7 @@ from core.utils.source_filtering import (
     filter_sources_by_citations,
     format_sources_as_markdown,
     stream_with_source_filtering,
+    strip_inline_sources_block,
 )
 
 
@@ -829,8 +830,30 @@ class TestFormatSourcesAsMarkdown:
         assert "a\\|b.pdf" in md
 
     def test_title_with_slash_is_kept_whole(self):
-        md = format_sources_as_markdown([{"url": "https://l/x", "title": "CESEDA, art. L. 421-2 (partie 1/2)"}])
-        assert "[CESEDA, art. L. 421-2 (partie 1/2)](https://l/x)" in md
+        md = format_sources_as_markdown([{"url": "https://l/x", "title": "Règlement (UE) 2016/679, art. 6"}])
+        assert "[Règlement (UE) 2016/679, art. 6](https://l/x)" in md
+
+    def test_part_marker_dropped_and_parts_listed_once(self):
+        md = format_sources_as_markdown(
+            [
+                {
+                    "file_id": "a1",
+                    "url": "https://l/a",
+                    "title": "CESEDA, art. L. 421-2 (partie 1/2)",
+                    "relevance_score": 0.9,
+                },
+                {
+                    "file_id": "a2",
+                    "url": "https://l/a",
+                    "title": "CESEDA, art. L. 421-2 (partie 2/2)",
+                    "relevance_score": 0.5,
+                },
+                {"file_id": "b", "url": "https://l/b", "title": "CESEDA, art. L. 414-12", "relevance_score": 0.4},
+            ]
+        )
+        assert "(partie" not in md
+        assert md.count("L. 421-2") == 1
+        assert "2. [CESEDA, art. L. 414-12](https://l/b)" in md
 
     def test_public_url_preferred_over_static_file_url(self):
         # A Légifrance article must link to Légifrance, not to the session-gated /static copy.
@@ -898,3 +921,25 @@ class TestStreamInlineSources:
         )
         assert "**Sources :**" not in _collect_content(result)
         assert _parse_finish_sources(result) == []
+
+
+class TestStripInlineSourcesBlock:
+    BLOCK = format_sources_as_markdown([{"url": "https://l/a", "title": "Code de la route, art. L. 225-5"}])
+
+    def test_removes_trailing_block(self):
+        assert strip_inline_sources_block("Réponse." + self.BLOCK) == "Réponse."
+
+    def test_removes_a_doubled_block(self):
+        assert strip_inline_sources_block("Réponse." + self.BLOCK + self.BLOCK) == "Réponse."
+
+    def test_keeps_prose_mentioning_sources(self):
+        text = "Voir **Sources :** plus haut, puis la suite du raisonnement."
+        assert strip_inline_sources_block(text) == text
+
+    def test_keeps_block_followed_by_prose(self):
+        text = "Réponse." + self.BLOCK + "\n\nUne conclusion après la liste."
+        assert strip_inline_sources_block(text) == text
+
+    def test_non_string_content_untouched(self):
+        parts = [{"type": "text", "text": "x"}]
+        assert strip_inline_sources_block(parts) is parts

@@ -58,6 +58,7 @@ from core.utils.source_filtering import (
     filter_sources_by_citations,
     format_sources_as_markdown,
     stream_with_source_filtering,
+    strip_inline_sources_block,
 )
 from core.utils.text import get_num_tokens
 from core.utils.web_url import normalize_web_url
@@ -529,6 +530,11 @@ class QueryService:
     async def _prepare_chat(self, partition: list[str] | None, payload: dict, llm: LLM | None = None):
         messages = payload["messages"][-self._resolve_chat_history_depth(partition) :]
         custom_prompt, messages = _split_leading_system_prompt(payload["messages"], messages)
+        # Earlier answers come back with our Sources block: drop it, or the model copies it.
+        messages = [
+            {**m, "content": strip_inline_sources_block(m["content"])} if m.get("role") == "assistant" else m
+            for m in messages
+        ]
         if not messages:
             raise ValidationError("Request must contain at least one non-system message")
 
