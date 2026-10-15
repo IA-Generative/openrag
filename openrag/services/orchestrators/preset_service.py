@@ -45,7 +45,11 @@ _DEFAULT_SEEDS: dict[str, dict[str, dict[str, Any]]] = {
     # Named presets (legal/finance) keep their explicit choice.
     "indexation": {
         "default": {
-            "chunking": {"name": "recursive_splitter", "chunk_size": 512, "chunk_overlap_rate": 0.2},
+            # Kept in sync with ChunkerConfig's defaults, but note that
+            # _finalize_seed overwrites all three from the deployment's global
+            # chunker knobs (CHUNKER / CHUNK_SIZE / CHUNK_OVERLAP_RATE) before
+            # this seed is persisted — see #709.
+            "chunking": {"name": "structured_section", "chunk_size": 512, "chunk_overlap_rate": 0.2},
             # ``parsing_strategy`` is intentionally omitted so the default preset
             # inherits the deployment's global PDFLOADER (``file_loaders.pdf``)
             # rather than forcing one PDF backend on every partition. A hardcoded
@@ -73,22 +77,21 @@ _DEFAULT_SEEDS: dict[str, dict[str, dict[str, Any]]] = {
     # time from the global ``reranker.enabled`` kill-switch (see _finalize_seed)
     # so a deployment without a reranker (CPU-only, CI) does not force reranking
     # on every partition and then fail against an unreachable reranker endpoint.
+    # ``top_n`` is omitted too: unset, it follows the global ``reranker.top_k``
+    # (RERANKER_TOP_K) at query time rather than freezing it at seed time.
     "retrieval": {
         "default": {
             "type": "single",
             "top_k": 50,
-            "top_n": 10,
             "similarity_threshold": 0.6,
         },
         "multiquery": {
             "type": "multiQuery",
             "top_k": 50,
-            "top_n": 10,
         },
         "hyde": {
             "type": "hyde",
             "top_k": 50,
-            "top_n": 10,
         },
     },
 }

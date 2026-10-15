@@ -71,8 +71,11 @@ def test_downgrade_is_guarded(monkeypatch, migration, exists, expected) -> None:
     assert op.dropped == expected
 
 
-def test_no_other_migration_revises_the_same_parent() -> None:
-    """Guard against a second head forking off ``b9c0d1e2f3a4``."""
-    pattern = re.compile(r'^down_revision[^=]*=\s*"b9c0d1e2f3a4"', re.MULTILINE)
-    children = sorted(p.name for p in (_VERSIONS / "versions").glob("*.py") if pattern.search(p.read_text()))
-    assert children == ["c6d7e8f9a0b1_add_partition_is_public.py"]
+def test_partition_is_public_branch_is_merged_into_the_head() -> None:
+    """``c6d7e8f9a0b1`` forks off 2.2.1's head, like upstream's 2.3 revisions:
+    ``d7e8f9a0b1c2`` must merge both branches (the single-head invariant itself
+    is ``test_alembic_migration_graph``)."""
+    merge = (_VERSIONS / "versions" / "d7e8f9a0b1c2_merge_partition_is_public.py").read_text()
+    down = re.search(r"^down_revision[^=]*=\s*(.+)$", merge, re.MULTILINE).group(1)
+    assert '"c6d7e8f9a0b1"' in down
+    assert '"a7b8c9d0e1f2"' in down

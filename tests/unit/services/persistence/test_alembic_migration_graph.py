@@ -1,0 +1,20 @@
+"""Repository-wide invariants for the Alembic revision graph."""
+
+from pathlib import Path
+
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
+
+def test_alembic_revision_graph_has_one_head(monkeypatch) -> None:
+    alembic_dir = (
+        Path(__file__).resolve().parents[4] / "openrag" / "services" / "persistence" / "migrations" / "alembic"
+    )
+    monkeypatch.syspath_prepend(str(alembic_dir))
+    config = Config(str(alembic_dir / "alembic.ini"))
+    config.set_main_option("script_location", str(alembic_dir))
+
+    heads = ScriptDirectory.from_config(config).get_heads()
+
+    # Fork: d7e8f9a0b1c2 merges the partition is_public branch into upstream's a7b8c9d0e1f2.
+    assert heads == ["d7e8f9a0b1c2"]
