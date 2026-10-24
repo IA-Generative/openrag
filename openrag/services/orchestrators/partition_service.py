@@ -28,6 +28,7 @@ import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, nullcontext
 from contextvars import ContextVar
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -48,6 +49,7 @@ from core.utils.exceptions import (
     ValidationError,
 )
 from core.utils.logging import get_logger
+from core.utils.markdown_sidecar import sidecar_in_data_dir
 from core.vector_stores.vector_field import is_vector_field_key
 from services.workers.task_cancellation import cancel_active_indexing_tasks, count_active_indexing_tasks
 
@@ -964,6 +966,26 @@ class PartitionService:
             )
         return metadata
 
+    async def get_file_markdown(self, partition: str, file_id: str) -> str:
+        """The parsed markdown of one file (its ``SAVE_MARKDOWN`` copy).
+
+        ``FILE_NOT_FOUND`` when the file is not in the partition — checked on the
+        catalog first, so a sidecar left on disk by a deleted file is never
+        served — and ``MARKDOWN_NOT_AVAILABLE`` when the file has no copy:
+        indexed while ``SAVE_MARKDOWN`` was off, or stored outside the data dir.
+        """
+        metadata = await self.get_file_metadata(partition=partition, file_id=file_id)
+        data_dir = self._config.paths.data_dir if self._config is not None else None
+        sidecar = sidecar_in_data_dir(metadata.get("source"), data_dir)
+        text = await asyncio.to_thread(_read_text_if_exists, sidecar) if sidecar is not None else None
+        if text is None:
+            raise NotFoundError(
+                f"No markdown copy for '{file_id}' in partition '{partition}': it is written at indexing "
+                "time when SAVE_MARKDOWN=true, so re-index the file with that setting on.",
+                code="MARKDOWN_NOT_AVAILABLE",
+            )
+        return text
+
     async def get_file_chunks(self, partition: str, file_id: str, limit: int = 2000) -> list[dict]:
         """Return chunk IDs and page numbers for one file.
 
@@ -1163,3 +1185,10 @@ class PartitionService:
 
 
 __all__ = ["PartitionService"]
+
+
+def _read_text_if_exists(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None

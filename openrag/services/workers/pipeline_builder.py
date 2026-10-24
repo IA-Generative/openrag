@@ -18,6 +18,7 @@ from core.models.document import Document, DocumentType, ProcessedDocument
 from core.observability.ray_metrics import observe_stage_duration
 from core.utils.exceptions import NoIndexableContentError, PipelineError
 from core.utils.logging import get_logger
+from core.utils.markdown_sidecar import markdown_sidecar_path, sidecar_in_data_dir
 from core.vector_stores.vector_store import VectorStore
 from core.vlm.vlm import VLM
 from services.workers.embedder_provenance import embedder_provenance
@@ -247,6 +248,10 @@ class IndexingPipeline:
             _release_image_bytes(row)
             if self.save_markdown:
                 await _save_markdown(row, self.data_dir)
+            else:
+                # A copy left by an earlier indexation (SAVE_MARKDOWN on then)
+                # no longer matches this file and is served by the markdown route.
+                await _remove_stale_markdown(row, self.data_dir)
             await _timed("chunk", chunk_stage(row, chunker, timeout=self.timeouts.chunk))
             # Emptiness is the chunk count. Caption is the only enrichment that
             # has run, and only run() knows whether it ran (#1077).
@@ -715,15 +720,6 @@ def build_indexing_pipeline(
     )
 
 
-def markdown_sidecar_path(source_path: str | Path) -> Path:
-    """Path of the ``SAVE_MARKDOWN`` copy for an upload stored at ``source_path``.
-
-    The suffix is appended rather than swapped so a markdown upload is never
-    overwritten.
-    """
-    return Path(f"{source_path}.md")
-
-
 async def _save_markdown(row: MutableMapping[str, Any], data_dir: Path | None) -> None:
     """Write the parsed markdown to ``<upload>.md`` next to the stored upload.
 
@@ -749,6 +745,17 @@ async def _save_markdown(row: MutableMapping[str, Any], data_dir: Path | None) -
         await asyncio.to_thread(lambda: target.write_text(_render_markdown(processed), encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001 - a debugging copy must not fail the file
         log.warning(f"SAVE_MARKDOWN: could not write {target}: {exc}")
+
+
+async def _remove_stale_markdown(row: MutableMapping[str, Any], data_dir: Path | None) -> None:
+    """Delete the ``SAVE_MARKDOWN`` copy of a re-indexed upload; best effort."""
+    sidecar = sidecar_in_data_dir(getattr(row.get("document"), "source_path", None), data_dir)
+    if sidecar is None:
+        return
+    try:
+        await asyncio.to_thread(sidecar.unlink, missing_ok=True)
+    except Exception as exc:  # noqa: BLE001 - cleanup must not fail the file
+        logger.bind(task_id=row.get("task_id")).warning(f"SAVE_MARKDOWN: could not remove stale {sidecar}: {exc}")
 
 
 def _render_markdown(processed: ProcessedDocument) -> str:

@@ -9,6 +9,7 @@ whose exact non-bracketed ``{"detail": ...}`` body the endpoints return
 via ``HTTPException``.
 """
 
+import hashlib
 import os
 from typing import Literal
 from urllib.parse import quote
@@ -212,6 +213,50 @@ async def get_file(
         status_code=status.HTTP_200_OK,
         content={"metadata": metadata, "documents": documents},
     )
+
+
+@router.get(
+    "/{partition}/file/{file_id}/markdown",
+    description="""Get the full parsed text of a file as Markdown.
+
+This is the document as the parser read it — after OCR for scans and with image
+descriptions inline — before it was cut into chunks, so a client can show the
+whole document rather than overlapping chunk excerpts. It exists only for files
+indexed while `SAVE_MARKDOWN=true` (the copy is written at indexing time).
+
+**Parameters:**
+- `partition`: The partition name
+- `file_id`: The unique file identifier
+
+**Response:**
+- `200` with `Content-Type: text/markdown; charset=utf-8` and an `ETag`. Pages
+  are marked with `<!-- page N -->` lines. Tables may contain HTML, depending on
+  the parser. Send the `ETag` back as `If-None-Match` to get `304` when unchanged.
+- `404` `FILE_NOT_FOUND`: the file is not in the partition.
+- `404` `MARKDOWN_NOT_AVAILABLE`: the file has no Markdown copy (indexed while
+  `SAVE_MARKDOWN` was off); re-index it with the setting on.
+
+**Permissions:**
+- Requires partition viewer role or higher
+""",
+    response_class=Response,
+    responses={200: {"content": {"text/markdown": {}}}},
+)
+async def get_file_markdown(
+    request: Request,
+    partition: str,
+    file_id: str = Depends(validate_file_id),
+    partition_viewer=Depends(require_partition_viewer),
+    service=Depends(get_partition_service),
+):
+    """Serve a file's SAVE_MARKDOWN copy, with an ETag for conditional requests."""
+    text = await service.get_file_markdown(partition=partition, file_id=file_id)
+    body = text.encode("utf-8")
+    etag = f'"{hashlib.sha256(body).hexdigest()[:32]}"'
+    headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
+    if etag in [tag.strip() for tag in request.headers.get("if-none-match", "").split(",")]:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
+    return Response(content=body, media_type="text/markdown; charset=utf-8", headers=headers)
 
 
 @router.get(

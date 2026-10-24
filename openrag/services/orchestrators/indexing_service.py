@@ -25,6 +25,7 @@ from core.utils.consts import strip_protected_metadata
 from core.utils.exceptions import AuthError, ConfigError, PartitionNotFoundError, ValidationError
 from core.utils.filename import extract_temporal_fields
 from core.utils.logging import get_logger
+from core.utils.markdown_sidecar import sidecar_in_data_dir
 from core.utils.partition_limits import max_partitions_for_user
 
 if TYPE_CHECKING:
@@ -336,7 +337,21 @@ class IndexingService:
             )
 
     async def delete_file(self, file_id: str, partition: str) -> None:
+        sidecar = await self._markdown_sidecar(file_id, partition)
         await self._dispatcher.delete_file(file_id, partition)
+        if sidecar is not None:
+            await _remove_markdown_sidecar(sidecar, file_id=file_id, partition=partition)
+
+    async def _markdown_sidecar(self, file_id: str, partition: str) -> Path | None:
+        """The file's SAVE_MARKDOWN copy, read from the catalog before the row goes."""
+        if self._config is None:
+            return None
+        try:
+            metadata = await self._document_repo.get_file_metadata(file_id, partition)
+        except Exception as exc:  # noqa: BLE001 - the delete must not depend on this lookup
+            logger.bind(file_id=file_id, partition=partition).warning(f"Markdown copy lookup failed: {exc}")
+            return None
+        return sidecar_in_data_dir((metadata or {}).get("source"), self._config.paths.data_dir)
 
     async def update_metadata(
         self,
@@ -445,3 +460,11 @@ class IndexingService:
 
 
 __all__ = ["IndexingService"]
+
+
+async def _remove_markdown_sidecar(sidecar: Path, *, file_id: str, partition: str) -> None:
+    """Delete a deleted file's SAVE_MARKDOWN copy; best effort, the file is gone either way."""
+    try:
+        await asyncio.to_thread(sidecar.unlink, missing_ok=True)
+    except Exception as exc:  # noqa: BLE001 - cleanup must not fail the delete
+        logger.bind(file_id=file_id, partition=partition).warning(f"Could not remove markdown copy {sidecar}: {exc}")

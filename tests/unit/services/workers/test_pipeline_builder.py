@@ -181,6 +181,21 @@ async def test_save_markdown_writes_parsed_text_next_to_the_upload(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_reindexing_with_save_markdown_off_removes_the_stale_copy(tmp_path):
+    """The markdown route serves the copy: one left by an earlier indexation would
+    show the previous version of a replaced file."""
+    upload = tmp_path / "report.pdf"
+    upload.write_bytes(b"%PDF-1.4")
+    (tmp_path / "report.pdf.md").write_text("previous version", encoding="utf-8")
+    document = Document(filename="report.pdf", text="x", partition="tenant-a", source_path=str(upload))
+
+    await _save_markdown_pipeline(False, tmp_path).run({"document": document, "partition": "tenant-a"})
+
+    assert not (tmp_path / "report.pdf.md").exists()
+    assert upload.exists()
+
+
+@pytest.mark.asyncio
 async def test_save_markdown_does_not_overwrite_a_markdown_upload(tmp_path):
     upload = tmp_path / "notes.md"
     upload.write_text("original", encoding="utf-8")
