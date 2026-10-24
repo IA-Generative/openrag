@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from core.chunking.recursive import RecursiveSplitter
 from core.chunking.registry import chunking_registry
 from core.models.chunk import ChunkType
@@ -249,6 +251,39 @@ def test_recursive_splitter_skips_pages_get_correct_marker():
     pages = sorted({c.page_number for c in chunks if c.page_number is not None})
     assert 1 in pages
     assert 5 in pages, f"page 5 missing despite second block on page 5: {pages}"
+
+
+def test_recursive_splitter_returns_nothing_for_a_multi_page_document_without_text():
+    """An image-only scan parsed without OCR yields one empty block per page. The
+    synthetic markers inserted between them must not become a chunk of their own,
+    or the file is indexed as one marker-only vector instead of failing as having
+    no indexable content."""
+    splitter = RecursiveSplitter(chunk_size=50, chunk_overlap_rate=0.0, length_function=_word_tokens)
+    doc = ProcessedDocument(
+        document_id="d1",
+        text_blocks=[TextBlock(text="", page_number=page) for page in range(1, 6)],
+    )
+    assert splitter.chunk(doc, partition="p1") == []
+
+
+def test_recursive_splitter_drops_marker_only_chunks_between_text_pages():
+    """Empty pages in the middle of a document: no chunk may be made of markers
+    alone, and no text is lost. (The page the second block resolves to is
+    #1204's concern, not asserted here.)"""
+    block_text = " ".join([f"word{i}" for i in range(40)])
+    splitter = RecursiveSplitter(chunk_size=8, chunk_overlap_rate=0.0, length_function=_word_tokens)
+    doc = ProcessedDocument(
+        document_id="d1",
+        text_blocks=[
+            TextBlock(text=block_text, page_number=1),
+            *(TextBlock(text="", page_number=page) for page in range(2, 12)),
+            TextBlock(text=block_text, page_number=12),
+        ],
+    )
+    chunks = splitter.chunk(doc, partition="p1")
+    assert chunks
+    assert all(re.sub(r"\[PAGE_\d+\]", "", c.text).strip() for c in chunks)
+    assert sum(c.text.startswith("word0 ") for c in chunks) == 2
 
 
 def test_dewrap_paragraphs_collapses_line_wraps_but_keeps_structure():
