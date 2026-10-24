@@ -18,6 +18,7 @@ from typing import Any
 
 from core.chunking.chunking_strategy import ChunkingStrategy
 from core.chunking.markdown_utils import (
+    PAGE_RE,
     MDElement,
     chunk_table,
     get_chunk_page_number,
@@ -355,6 +356,13 @@ class BaseChunker(ChunkingStrategy):
         for c in text_chunks:
             page_info = get_chunk_page_number(chunk_str=c, previous_chunk_ending_page=prev_page)
             prev_page = page_info["end_page"]
+            # A run of pages with no text (an image-only scan under a parser
+            # without OCR) leaves nothing but the synthetic [PAGE_N] markers
+            # _content_from inserted between them. Such a chunk has no content to
+            # retrieve: storing it would index a scan as one marker-only vector
+            # instead of failing it as having no indexable content (#946).
+            if not PAGE_RE.sub("", c).strip():
+                continue
             chunks.append(
                 {
                     **metadata,
