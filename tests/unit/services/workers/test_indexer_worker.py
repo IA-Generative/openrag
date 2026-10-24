@@ -120,6 +120,8 @@ def _fake_tsm() -> MagicMock:
     tsm.complete_with_degraded_stages.remote = AsyncMock(return_value="completed")
     tsm.set_contextualization = MagicMock()
     tsm.set_contextualization.remote = AsyncMock(return_value=True)
+    tsm.set_parse_outcome = MagicMock()
+    tsm.set_parse_outcome.remote = AsyncMock(return_value=True)
     return tsm
 
 
@@ -741,6 +743,44 @@ async def test_process_file_updates_catalog_record_on_replace(tmp_path: Path) ->
         "content_sha256": None,
     }
     assert repo.add_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("parse_info", "expected"),
+    [
+        ({"backend": "pymupdf", "ocr": False}, {"parse_backend": "pymupdf", "ocr": False}),
+        (
+            {"backend": "marker", "ocr": True, "ocr_fallback": True},
+            {"parse_backend": "marker", "ocr": True, "ocr_fallback": True},
+        ),
+        (
+            {"backend": "pdf_client", "ocr": True, "pages": 5, "failed_pages": 2},
+            {"parse_backend": "pdf_client", "ocr": True, "ocr_failed_pages": 2},
+        ),
+    ],
+)
+async def test_process_file_records_how_the_file_was_parsed(tmp_path: Path, parse_info, expected) -> None:
+    path = tmp_path / "doc.pdf"
+    path.write_bytes(b"%PDF")
+
+    class Pipeline:
+        async def run(self, row: dict[str, Any]) -> dict[str, Any]:
+            row["stored_count"] = 1
+            row["stage"] = "stored"
+            row["parse"] = parse_info
+            return row
+
+    repo = FakeDocumentRepo()
+    tsm = _fake_tsm()
+    worker = IndexerWorker(pipeline=Pipeline(), task_state_manager=tsm, document_repo=repo)
+
+    await worker.process_file(task_id="t-p", path=str(path), metadata={"file_id": "f1"}, partition="p", user={"id": 1})
+
+    file_metadata = repo.add_calls[0]["file_metadata"]
+    assert {key: file_metadata[key] for key in expected} == expected
+    assert "pages" not in file_metadata and "backend" not in file_metadata
+    tsm.set_parse_outcome.remote.assert_awaited_once_with("t-p", expected)
 
 
 @pytest.mark.asyncio

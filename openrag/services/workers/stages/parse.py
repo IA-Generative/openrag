@@ -24,6 +24,12 @@ async def parse_stage(
 
         processed = await _parse_with_timeout(parser, document, timeout)
         row["processed_document"] = processed
+        if processed.parse_info:
+            row["parse"] = dict(processed.parse_info)
+        failed_pages = processed.parse_info.get("failed_pages") or 0
+        if failed_pages:
+            pages = processed.parse_info.get("pages") or processed.page_count
+            row.setdefault("degraded_stages", {})["parse"] = f"OCR lost {failed_pages}/{pages} pages"
         row["stage"] = "parsed"
         row.pop("error", None)
         return row

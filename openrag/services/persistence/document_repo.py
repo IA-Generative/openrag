@@ -28,7 +28,12 @@ from collections.abc import Callable, Collection, Mapping
 from typing import TYPE_CHECKING, Any
 
 from core.config.model_endpoints import DEFAULT_ENDPOINT_ALIAS, embedder_fingerprint
-from core.models.catalog import INDEXING_CONTENT_CLAIM_TOKEN_PREFIX, DocumentRecord, DocumentStatus
+from core.models.catalog import (
+    INDEXING_CONTENT_CLAIM_TOKEN_PREFIX,
+    PARSE_OUTCOME_KEYS,
+    DocumentRecord,
+    DocumentStatus,
+)
 from core.ports.document_repo import ContentClaimLease, DocumentRepository, IndexedCorpusState
 from core.utils.exceptions import ConflictError
 from core.utils.logging import get_logger
@@ -812,7 +817,9 @@ class PgDocumentRepository(DocumentRepository):
         rewritten too so the JSON never diverges from the structured fields.
         """
         metadata_patch = {
-            key: value for key, value in metadata_patch.items() if key not in ("degraded_stages", "contextualization")
+            key: value
+            for key, value in metadata_patch.items()
+            if key not in ("degraded_stages", "contextualization", *PARSE_OUTCOME_KEYS)
         }
         rel_id = metadata_patch.get("relationship_id") if "relationship_id" in metadata_patch else None
         parent_id = metadata_patch.get("parent_id") if "parent_id" in metadata_patch else None

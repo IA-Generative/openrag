@@ -260,7 +260,7 @@ export interface PartitionFile {
 
 export interface ListPartitionFilesOptions {
   limit?: number;
-  degradedStage?: "caption" | "contextualize" | "topic_tag";
+  degradedStage?: "caption" | "contextualize" | "parse" | "topic_tag";
 }
 
 export function listPartitionFiles(

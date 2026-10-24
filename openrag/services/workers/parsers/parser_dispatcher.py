@@ -48,6 +48,9 @@ _AUDIO_BACKENDS: dict[str, str] = {
 # Backend names a preset ``parsing_strategy`` may select for PDFs (the values of
 # _PDF_BACKENDS). Used to validate a strategy before routing a PDF to it.
 _PDF_BACKEND_NAMES: frozenset[str] = frozenset(_PDF_BACKENDS.values())
+# PDF backends that produce text from the page image, so a scan without a text
+# layer still yields content. The others (pymupdf) only read the text layer.
+_OCR_PDF_BACKENDS: frozenset[str] = frozenset({"marker", "docling", "pdf_client"})
 
 # Attachment ext (lowercased, no dot) → DocumentType, used to wire the EML
 # parser's per-attachment sub-parsers.
@@ -101,7 +104,43 @@ class ParserDispatcher(DocumentParser):
     async def parse(self, document: Document) -> ProcessedDocument:
         ext = Document.type_extension(document.filename, document.metadata.get("mimetype"))
         backend = self._resolve_backend(document.content_type, ext)
+        if document.content_type is DocumentType.PDF:
+            return await self._parse_pdf(backend, document)
         return await self._parse_with(backend, document)
+
+    async def _parse_pdf(self, backend: str, document: Document) -> ProcessedDocument:
+        """Parse a PDF with *backend*, then with the OCR fallback if it found no text layer.
+
+        An image-only scan parsed by pymupdf yields empty pages: without OCR it
+        is either rejected as having no indexable content or, worse, indexed
+        empty. ``loader.ocr_fallback`` names an OCR-capable backend to re-parse
+        such a document with; born-digital PDFs never pay for it. A failing OCR
+        backend fails the document — the primary result had no text to keep.
+        """
+        processed = await self._parse_with(backend, document)
+        fallback = self._ocr_fallback_backend()
+        if fallback is None or backend in _OCR_PDF_BACKENDS:
+            return processed
+        loader = self._config.loader
+        empty, pages = _empty_pages(processed, loader.ocr_fallback_min_chars_per_page)
+        if not pages or empty / pages < loader.ocr_fallback_empty_page_ratio:
+            return processed
+        log = logger.bind(filename=document.filename, backend=backend, fallback=fallback)
+        log.info(f"No usable text layer on {empty}/{pages} pages; re-parsing with {fallback} (OCR fallback)")
+        try:
+            ocr_processed = await self._parse_with(fallback, document)
+        except Exception as exc:
+            log.warning(f"OCR fallback with {fallback} failed: {exc}")
+            raise
+        return ocr_processed.model_copy(update={"parse_info": {**ocr_processed.parse_info, "ocr_fallback": True}})
+
+    def _ocr_fallback_backend(self) -> str | None:
+        configured = getattr(self._config.loader, "ocr_fallback", "none") or "none"
+        if configured == "none":
+            return None
+        if configured not in _OCR_PDF_BACKENDS:
+            raise ValueError(f"Unsupported OCR fallback {configured!r}; expected one of {sorted(_OCR_PDF_BACKENDS)}")
+        return configured
 
     async def _parse_with(self, backend: str, document: Document) -> ProcessedDocument:
         """Run *document* through *backend*, stamping the progress watchdog.
@@ -120,7 +159,8 @@ class ParserDispatcher(DocumentParser):
         seed_parse_watchdog(backend)
         processed = await self._get(backend).parse(document)
         record_parse_completion(backend)
-        return processed
+        info = {**processed.parse_info, "backend": backend, "ocr": backend in _OCR_PDF_BACKENDS}
+        return processed.model_copy(update={"parse_info": info})
 
     def for_pdf_strategy(self, strategy: str) -> DocumentParser:
         """Return a parser that forces ``strategy`` (a PDF backend name such as
@@ -289,7 +329,7 @@ class _PdfStrategyParser(DocumentParser):
 
     async def parse(self, document: Document) -> ProcessedDocument:
         if document.content_type is DocumentType.PDF:
-            return await self._dispatcher._parse_with(self._pdf_backend, document)
+            return await self._dispatcher._parse_pdf(self._pdf_backend, document)
         return await self._dispatcher.parse(document)
 
 
@@ -408,3 +448,18 @@ def load_caption_prompt(config: Any) -> str | None:
 
 
 __all__ = ["ParserDispatcher", "build_parser_dispatcher", "build_caption_vlm", "load_caption_prompt"]
+
+
+def _empty_pages(processed: ProcessedDocument, min_chars: int) -> tuple[int, int]:
+    """``(pages with fewer than *min_chars* letters/digits, total pages)``.
+
+    Counts letters and digits only, so table rules, page separators and other
+    punctuation a parser emits for an image-only page do not pass for text.
+    """
+    chars_by_page: dict[int, int] = {}
+    for block in processed.text_blocks:
+        page = block.page_number or 1
+        chars_by_page[page] = chars_by_page.get(page, 0) + sum(ch.isalnum() for ch in block.text or "")
+    pages = max(processed.page_count, len(chars_by_page))
+    text_pages = sum(1 for count in chars_by_page.values() if count >= min_chars)
+    return pages - text_pages, pages

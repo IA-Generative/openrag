@@ -147,6 +147,13 @@ class IndexerWorker:
         except Exception as exc:
             logger.warning("Failed to record contextualization counts", task_id=task_id, error=str(exc))
 
+    async def _record_parse_outcome(self, task_id: str, parse_outcome: dict[str, Any]) -> None:
+        """Put how the file was parsed on the task status; best effort, like the counts."""
+        try:
+            await self._tsm.set_parse_outcome.remote(task_id, parse_outcome)
+        except Exception as exc:
+            logger.warning("Failed to record parse outcome", task_id=task_id, error=str(exc))
+
     async def process_file(
         self,
         *,
@@ -216,6 +223,7 @@ class IndexerWorker:
             catalog_config = _with_embedder_provenance(indexation_config, row.get("embedder_provenance"))
             degraded_stages = normalize_degraded_stages(row.get("degraded_stages"))
             contextualization = row.get("contextualization")
+            parse_outcome = _parse_outcome(row.get("parse"))
 
             if self._document_repo is not None:
                 wrote_catalog = await _write_catalog_record(
@@ -232,6 +240,7 @@ class IndexerWorker:
                     embedder_fingerprint=row.get("embedder_fingerprint"),
                     degraded_stages=degraded_stages,
                     contextualization=contextualization,
+                    parse_outcome=parse_outcome,
                 )
                 if not wrote_catalog:
                     raise RuntimeError("Catalog row was not written after vector indexing")
@@ -251,6 +260,8 @@ class IndexerWorker:
                 )
             if contextualization is not None:
                 await self._record_contextualization(task_id, contextualization)
+            if parse_outcome:
+                await self._record_parse_outcome(task_id, parse_outcome)
             completion_outcome = await retry_idempotent_ray_actor_method(
                 lambda: self._tsm.complete_with_degraded_stages.remote(task_id, degraded_stages),
                 task_description=f"complete_with_degraded_stages({task_id})",
@@ -343,6 +354,22 @@ def _with_embedder_provenance(
     return {**(indexation_config or {}), **provenance}
 
 
+def _parse_outcome(parse_info: Any) -> dict[str, Any]:
+    """The parse facts a client reads, under flat keys (``parse_backend``, ``ocr``...).
+
+    ``ocr_fallback`` and ``ocr_failed_pages`` only appear when they apply, so a
+    born-digital file carries just its backend and ``ocr: false``.
+    """
+    if not isinstance(parse_info, dict) or not parse_info.get("backend"):
+        return {}
+    outcome: dict[str, Any] = {"parse_backend": parse_info["backend"], "ocr": bool(parse_info.get("ocr"))}
+    if parse_info.get("ocr_fallback"):
+        outcome["ocr_fallback"] = True
+    if parse_info.get("failed_pages"):
+        outcome["ocr_failed_pages"] = int(parse_info["failed_pages"])
+    return outcome
+
+
 async def _write_catalog_record(
     *,
     doc_repo: Any,
@@ -358,6 +385,7 @@ async def _write_catalog_record(
     embedder_fingerprint: dict[str, str | None] | None = None,
     degraded_stages: list[str] | None = None,
     contextualization: dict[str, Any] | None = None,
+    parse_outcome: dict[str, Any] | None = None,
 ) -> bool:
     """Record an indexed file in the catalog, which is what makes it visible.
 
@@ -370,6 +398,8 @@ async def _write_catalog_record(
     file_metadata["degraded_stages"] = list(degraded_stages or [])
     if contextualization is not None:
         file_metadata["contextualization"] = contextualization
+    if parse_outcome:
+        file_metadata.update(parse_outcome)
     config_kwargs = {"indexation_config": indexation_config} if indexation_config is not None else {}
     if embedder_fingerprint is not None:
         config_kwargs["embedder_fingerprint"] = embedder_fingerprint

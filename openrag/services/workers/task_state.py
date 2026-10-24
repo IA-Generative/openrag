@@ -13,6 +13,7 @@ from typing import Any
 import ray
 from core.models.catalog import (
     LEGACY_ACTIVE_INDEXING_STATES,
+    PARSE_OUTCOME_KEYS,
     TASK_CREATED_AT_METADATA_KEY,
     TASK_FINISHED_AT_METADATA_KEY,
     TERMINAL_TASK_STATES,
@@ -676,8 +677,9 @@ class TaskStateManager:
         }
         if "degraded_stages" in previous_details:
             info.details["degraded_stages"] = normalize_degraded_stages(previous_details["degraded_stages"])
-        if "contextualization" in previous_details:
-            info.details["contextualization"] = previous_details["contextualization"]
+        for key in ("contextualization", *PARSE_OUTCOME_KEYS):
+            if key in previous_details:
+                info.details[key] = previous_details[key]
         self.user_index.setdefault(user_id, set()).add(task_id)
 
     def _prune_expired_file_delete_fences(self) -> None:
@@ -998,6 +1000,17 @@ class TaskStateManager:
             if info is None or info.state not in CANCELLABLE_INDEXING_STATES:
                 return False
             info.details["contextualization"] = dict(outcome)
+            self._persist_task_locked(task_id, info)
+            return True
+
+    @ray.method(concurrency_group="set")
+    async def set_parse_outcome(self, task_id: str, outcome: dict[str, Any]) -> bool:
+        """Attach how the file was parsed (``parse_backend``, ``ocr``, ``ocr_fallback``...)."""
+        with self.lock:
+            info = self.tasks.get(task_id)
+            if info is None or info.state not in CANCELLABLE_INDEXING_STATES:
+                return False
+            info.details.update({key: outcome[key] for key in PARSE_OUTCOME_KEYS if key in outcome})
             self._persist_task_locked(task_id, info)
             return True
 

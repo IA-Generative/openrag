@@ -59,6 +59,10 @@ PROTECTED_METADATA_KEYS: frozenset[str] = frozenset(
         "indexed_at",
         "degraded_stages",
         "contextualization",
+        "parse_backend",
+        "ocr",
+        "ocr_fallback",
+        "ocr_failed_pages",
     }
 )
 

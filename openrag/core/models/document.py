@@ -320,3 +320,9 @@ class ProcessedDocument(BaseModel):
     images: list[ImageBlock] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     page_count: int = 0
+    # How the document was parsed, stamped by the parser dispatcher: ``backend``
+    # (pymupdf, docling, marker, pdf_client, docx, ...), ``ocr`` (an OCR-capable
+    # backend produced the text), ``ocr_fallback`` (it was a re-parse because the
+    # primary backend found no text layer), and, for the VLM OCR client,
+    # ``pages`` / ``failed_pages``.
+    parse_info: dict[str, Any] = Field(default_factory=dict)
