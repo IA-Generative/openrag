@@ -29,9 +29,12 @@ n'est jamais affichée en clair.
 from __future__ import annotations
 
 import argparse
+import base64
 import getpass
+import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -58,6 +61,14 @@ KEY_URL_PAIRS = {
 }
 ALL_TYPES = ("llm", "embedder", "reranker", "vlm", "stt")
 
+# PNG blanc de 8×8, pour tester une fiche de vision sans fichier.
+TINY_PNG = base64.b64encode(
+    bytes.fromhex(
+        "89504e470d0a1a0a0000000d49484452000000080000000808020000004b6d29dc"
+        "0000000f49444154789c63f88f03300c2d0900ba1ebf4130930afc0000000049454e44ae426082"
+    )
+).decode()
+
 # Appel minimal par type : prouve que la clé ouvre CE service (/v1/models est public).
 KEY_TESTS = {
     "llm": (
@@ -66,7 +77,26 @@ KEY_TESTS = {
     ),
     "embedder": ("embeddings", lambda m: {"model": m, "input": "test"}),
     "reranker": ("rerank", lambda m: {"model": m, "query": "test", "documents": ["test"]}),
+    "vlm": (
+        "chat/completions",
+        lambda m: {
+            "model": m,
+            "max_tokens": 1,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{TINY_PNG}"}},
+                        {"type": "text", "text": "ok"},
+                    ],
+                }
+            ],
+        },
+    ),
 }
+
+# Variables du .env qui portent un secret, listées par --inventaire.
+SECRET_VAR_RE = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD)$")
 
 
 def mask(secret: str | None) -> str:
@@ -164,6 +194,72 @@ def http(method: str, url: str, token: str | None, body: dict | None = None, tim
         return exc.code, payload
 
 
+def probe(url: str, key: str | None, body: dict) -> tuple[int, dict[str, str]]:
+    """Appel minimal ; renvoie le statut et les en-têtes (minuscules) pour lire les quotas."""
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST")
+    req.add_header("Content-Type", "application/json")
+    if key:
+        req.add_header("Authorization", f"Bearer {key}")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.status, {k.lower(): v for k, v in resp.headers.items()}
+    except urllib.error.HTTPError as exc:
+        return exc.code, {k.lower(): v for k, v in exc.headers.items()}
+    except (urllib.error.URLError, TimeoutError) as exc:
+        return 0, {"erreur": str(exc)[:80]}
+
+
+def test_request(ep: dict) -> tuple[str, dict]:
+    """URL et corps de l'appel minimal propre à la fiche *ep* (type, modèle, implémentation)."""
+    route, body = KEY_TESTS[ep["model_type"]]
+    payload = body(ep.get("model_name") or ep["name"])
+    if ep["model_type"] == "reranker" and (ep.get("extra") or {}).get("implementation") == "tei":
+        # TEI : champ ``texts`` au lieu de ``documents`` (cf. TEIReranker).
+        payload = {"query": "test", "texts": ["test"]}
+    return f"{ep['endpoint'].rstrip('/')}/{route}", payload
+
+
+def fingerprint(secret: str | None) -> str:
+    return hashlib.sha256(secret.encode()).hexdigest()[:8] if secret else "-"
+
+
+def inventory(env: dict[str, str], api: str, admin_token: str, suffixes: list[str], en_clair: bool) -> None:
+    """Liste toutes les clés (.env et fiches), avec empreinte et quotas lus chez le fournisseur."""
+    show = (lambda s: s or "(vide)") if en_clair else mask
+    print("=== .env : clés et jetons")
+    url_of = {key_var: url_var for key_var, (url_var, _) in KEY_URL_PAIRS.items()}
+    for name in sorted(env):
+        if not SECRET_VAR_RE.search(name):
+            continue
+        host = urllib.parse.urlparse(env.get(url_of.get(name, ""), "")).hostname or "-"
+        print(f"  {name:32} {show(env[name]):>24}  empreinte {fingerprint(env[name])}  {host}")
+
+    status, endpoints = http("GET", f"{api}/model-endpoints/", admin_token)
+    if status != 200:
+        die(f"GET /model-endpoints/ → {status} : {endpoints}")
+    print("\n=== Fiches model_endpoints : clé, empreinte, quotas (requêtes/min · jetons/min)")
+    for ep in sorted(endpoints, key=lambda e: (e["model_type"], e["name"])):
+        label = f"{ep['model_type']}/{ep['name']}"
+        key = None
+        if ep.get("has_api_key"):
+            st, revealed = http(
+                "POST", f"{api}/model-endpoints/{ep['model_type']}/{ep['name']}/reveal-api-key", admin_token
+            )
+            key = (revealed or {}).get("api_key") if st == 200 else None
+        host = urllib.parse.urlparse(ep["endpoint"]).hostname
+        quota = "pas de test prévu"
+        if ep["model_type"] in KEY_TESTS:
+            url, body = test_request(ep)
+            st, headers = probe(url, key, body)
+            req = headers.get("x-ratelimit-limit-requests") or headers.get("x-ratelimit-limit") or "?"
+            tok = headers.get("x-ratelimit-limit-tokens") or "-"
+            quota = f"HTTP {st} · {req} · {tok}"
+        default = " (défaut)" if ep.get("is_default") else ""
+        print(f"  {label + default:52} {host:30} {show(key):>24}  empreinte {fingerprint(key)}  {quota}")
+    if en_clair:
+        print("\n⚠ Clés affichées en clair : effacer ce terminal et son historique après usage.")
+
+
 def test_new_key(key: str, targets: list[dict]) -> None:
     """Teste la clé sur l'URL et le modèle de chaque fiche visée, avant toute écriture."""
     for ep in targets:
@@ -171,13 +267,8 @@ def test_new_key(key: str, targets: list[dict]) -> None:
         if ep["model_type"] not in KEY_TESTS:
             print(f"  ? {label} : pas de test prévu, non vérifié")
             continue
-        route, body = KEY_TESTS[ep["model_type"]]
         model = ep.get("model_name") or ep["name"]
-        url = f"{ep['endpoint'].rstrip('/')}/{route}"
-        payload_in = body(model)
-        if ep["model_type"] == "reranker" and (ep.get("extra") or {}).get("implementation") == "tei":
-            # TEI : champ ``texts`` au lieu de ``documents`` (cf. TEIReranker).
-            payload_in = {"query": "test", "texts": ["test"]}
+        url, payload_in = test_request(ep)
         status, payload = http("POST", url, key, payload_in)
         if status == 200:
             print(f"  ✓ {label} : nouvelle clé acceptée ({url}, modèle {model})")
@@ -205,8 +296,13 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true", help="ne rien écrire, montrer le plan")
     ap.add_argument("--yes", action="store_true", help="ne pas demander de confirmation")
     ap.add_argument(
+        "--inventaire",
+        action="store_true",
+        help="lister toutes les clés (.env et fiches) avec empreinte et quotas, sans rien modifier",
+    )
+    ap.add_argument("--en-clair", action="store_true", help="avec --inventaire : afficher les clés en clair")
+    ap.add_argument(
         "--types",
-        required=True,
         help=f"types de fiches à basculer, séparés par des virgules, parmi {','.join(ALL_TYPES)}"
         " (ex. llm,embedder) ; les autres gardent leur clé",
     )
@@ -217,6 +313,16 @@ def main() -> None:
         help="recréer le conteneur openrag ensuite (relit le .env, vide les clients des workers Ray)",
     )
     args = ap.parse_args()
+    if args.inventaire:
+        env = read_env(Path(args.env_file))
+        if not env.get("AUTH_TOKEN"):
+            die("AUTH_TOKEN absent du .env : impossible d'appeler l'API d'admin")
+        inventory(
+            env, args.api.rstrip("/"), env["AUTH_TOKEN"], args.host_suffix or list(DEFAULT_HOST_SUFFIXES), args.en_clair
+        )
+        return
+    if not args.types:
+        die("--types est obligatoire (ou --inventaire pour lister les clés)")
     types = [t.strip() for t in args.types.split(",") if t.strip()]
     unknown = [t for t in types if t not in ALL_TYPES]
     if not types or unknown:
