@@ -16,5 +16,6 @@ def test_alembic_revision_graph_has_one_head(monkeypatch) -> None:
 
     heads = ScriptDirectory.from_config(config).get_heads()
 
-    # Fork: d7e8f9a0b1c2 merges the partition is_public branch into upstream's a7b8c9d0e1f2.
-    assert heads == ["d7e8f9a0b1c2"]
+    # Fork: c6bd76e44f0c merges the partition is_public branch (via d7e8f9a0b1c2)
+    # into upstream's 2.3.2 head 5e6d7c8b9a01.
+    assert heads == ["c6bd76e44f0c"]
