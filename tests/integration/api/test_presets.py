@@ -62,7 +62,7 @@ def test_preset_options_crud_and_rename(api_client):
         assert "recursive_splitter" in option_data["chunking_strategies"]
         assert "single" in option_data["retrieval_types"]
         # Parsing strategies are derived from IndexationPipelineConfig's Literal.
-        assert set(option_data["parsing_strategies"]) == {"pymupdf", "marker", "docling"}
+        assert set(option_data["parsing_strategies"]) == {"pymupdf", "marker", "docling", "pdf_client"}
 
         create_indexation = api_client.post(
             "/presets/",
