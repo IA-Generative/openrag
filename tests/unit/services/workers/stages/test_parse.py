@@ -126,3 +126,32 @@ async def test_parse_stage_keeps_a_parser_timeout_that_fired_before_its_bound():
 
     assert raised.value is error
     assert row["error"] == str(error)
+
+
+@pytest.mark.asyncio
+async def test_parse_stage_records_how_the_document_was_parsed():
+    document = Document(id="d", filename="scan.pdf", content_type=DocumentType.PDF)
+    processed = ProcessedDocument(
+        document_id="d", page_count=1, parse_info={"backend": "marker", "ocr": True, "ocr_fallback": True}
+    )
+    row = {"document": document}
+
+    await parse_stage(row, FakeParser(output=processed))
+
+    assert row["parse"] == {"backend": "marker", "ocr": True, "ocr_fallback": True}
+    assert "degraded_stages" not in row
+
+
+@pytest.mark.asyncio
+async def test_parse_stage_degrades_a_file_whose_ocr_lost_pages():
+    document = Document(id="d", filename="scan.pdf", content_type=DocumentType.PDF)
+    processed = ProcessedDocument(
+        document_id="d",
+        page_count=5,
+        parse_info={"backend": "pdf_client", "ocr": True, "pages": 5, "failed_pages": 2},
+    )
+    row = {"document": document}
+
+    await parse_stage(row, FakeParser(output=processed))
+
+    assert row["degraded_stages"] == {"parse": "OCR lost 2/5 pages"}

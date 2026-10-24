@@ -1411,6 +1411,23 @@ async def test_contextualization_counts_are_added_and_survive_a_details_refresh(
 
 
 @pytest.mark.asyncio
+async def test_parse_outcome_lands_in_task_details_and_survives_a_refresh() -> None:
+    manager = _task_state_manager()
+    await manager.set_queued_details("p-task", file_id="f1", partition="tenant-a", metadata={}, user_id=7)
+
+    accepted = await manager.set_parse_outcome(
+        "p-task", {"parse_backend": "marker", "ocr": True, "ocr_fallback": True, "unrelated": "dropped"}
+    )
+
+    assert accepted is True
+    details = await manager.get_details("p-task")
+    assert (details["parse_backend"], details["ocr"], details["ocr_fallback"]) == ("marker", True, True)
+    assert "unrelated" not in details
+    await manager.set_details("p-task", file_id="f1", partition="tenant-a", metadata={"x": 1}, user_id=7)
+    assert (await manager.get_details("p-task"))["parse_backend"] == "marker"
+
+
+@pytest.mark.asyncio
 async def test_contextualization_counts_do_not_recreate_an_unknown_task() -> None:
     manager = _task_state_manager()
 

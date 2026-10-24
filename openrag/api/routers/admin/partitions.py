@@ -148,7 +148,7 @@ async def list_files(
     request: Request,
     partition: str,
     limit: int | None = None,
-    degraded_stage: Literal["caption", "contextualize", "topic_tag"] | None = Query(default=None),
+    degraded_stage: Literal["caption", "contextualize", "parse", "topic_tag"] | None = Query(default=None),
     partition_viewer=Depends(require_partition_viewer),
     service=Depends(get_partition_service),
 ):

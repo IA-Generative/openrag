@@ -105,9 +105,13 @@ class DotsOCRPdfClient(BaseOpenAIPdfClient):
 
         text_blocks: list[TextBlock] = []
         images: list[ImageBlock] = []
+        failed_pages = 0
         for page_number, (page_img, raw) in enumerate(zip(page_imgs, raw_responses, strict=True), start=1):
             page = self._parse_page(raw)
             if page is None:
+                # The VLM call failed (``_ocr_one`` returned None) or answered
+                # outside the layout schema: this page's text is lost.
+                failed_pages += 1
                 continue
             page_text = page.text()
             if page_text:
@@ -118,6 +122,17 @@ class DotsOCRPdfClient(BaseOpenAIPdfClient):
                     images.append(ImageBlock(image_bytes=png, page_number=page_number))
 
         logger.info("DotsOCR PDF parsed (id=%s) in %.2fs", document.id, time.time() - start)
+        if page_imgs and failed_pages == len(page_imgs):
+            # Nothing came back: indexing an empty document as a success would
+            # hide an unreachable or misconfigured VLM.
+            raise RuntimeError(f"VLM OCR failed on every page ({failed_pages}) of the document")
+        if failed_pages:
+            logger.warning(
+                "DotsOCR lost %d of %d pages of document id=%s (VLM error or off-schema answer)",
+                failed_pages,
+                len(page_imgs),
+                document.id,
+            )
 
         return ProcessedDocument(
             document_id=document.id,
@@ -125,6 +140,7 @@ class DotsOCRPdfClient(BaseOpenAIPdfClient):
             images=images,
             metadata=dict(document.metadata),
             page_count=len(page_imgs),
+            parse_info={"pages": len(page_imgs), "failed_pages": failed_pages},
         )
 
     @classmethod

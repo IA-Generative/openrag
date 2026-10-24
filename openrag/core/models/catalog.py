@@ -53,7 +53,14 @@ LEGACY_ACTIVE_INDEXING_STATES = frozenset({"CHUNKING", "INSERTING"})
 
 # Enrichment can fail without making the base-content index unusable. Keep the
 # names bounded and stable because they are persisted and exposed through APIs.
-DEGRADABLE_ENRICHMENT_STAGES = frozenset({"caption", "contextualize", "topic_tag"})
+# ``parse`` is not an enrichment, but the VLM OCR client can lose some pages
+# and still index the rest: the file is then degraded the same way.
+DEGRADABLE_ENRICHMENT_STAGES = frozenset({"caption", "contextualize", "parse", "topic_tag"})
+
+
+# How a file was parsed, as stored in its catalog metadata and task details
+# (see indexer_actor._parse_outcome).
+PARSE_OUTCOME_KEYS: tuple[str, ...] = ("parse_backend", "ocr", "ocr_fallback", "ocr_failed_pages")
 
 
 def normalize_degraded_stages(value: Any) -> list[str]:

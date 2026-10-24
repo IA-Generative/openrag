@@ -423,3 +423,157 @@ def test_configure_pymupdf_pool_pushes_the_loader_settings():
         )
     finally:
         pymupdf_mod.configure_pool(pymupdf_mod.PyMuPDFPoolSettings())
+
+
+# --------------------------------------------------------------------------- #
+# OCR fallback for PDFs without a text layer (mycollections#152)
+# --------------------------------------------------------------------------- #
+
+
+class _PagesParser:
+    """Returns one block per entry of ``pages`` (page numbers from 1)."""
+
+    def __init__(self, pages: list[str], parse_info: dict | None = None) -> None:
+        self.pages = pages
+        self.parse_info = parse_info or {}
+        self.calls = 0
+
+    def supported_types(self) -> list[str]:
+        return []
+
+    async def parse(self, document: Document) -> ProcessedDocument:
+        self.calls += 1
+        return ProcessedDocument(
+            document_id=document.id,
+            text_blocks=[TextBlock(text=text, page_number=i) for i, text in enumerate(self.pages, start=1)],
+            page_count=len(self.pages),
+            parse_info=dict(self.parse_info),
+        )
+
+
+def _ocr_config(fallback: str = "marker", *, min_chars: int = 20, ratio: float = 0.5) -> SimpleNamespace:
+    config = _config(pdf="PyMuPDFLoader")
+    config.loader.ocr_fallback = fallback
+    config.loader.ocr_fallback_min_chars_per_page = min_chars
+    config.loader.ocr_fallback_empty_page_ratio = ratio
+    return config
+
+
+def _pdf() -> Document:
+    return Document(id="d1", filename="scan.pdf", content_type=DocumentType.PDF)
+
+
+SCANNED = ["", "  ", "-----", ""]
+TYPED = ["A first page with plenty of real words on it.", "And a second one, just as readable as the first."]
+
+
+@pytest.mark.asyncio
+async def test_a_pdf_without_text_layer_is_reparsed_with_the_ocr_backend() -> None:
+    disp = ParserDispatcher(_ocr_config("marker"))
+    pymupdf, marker = _PagesParser(SCANNED), _PagesParser(["Texte reconnu par OCR sur la page un."] * 4)
+    disp._by_name.update({"pymupdf": pymupdf, "marker": marker})
+
+    processed = await disp.parse(_pdf())
+
+    assert (pymupdf.calls, marker.calls) == (1, 1)
+    assert processed.text_blocks[0].text.startswith("Texte reconnu")
+    assert processed.parse_info == {"backend": "marker", "ocr": True, "ocr_fallback": True}
+
+
+@pytest.mark.asyncio
+async def test_a_born_digital_pdf_is_never_rerouted() -> None:
+    disp = ParserDispatcher(_ocr_config("marker"))
+    pymupdf, marker = _PagesParser(TYPED), _PagesParser(["unused"])
+    disp._by_name.update({"pymupdf": pymupdf, "marker": marker})
+
+    processed = await disp.parse(_pdf())
+
+    assert marker.calls == 0
+    assert processed.parse_info == {"backend": "pymupdf", "ocr": False}
+
+
+@pytest.mark.asyncio
+async def test_ocr_fallback_none_keeps_the_empty_parse() -> None:
+    disp = ParserDispatcher(_ocr_config("none"))
+    pymupdf, marker = _PagesParser(SCANNED), _PagesParser(["unused"])
+    disp._by_name.update({"pymupdf": pymupdf, "marker": marker})
+
+    processed = await disp.parse(_pdf())
+
+    assert marker.calls == 0
+    assert processed.parse_info == {"backend": "pymupdf", "ocr": False}
+
+
+@pytest.mark.asyncio
+async def test_a_mostly_typed_pdf_stays_under_the_empty_page_ratio() -> None:
+    """One blank page out of three is a separator, not a scan."""
+    disp = ParserDispatcher(_ocr_config("docling", ratio=0.5))
+    pymupdf, docling = _PagesParser([TYPED[0], "", TYPED[1]]), _PagesParser(["unused"])
+    disp._by_name.update({"pymupdf": pymupdf, "docling": docling})
+
+    await disp.parse(_pdf())
+
+    assert docling.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_an_ocr_backend_is_not_reparsed() -> None:
+    disp = ParserDispatcher(_ocr_config("docling"))
+    marker, docling = _PagesParser(SCANNED), _PagesParser(["unused"])
+    disp._by_name.update({"marker": marker, "docling": docling})
+
+    processed = await disp.for_pdf_strategy("marker").parse(_pdf())
+
+    assert docling.calls == 0
+    assert processed.parse_info == {"backend": "marker", "ocr": True}
+
+
+@pytest.mark.asyncio
+async def test_a_preset_pymupdf_strategy_also_falls_back() -> None:
+    disp = ParserDispatcher(_ocr_config("marker"))
+    disp._config.loader.file_loaders.pdf = "MarkerLoader"
+    pymupdf, marker = _PagesParser(SCANNED), _PagesParser(["Texte reconnu par OCR sur la page un."])
+    disp._by_name.update({"pymupdf": pymupdf, "marker": marker})
+
+    processed = await disp.for_pdf_strategy("pymupdf").parse(_pdf())
+
+    assert processed.parse_info["ocr_fallback"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_failing_ocr_backend_fails_the_document() -> None:
+    class _Broken(_PagesParser):
+        async def parse(self, document: Document) -> ProcessedDocument:
+            raise RuntimeError("marker pool unavailable")
+
+    disp = ParserDispatcher(_ocr_config("marker"))
+    disp._by_name.update({"pymupdf": _PagesParser(SCANNED), "marker": _Broken([])})
+
+    with pytest.raises(RuntimeError, match="marker pool unavailable"):
+        await disp.parse(_pdf())
+
+
+@pytest.mark.asyncio
+async def test_non_pdf_documents_are_stamped_with_their_backend() -> None:
+    disp = ParserDispatcher(_ocr_config("marker"))
+    disp._by_name["text"] = _FakeParser()
+
+    processed = await disp.parse(Document(id="t", filename="a.txt", content_type=DocumentType.TEXT))
+
+    assert processed.parse_info == {"backend": "text", "ocr": False}
+
+
+def test_unknown_ocr_fallback_is_rejected() -> None:
+    disp = ParserDispatcher(_ocr_config("tesseract"))
+    with pytest.raises(ValueError, match="Unsupported OCR fallback"):
+        disp._ocr_fallback_backend()
+
+
+def test_pdf_client_is_a_preset_strategy() -> None:
+    from core.config.indexation_pipeline import PARSING_STRATEGIES, IndexationPipelineConfig
+
+    assert "pdf_client" in PARSING_STRATEGIES
+    assert IndexationPipelineConfig(parsing_strategy="pdf_client").parsing_strategy == "pdf_client"
+    disp = ParserDispatcher(_config())
+    disp._by_name["pdf_client"] = _FakeParser()
+    assert disp.for_pdf_strategy("pdf_client") is not None

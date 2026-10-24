@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 
@@ -221,6 +221,14 @@ class LoaderConfig(ConfigMixin):
     # Must be > 0: it feeds asyncio.wait_for, so 0/negative would fail every
     # parse immediately rather than disable the bound.
     parse_timeout: int = Field(default=3600, gt=0)
+    # Re-parse a PDF that has no usable text layer (an image-only scan) with an
+    # OCR-capable backend. Only a non-OCR primary backend (pymupdf) falls back;
+    # a PDF counts as lacking text when at least ``ocr_fallback_empty_page_ratio``
+    # of its pages have fewer than ``ocr_fallback_min_chars_per_page``
+    # letters/digits. "none" keeps today's behaviour.
+    ocr_fallback: Literal["none", "marker", "docling", "pdf_client"] = "none"
+    ocr_fallback_min_chars_per_page: int = Field(default=20, ge=0)
+    ocr_fallback_empty_page_ratio: float = Field(default=0.5, gt=0, le=1)
     transcriber: TranscriberConfig = Field(default_factory=TranscriberConfig)
     openai: OpenAILoaderConfig = Field(default_factory=OpenAILoaderConfig)
     # Max depth of nested .eml-in-.eml attachments the EmlLoader will descend

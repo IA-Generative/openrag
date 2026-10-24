@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # about PDF parsing follows the operator's global ``file_loaders.pdf`` choice
 # instead of silently forcing one backend (and, with it, lazily spinning up that
 # backend's Ray pool). See pipeline_builder._select_parser.
-PARSING_STRATEGIES: tuple[str, ...] = ("pymupdf", "marker", "docling")
+PARSING_STRATEGIES: tuple[str, ...] = ("pymupdf", "marker", "docling", "pdf_client")
 
 
 class IndexationPipelineConfig(BaseModel):
@@ -27,7 +27,7 @@ class IndexationPipelineConfig(BaseModel):
 
     chunking: ChunkerConfig = Field(default_factory=ChunkerConfig)
     # None => inherit the global PDFLOADER (see PARSING_STRATEGIES above).
-    parsing_strategy: Literal["pymupdf", "marker", "docling"] | None = None
+    parsing_strategy: Literal["pymupdf", "marker", "docling", "pdf_client"] | None = None
 
     # Audio transcription. ``None`` uses the deployment's default STT endpoint
     # and the ASR prompt type's global default, respectively. These live on the
