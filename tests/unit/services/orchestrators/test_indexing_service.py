@@ -1197,3 +1197,42 @@ async def test_a_copy_into_a_swapping_partition_is_refused_at_admission():
     # Refused before taking the copy lock, which would hold a later swap off.
     assert partitions.copy_locks == []
     assert disp.copied == []
+
+
+class _CatalogRepo(FakeDocumentRepo):
+    def __init__(self, source: str) -> None:
+        super().__init__()
+        self.source = source
+
+    async def get_file_metadata(self, file_id, partition):
+        return {"source": self.source}
+
+
+@pytest.mark.asyncio
+async def test_delete_file_removes_its_markdown_copy(tmp_path):
+    upload = tmp_path / "legal" / "scan.pdf"
+    upload.parent.mkdir()
+    upload.write_bytes(b"%PDF")
+    sidecar = tmp_path / "legal" / "scan.pdf.md"
+    sidecar.write_text("texte", encoding="utf-8")
+    disp = FakeDispatcher()
+    config = SimpleNamespace(paths=SimpleNamespace(data_dir=tmp_path))
+    svc = _service(doc=_CatalogRepo(str(upload)), disp=disp, config=config)
+
+    await svc.delete_file("f1", "legal")
+
+    assert not sidecar.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_file_leaves_files_outside_the_data_dir_alone(tmp_path):
+    outside = tmp_path / "elsewhere" / "scan.pdf"
+    outside.parent.mkdir()
+    sidecar = outside.parent / "scan.pdf.md"
+    sidecar.write_text("texte", encoding="utf-8")
+    config = SimpleNamespace(paths=SimpleNamespace(data_dir=tmp_path / "data"))
+    svc = _service(doc=_CatalogRepo(str(outside)), config=config)
+
+    await svc.delete_file("f1", "legal")
+
+    assert sidecar.exists()
