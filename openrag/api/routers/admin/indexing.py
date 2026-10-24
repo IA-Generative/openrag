@@ -599,7 +599,7 @@ async def copy_file_between_partitions(
 Returns task status information including:
 - `task_id`: The task identifier
 - `task_state`: Current state (QUEUED, RUNNING, SUCCESS, FAILED)
-- `details`: Additional task details
+- `details`: Additional task details. When the file went through contextualization, `details.contextualization` = `{"total", "failed", "errors"}`: how many chunks were indexed without a context, and the failed LLM calls by cause (`rate_limited`, `timeout`, `empty_response`, `other`). The same object is stored in the file's catalog metadata.
 - `error_url`: URL to get error details (if task failed)
 """,
 )

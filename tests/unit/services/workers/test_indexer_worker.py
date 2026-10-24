@@ -118,6 +118,8 @@ def _fake_tsm() -> MagicMock:
     tsm.set_degraded_stages.remote = AsyncMock(return_value=True)
     tsm.complete_with_degraded_stages = MagicMock()
     tsm.complete_with_degraded_stages.remote = AsyncMock(return_value="completed")
+    tsm.set_contextualization = MagicMock()
+    tsm.set_contextualization.remote = AsyncMock(return_value=True)
     return tsm
 
 
@@ -739,6 +741,64 @@ async def test_process_file_updates_catalog_record_on_replace(tmp_path: Path) ->
         "content_sha256": None,
     }
     assert repo.add_calls == []
+
+
+@pytest.mark.asyncio
+async def test_process_file_records_contextualization_counts(tmp_path: Path) -> None:
+    path = tmp_path / "doc.txt"
+    path.write_bytes(b"content")
+    outcome = {"total": 4, "failed": 3, "errors": {"rate_limited": 3}}
+
+    class PartlyContextualizedPipeline:
+        async def run(self, row: dict[str, Any]) -> dict[str, Any]:
+            row["stored_count"] = 4
+            row["stage"] = "stored"
+            row["degraded_stages"] = {"contextualize": "LLM error (429)"}
+            row["contextualization"] = outcome
+            return row
+
+    repo = FakeDocumentRepo()
+    tsm = _fake_tsm()
+    worker = IndexerWorker(pipeline=PartlyContextualizedPipeline(), task_state_manager=tsm, document_repo=repo)
+
+    await worker.process_file(
+        task_id="t-ctx",
+        path=str(path),
+        metadata={"file_id": "f1"},
+        partition="p",
+        user={"id": 42},
+    )
+
+    assert repo.add_calls[0]["file_metadata"]["contextualization"] == outcome
+    tsm.set_contextualization.remote.assert_awaited_once_with("t-ctx", outcome)
+    tsm.complete_with_degraded_stages.remote.assert_awaited_once_with("t-ctx", ["contextualize"])
+
+
+@pytest.mark.asyncio
+async def test_process_file_survives_a_task_state_manager_without_contextualization(tmp_path: Path) -> None:
+    """A rolling deploy can meet a TSM from before set_contextualization: the
+    file must still complete, with the counts kept in the catalog."""
+    path = tmp_path / "doc.txt"
+    path.write_bytes(b"content")
+
+    class Pipeline:
+        async def run(self, row: dict[str, Any]) -> dict[str, Any]:
+            row["stored_count"] = 1
+            row["stage"] = "stored"
+            row["contextualization"] = {"total": 1, "failed": 0, "errors": {}}
+            return row
+
+    repo = FakeDocumentRepo()
+    tsm = _fake_tsm()
+    tsm.set_contextualization.remote = AsyncMock(side_effect=AttributeError("no such method"))
+    worker = IndexerWorker(pipeline=Pipeline(), task_state_manager=tsm, document_repo=repo)
+
+    await worker.process_file(
+        task_id="t-old", path=str(path), metadata={"file_id": "f1"}, partition="p", user={"id": 1}
+    )
+
+    tsm.complete_with_degraded_stages.remote.assert_awaited_once_with("t-old", [])
+    assert repo.add_calls[0]["file_metadata"]["contextualization"]["total"] == 1
 
 
 @pytest.mark.asyncio

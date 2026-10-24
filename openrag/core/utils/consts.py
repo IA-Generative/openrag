@@ -58,6 +58,7 @@ PROTECTED_METADATA_KEYS: frozenset[str] = frozenset(
         "content_sha256",
         "indexed_at",
         "degraded_stages",
+        "contextualization",
     }
 )
 

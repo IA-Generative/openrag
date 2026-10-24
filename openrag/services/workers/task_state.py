@@ -676,6 +676,8 @@ class TaskStateManager:
         }
         if "degraded_stages" in previous_details:
             info.details["degraded_stages"] = normalize_degraded_stages(previous_details["degraded_stages"])
+        if "contextualization" in previous_details:
+            info.details["contextualization"] = previous_details["contextualization"]
         self.user_index.setdefault(user_id, set()).add(task_id)
 
     def _prune_expired_file_delete_fences(self) -> None:
@@ -985,6 +987,17 @@ class TaskStateManager:
             if info is None or info.state not in CANCELLABLE_INDEXING_STATES:
                 return False
             info.details["degraded_stages"] = normalize_degraded_stages(stages)
+            self._persist_task_locked(task_id, info)
+            return True
+
+    @ray.method(concurrency_group="set")
+    async def set_contextualization(self, task_id: str, outcome: dict[str, Any]) -> bool:
+        """Attach how many chunks got a context (``{total, failed, errors}``)."""
+        with self.lock:
+            info = self.tasks.get(task_id)
+            if info is None or info.state not in CANCELLABLE_INDEXING_STATES:
+                return False
+            info.details["contextualization"] = dict(outcome)
             self._persist_task_locked(task_id, info)
             return True
 

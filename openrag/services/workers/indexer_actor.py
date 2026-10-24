@@ -126,6 +126,27 @@ class IndexerWorker:
         except Exception as exc:
             logger.warning("Failed to repair completed indexing job", task_id=task_id, error=str(exc))
 
+    async def _record_contextualization(self, task_id: str, contextualization: dict[str, Any]) -> None:
+        """Put the chunk counts on the task status (``details.contextualization``).
+
+        Best effort: the file is indexed either way, and the counts are also in
+        the catalog row. A task state manager from before this method existed
+        has no ``set_contextualization``, so a rolling deploy only loses the
+        status copy.
+        """
+        if contextualization.get("failed"):
+            logger.warning(
+                "Contextualization degraded: {failed}/{total} chunks indexed without context ({errors})",
+                task_id=task_id,
+                failed=contextualization.get("failed"),
+                total=contextualization.get("total"),
+                errors=contextualization.get("errors"),
+            )
+        try:
+            await self._tsm.set_contextualization.remote(task_id, contextualization)
+        except Exception as exc:
+            logger.warning("Failed to record contextualization counts", task_id=task_id, error=str(exc))
+
     async def process_file(
         self,
         *,
@@ -194,6 +215,7 @@ class IndexerWorker:
             indexed_at = row.get("indexed_at")
             catalog_config = _with_embedder_provenance(indexation_config, row.get("embedder_provenance"))
             degraded_stages = normalize_degraded_stages(row.get("degraded_stages"))
+            contextualization = row.get("contextualization")
 
             if self._document_repo is not None:
                 wrote_catalog = await _write_catalog_record(
@@ -209,6 +231,7 @@ class IndexerWorker:
                     workspace_ids=workspace_ids,
                     embedder_fingerprint=row.get("embedder_fingerprint"),
                     degraded_stages=degraded_stages,
+                    contextualization=contextualization,
                 )
                 if not wrote_catalog:
                     raise RuntimeError("Catalog row was not written after vector indexing")
@@ -226,6 +249,8 @@ class IndexerWorker:
                     partition=partition,
                     indexation_config=indexation_config,
                 )
+            if contextualization is not None:
+                await self._record_contextualization(task_id, contextualization)
             completion_outcome = await retry_idempotent_ray_actor_method(
                 lambda: self._tsm.complete_with_degraded_stages.remote(task_id, degraded_stages),
                 task_description=f"complete_with_degraded_stages({task_id})",
@@ -332,6 +357,7 @@ async def _write_catalog_record(
     workspace_ids: list[str] | None = None,
     embedder_fingerprint: dict[str, str | None] | None = None,
     degraded_stages: list[str] | None = None,
+    contextualization: dict[str, Any] | None = None,
 ) -> bool:
     """Record an indexed file in the catalog, which is what makes it visible.
 
@@ -342,6 +368,8 @@ async def _write_catalog_record(
     file_id = metadata.get("file_id", "")
     file_metadata = {key: value for key, value in metadata.items() if key != "page"}
     file_metadata["degraded_stages"] = list(degraded_stages or [])
+    if contextualization is not None:
+        file_metadata["contextualization"] = contextualization
     config_kwargs = {"indexation_config": indexation_config} if indexation_config is not None else {}
     if embedder_fingerprint is not None:
         config_kwargs["embedder_fingerprint"] = embedder_fingerprint
