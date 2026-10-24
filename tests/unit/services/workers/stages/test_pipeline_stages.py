@@ -14,7 +14,7 @@ from core.vlm.vlm import VLM
 from services.workers.stages import caption as caption_module
 from services.workers.stages.caption import caption_stage
 from services.workers.stages.chunk import chunk_stage
-from services.workers.stages.contextualize import contextualize_stage
+from services.workers.stages.contextualize import contextualization_outcome, contextualize_stage
 from services.workers.stages.embed import embed_stage
 from services.workers.stages.store import store_stage
 
@@ -64,6 +64,22 @@ class FakeContextualizer(ChunkContextualizer):
         if self.error is not None:
             raise self.error
         return self.chunks
+
+
+class FailingCallsContextualizer(ChunkContextualizer):
+    """Reports one failure per chunk listed in ``failures`` and leaves it without context."""
+
+    def __init__(self, failures: dict[str, Exception]) -> None:
+        self.failures = failures
+
+    async def contextualize(self, chunks, *, filename="", lang="en", system_prompt=None, on_failure=None):
+        out = []
+        for chunk in chunks:
+            exc = self.failures.get(chunk.id)
+            if exc is not None and on_failure is not None:
+                on_failure(exc)
+            out.append(chunk.model_copy(update={"context": "" if exc is not None else "ctx"}))
+        return out
 
 
 class FakeEmbedder(Embedder):
@@ -312,6 +328,58 @@ async def test_chunk_stage_mutates_row_and_scrubs_credentials():
     assert row["chunks"] == chunks
     assert row["stage"] == "chunked"
     assert "api_key" not in row
+
+
+@pytest.mark.asyncio
+async def test_contextualize_stage_counts_chunks_left_without_context():
+    from core.utils.exceptions import InferenceError, InferenceTimeoutError
+
+    chunks = [Chunk(id=f"c{i}", text=f"chunk {i}") for i in range(5)]
+    contextualizer = FailingCallsContextualizer(
+        {
+            "c1": InferenceError("LLM error (429)", status_code=429),
+            "c2": InferenceError("LLM error (429)", status_code=429),
+            "c3": InferenceTimeoutError("LLM request timed out"),
+        }
+    )
+    row = {"chunks": chunks, "filename": "note.md"}
+
+    await contextualize_stage(row, contextualizer)
+
+    assert row["contextualization"] == {"total": 5, "failed": 3, "errors": {"rate_limited": 2, "timeout": 1}}
+    assert "contextualize" in row["degraded_stages"]
+
+
+@pytest.mark.asyncio
+async def test_contextualize_stage_reports_a_clean_run():
+    chunks = [Chunk(id="c1", text="hello")]
+    row = {"chunks": chunks, "filename": "note.md"}
+
+    await contextualize_stage(row, FailingCallsContextualizer({}))
+
+    assert row["contextualization"] == {"total": 1, "failed": 0, "errors": {}}
+    assert "degraded_stages" not in row
+
+
+@pytest.mark.asyncio
+async def test_contextualize_stage_failure_counts_every_chunk_as_failed():
+    chunks = [Chunk(id="c1", text="a"), Chunk(id="c2", text="b")]
+    row = {"chunks": chunks, "filename": "note.md"}
+
+    with pytest.raises(TimeoutError):
+        await contextualize_stage(row, FakeContextualizer([], error=TimeoutError("stage deadline")))
+
+    assert row["contextualization"] == {"total": 2, "failed": 2, "errors": {"timeout": 1}}
+
+
+def test_contextualization_outcome_reads_failures_from_the_chunks():
+    """A whole-document fallback reports one failure but returns every chunk
+    without context: the count must come from the chunks, not the failures."""
+    chunks = [Chunk(id="c1", text="a"), Chunk(id="c2", text="b", context="  ")]
+
+    outcome = contextualization_outcome(chunks, [ValueError("LLM returned an empty contextualization response")])
+
+    assert outcome == {"total": 2, "failed": 2, "errors": {"empty_response": 1}}
 
 
 @pytest.mark.asyncio

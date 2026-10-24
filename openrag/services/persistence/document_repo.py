@@ -742,7 +742,9 @@ class PgDocumentRepository(DocumentRepository):
         ``relationship_id`` or ``parent_id`` keys, the dedicated columns are
         rewritten too so the JSON never diverges from the structured fields.
         """
-        metadata_patch = {key: value for key, value in metadata_patch.items() if key != "degraded_stages"}
+        metadata_patch = {
+            key: value for key, value in metadata_patch.items() if key not in ("degraded_stages", "contextualization")
+        }
         rel_id = metadata_patch.get("relationship_id") if "relationship_id" in metadata_patch else None
         parent_id = metadata_patch.get("parent_id") if "parent_id" in metadata_patch else None
         sets = ["file_metadata = (COALESCE(file_metadata::jsonb, '{}'::jsonb) || $1::jsonb)::json"]

@@ -1341,6 +1341,41 @@ async def test_degraded_stages_are_added_to_active_task_details() -> None:
 
 
 @pytest.mark.asyncio
+async def test_contextualization_counts_are_added_and_survive_a_details_refresh() -> None:
+    manager = _task_state_manager()
+    await manager.set_queued_details(
+        "ctx-task",
+        file_id="f1",
+        partition="tenant-a",
+        metadata={"filename": "report.pdf"},
+        user_id=7,
+    )
+    outcome = {"total": 10, "failed": 4, "errors": {"rate_limited": 4}}
+
+    assert await manager.set_contextualization("ctx-task", outcome) is True
+    assert (await manager.get_details("ctx-task"))["contextualization"] == outcome
+
+    await manager.set_details(
+        "ctx-task",
+        file_id="f1",
+        partition="tenant-a",
+        metadata={"filename": "report.pdf", "finished": True},
+        user_id=7,
+    )
+    assert (await manager.get_details("ctx-task"))["contextualization"] == outcome
+    assert await manager.complete_with_degraded_stages("ctx-task", ["contextualize"]) == "completed"
+    assert (await manager.get_details("ctx-task"))["contextualization"] == outcome
+
+
+@pytest.mark.asyncio
+async def test_contextualization_counts_do_not_recreate_an_unknown_task() -> None:
+    manager = _task_state_manager()
+
+    assert await manager.set_contextualization("expired-task", {"total": 1, "failed": 1, "errors": {}}) is False
+    assert manager.tasks == {}
+
+
+@pytest.mark.asyncio
 async def test_degraded_stages_do_not_recreate_an_unknown_task() -> None:
     manager = _task_state_manager()
 
