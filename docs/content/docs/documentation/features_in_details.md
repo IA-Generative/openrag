@@ -7,6 +7,7 @@ title: ✨ Key Features
 
 * **Text Files**: `txt`, `md`
 * **Document Files**: `pdf`, `docx`, `doc`, `pptx` - Advanced PDF parsing with OCR support and Office document processing
+* **Spreadsheets**: `xlsx`, `xlsm`, `xls`, `ods` - Read cell by cell (no PDF conversion): one sheet per page, header row repeated in every chunk, merged cells filled, wide sheets split into column groups, bounded by `SPREADSHEET_MAX_CELLS`
 * **E-mail**: `eml` - Message body and headers, with attachments parsed through their own format's pipeline
 * **Audio Files**: `wav`, `mp3`, `flac`, `ogg`, `aac`, `wma` - Audio transcription and content extraction
 * **Video Files**: `mp4`, `flv` - Speech transcription from the audio track

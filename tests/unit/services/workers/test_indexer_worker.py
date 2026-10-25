@@ -758,6 +758,10 @@ async def test_process_file_updates_catalog_record_on_replace(tmp_path: Path) ->
             {"backend": "pdf_client", "ocr": True, "pages": 5, "failed_pages": 2},
             {"parse_backend": "pdf_client", "ocr": True, "ocr_failed_pages": 2},
         ),
+        (
+            {"backend": "spreadsheet", "ocr": False, "spreadsheet": {"sheets": 2, "truncated": False}},
+            {"parse_backend": "spreadsheet", "ocr": False, "spreadsheet": {"sheets": 2, "truncated": False}},
+        ),
     ],
 )
 async def test_process_file_records_how_the_file_was_parsed(tmp_path: Path, parse_info, expected) -> None:

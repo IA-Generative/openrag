@@ -30,6 +30,7 @@ class DocumentType(str, Enum):
     PPTX = "pptx"
     DOC = "doc"
     EML = "eml"
+    SPREADSHEET = "spreadsheet"
 
 
 #: The extensions OpenRag recognises, and the type each one is parsed as.
@@ -58,6 +59,10 @@ _EXTENSION_TYPES: dict[str, DocumentType] = {
     "pptx": DocumentType.PPTX,
     "doc": DocumentType.DOC,
     "eml": DocumentType.EML,
+    "xlsx": DocumentType.SPREADSHEET,
+    "xlsm": DocumentType.SPREADSHEET,
+    "xls": DocumentType.SPREADSHEET,
+    "ods": DocumentType.SPREADSHEET,
 }
 
 

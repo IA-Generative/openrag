@@ -155,3 +155,18 @@ async def test_parse_stage_degrades_a_file_whose_ocr_lost_pages():
     await parse_stage(row, FakeParser(output=processed))
 
     assert row["degraded_stages"] == {"parse": "OCR lost 2/5 pages"}
+
+
+@pytest.mark.asyncio
+async def test_parse_stage_degrades_a_truncated_spreadsheet():
+    document = Document(id="d", filename="gros.xlsx", content_type=DocumentType.SPREADSHEET)
+    info = {"truncated": True, "rows_kept": 10000, "rows_total": 20001}
+    processed = ProcessedDocument(
+        document_id="d", page_count=1, parse_info={"backend": "spreadsheet", "spreadsheet": info}
+    )
+    row = {"document": document}
+
+    await parse_stage(row, FakeParser(output=processed))
+
+    assert row["degraded_stages"] == {"parse": "spreadsheet truncated: kept 10000 of 20001 rows"}
+    assert row["parse"]["spreadsheet"]["truncated"] is True

@@ -60,7 +60,7 @@ DEGRADABLE_ENRICHMENT_STAGES = frozenset({"caption", "contextualize", "parse", "
 
 # How a file was parsed, as stored in its catalog metadata and task details
 # (see indexer_actor._parse_outcome).
-PARSE_OUTCOME_KEYS: tuple[str, ...] = ("parse_backend", "ocr", "ocr_fallback", "ocr_failed_pages")
+PARSE_OUTCOME_KEYS: tuple[str, ...] = ("parse_backend", "ocr", "ocr_fallback", "ocr_failed_pages", "spreadsheet")
 
 
 def normalize_degraded_stages(value: Any) -> list[str]:

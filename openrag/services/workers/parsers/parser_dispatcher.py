@@ -72,6 +72,10 @@ _EML_ATTACHMENT_TYPES: dict[str, DocumentType] = {
     "webp": DocumentType.IMAGE,
     "bmp": DocumentType.IMAGE,
     "svg": DocumentType.IMAGE,
+    "xlsx": DocumentType.SPREADSHEET,
+    "xlsm": DocumentType.SPREADSHEET,
+    "xls": DocumentType.SPREADSHEET,
+    "ods": DocumentType.SPREADSHEET,
 }
 
 
@@ -240,6 +244,16 @@ class ParserDispatcher(DocumentParser):
                 logger.warning(f"EML attachment parser for '.{ext}' unavailable: {exc}")
         return _create("core.indexing.parsers.eml_parser", "eml", attachment_parsers=attachment_parsers)
 
+    def _build_spreadsheet(self) -> DocumentParser:
+        loader = self._config.loader
+        return _create(
+            "core.indexing.parsers.spreadsheet_parser",
+            "spreadsheet",
+            max_cells=getattr(loader, "spreadsheet_max_cells", 50_000),
+            columns_per_group=getattr(loader, "spreadsheet_columns_per_group", 12),
+            include_hidden_sheets=getattr(loader, "spreadsheet_include_hidden_sheets", False),
+        )
+
     def _build_marker(self) -> DocumentParser:
         from services.workers.parsers.marker_workers import MarkerLoader
 
@@ -348,6 +362,7 @@ _BUILDERS: dict[str, Any] = {
     "local_whisper": lambda d: d._build_local_whisper(),
     "pdf_client": lambda d: d._build_pdf_client(),
     "audio_client": lambda d: d._build_audio_client(),
+    "spreadsheet": lambda d: d._build_spreadsheet(),
 }
 
 

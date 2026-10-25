@@ -577,3 +577,15 @@ def test_pdf_client_is_a_preset_strategy() -> None:
     disp = ParserDispatcher(_config())
     disp._by_name["pdf_client"] = _FakeParser()
     assert disp.for_pdf_strategy("pdf_client") is not None
+
+
+def test_spreadsheet_backend_gets_the_loader_bounds():
+    config = _config()
+    config.loader.spreadsheet_max_cells = 1234
+    config.loader.spreadsheet_columns_per_group = 7
+    config.loader.spreadsheet_include_hidden_sheets = True
+    disp = ParserDispatcher(config)
+
+    assert disp._resolve_backend(DocumentType.SPREADSHEET, "xlsx") == "spreadsheet"
+    parser = disp._get("spreadsheet")
+    assert (parser._max_cells, parser._columns_per_group, parser._include_hidden) == (1234, 7, True)

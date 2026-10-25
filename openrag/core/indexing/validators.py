@@ -196,6 +196,8 @@ _TOLERANT_SIGNATURES: dict[str, frozenset[str]] = {
 _OOXML_MAIN_PARTS: dict[str, str] = {
     "docx": "word/document.xml",
     "pptx": "ppt/presentation.xml",
+    "xlsx": "xl/workbook.xml",
+    "xlsm": "xl/workbook.xml",
 }
 
 #: Parts every OPC package carries whatever its flavour: the content-type map

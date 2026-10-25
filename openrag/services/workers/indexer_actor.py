@@ -368,6 +368,8 @@ def _parse_outcome(parse_info: Any) -> dict[str, Any]:
         outcome["ocr_fallback"] = True
     if parse_info.get("failed_pages"):
         outcome["ocr_failed_pages"] = int(parse_info["failed_pages"])
+    if isinstance(parse_info.get("spreadsheet"), dict):
+        outcome["spreadsheet"] = dict(parse_info["spreadsheet"])
     return outcome
 
 
