@@ -21,7 +21,8 @@ repeating the header row in every chunk (``chunk_table``).
 - **Reported.** ``ProcessedDocument.parse_info["spreadsheet"]`` counts sheets,
   hidden sheets (skipped unless ``include_hidden_sheets``), merged ranges,
   formulas without a cached value (rendered empty: the file was never
-  recalculated) and kept / total rows.
+  recalculated) and kept / total rows. Rows are counted when they hold at
+  least one value, so ``rows_kept == rows_total`` unless the file was cut.
 
 Macros are never executed: openpyxl, xlrd and odfpy only read cell values.
 .xlsx/.xlsm are streamed (``read_only``), .xls and .ods are loaded whole.
@@ -180,11 +181,11 @@ def _read_xlsx(path: str, budget: _Budget, include_hidden: bool) -> Iterator[_Sh
             for row_index, (row, frow) in enumerate(
                 zip(ws.iter_rows(values_only=True), fws.iter_rows(values_only=True), strict=False)
             ):
-                if any(v is not None for v in row):
+                cells = [_cell_text(v) for v in row]
+                if any(cells):
                     counted += 1
                 if budget.truncated:
                     continue
-                cells = [_cell_text(v) for v in row]
                 for value, formula in zip(row, frow, strict=False):
                     if value is None and isinstance(formula, str) and formula.startswith("="):
                         sheet.formulas_without_value += 1
@@ -208,15 +209,14 @@ def _read_xls(path: str, budget: _Budget, include_hidden: bool) -> Iterator[_She
     try:
         for sheet_index in range(book.nsheets):
             xs = book.sheet_by_index(sheet_index)
-            sheet = _Sheet(name=xs.name, hidden=xs.visibility != 0, rows_total=xs.nrows)
+            sheet = _Sheet(name=xs.name, hidden=xs.visibility != 0)
             if sheet.hidden and not include_hidden:
                 yield sheet
                 continue
             filler = _MergeFiller((rlo, clo, rhi - 1, chi - 1) for rlo, rhi, clo, chi in xs.merged_cells)
             sheet.merged_ranges = len(filler)
+            counted = 0
             for row_index in range(xs.nrows):
-                if budget.truncated:
-                    break
                 cells = []
                 for cell in xs.row(row_index):
                     value = cell.value
@@ -231,28 +231,65 @@ def _read_xls(path: str, budget: _Budget, include_hidden: bool) -> Iterator[_She
                         value = None
                     cells.append(_cell_text(value))
                 cells = filler.apply(row_index, cells)
-                if any(cells) and budget.take(len(cells)):
+                if not any(cells):
+                    continue
+                counted += 1
+                if not budget.truncated and budget.take(len(cells)):
                     sheet.rows.append(cells)
+            sheet.rows_total = counted
             book.unload_sheet(sheet_index)
             yield sheet
     finally:
         book.release_resources()
 
 
+def _ods_hidden_sheets(path: str) -> set[str]:
+    """Names of the sheets an .ods hides.
+
+    Visibility is not on the table itself: the table names a style whose
+    ``style:table-properties`` carries ``table:display="false"``. pandas does
+    not expose it, so it is read with odfpy directly.
+    """
+    from odf.opendocument import load
+    from odf.style import Style, TableProperties
+    from odf.table import Table
+
+    doc = load(path)
+    hidden_styles = set()
+    for container in (doc.automaticstyles, doc.styles):
+        for style in container.getElementsByType(Style):
+            if style.getAttribute("family") != "table":
+                continue
+            if any(tp.getAttribute("display") == "false" for tp in style.getElementsByType(TableProperties)):
+                hidden_styles.add(style.getAttribute("name"))
+    return {
+        str(table.getAttribute("name"))
+        for table in doc.spreadsheet.getElementsByType(Table)
+        if table.getAttribute("stylename") in hidden_styles
+    }
+
+
 def _read_ods(path: str, budget: _Budget, include_hidden: bool) -> Iterator[_Sheet]:
     # pandas' odf reader expands repeated rows/columns and spans; merged ranges
-    # and hidden sheets are not exposed through it, so they are not reported.
+    # are not exposed through it, so they are not reported.
     import pandas as pd
 
+    hidden = _ods_hidden_sheets(path)
     frames = pd.read_excel(path, sheet_name=None, header=None, engine="odf", dtype=object)
     for name, frame in frames.items():
-        sheet = _Sheet(name=str(name), rows_total=len(frame.index))
+        sheet = _Sheet(name=str(name), hidden=str(name) in hidden)
+        if sheet.hidden and not include_hidden:
+            yield sheet
+            continue
+        counted = 0
         for values in frame.itertuples(index=False, name=None):
-            if budget.truncated:
-                break
             cells = [_cell_text(v) for v in values]
-            if any(cells) and budget.take(len(cells)):
+            if not any(cells):
+                continue
+            counted += 1
+            if not budget.truncated and budget.take(len(cells)):
                 sheet.rows.append(cells)
+        sheet.rows_total = counted
         yield sheet
 
 
