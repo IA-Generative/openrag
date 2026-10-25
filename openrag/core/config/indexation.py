@@ -101,6 +101,12 @@ class FileLoadersConfig(ConfigMixin):
     wma: str = "LocalWhisperLoader"
     mp4: str = "LocalWhisperLoader"
     md: str = "MarkdownLoader"
+    # Spreadsheets: read by the ``spreadsheet`` parser. Listed here because the
+    # accepted upload extensions are this model's keys.
+    xlsx: str = "SpreadsheetLoader"
+    xlsm: str = "SpreadsheetLoader"
+    xls: str = "SpreadsheetLoader"
+    ods: str = "SpreadsheetLoader"
 
 
 # ---------------------------------------------------------------------------
