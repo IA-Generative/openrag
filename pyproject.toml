@@ -46,6 +46,10 @@ dependencies = [
     "hdbscan>=0.8.40",
     "pytest-env>=1.1.5",
     "markitdown[docx]>=0.1.3",
+    # Spreadsheet parser: openpyxl (.xlsx/.xlsm) is already a dependency of
+    # docling/markitdown; xlrd reads legacy .xls, odfpy reads .ods.
+    "xlrd>=2.0.1",
+    "odfpy>=1.4.1",
     "html-to-markdown>=2.4.0",
     "lxml>=5.0.0",
     "alembic>=1.17.0",

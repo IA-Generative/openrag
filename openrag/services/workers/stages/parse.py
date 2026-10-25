@@ -26,6 +26,11 @@ async def parse_stage(
         row["processed_document"] = processed
         if processed.parse_info:
             row["parse"] = dict(processed.parse_info)
+        sheet_info = processed.parse_info.get("spreadsheet") or {}
+        if sheet_info.get("truncated"):
+            row.setdefault("degraded_stages", {})["parse"] = (
+                f"spreadsheet truncated: kept {sheet_info.get('rows_kept')} of {sheet_info.get('rows_total')} rows"
+            )
         failed_pages = processed.parse_info.get("failed_pages") or 0
         if failed_pages:
             pages = processed.parse_info.get("pages") or processed.page_count

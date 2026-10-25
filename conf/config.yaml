@@ -178,6 +178,10 @@ loader:
     application/vnd.openxmlformats-officedocument.wordprocessingml.document: .docx
     application/vnd.openxmlformats-officedocument.presentationml.presentation: .pptx
     application/msword: .doc
+    application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: .xlsx
+    application/vnd.ms-excel.sheet.macroEnabled.12: .xlsm
+    application/vnd.ms-excel: .xls
+    application/vnd.oasis.opendocument.spreadsheet: .ods
     image/png: .png
     image/jpeg: .jpeg
     audio/wav: .wav
@@ -275,6 +279,14 @@ loader:
   ocr_fallback: none
   ocr_fallback_min_chars_per_page: 20
   ocr_fallback_empty_page_ratio: 0.5
+
+  # Env: SPREADSHEET_MAX_CELLS, SPREADSHEET_COLUMNS_PER_GROUP,
+  #      SPREADSHEET_INCLUDE_HIDDEN_SHEETS
+  # .xlsx/.xlsm/.xls/.ods: cells kept per file (the rest is dropped and
+  # reported), column-group width for wide sheets, hidden sheets.
+  spreadsheet_max_cells: 50000
+  spreadsheet_columns_per_group: 12
+  spreadsheet_include_hidden_sheets: false
 
   # Env: TRANSCRIBER_BASE_URL, TRANSCRIBER_API_KEY, TRANSCRIBER_MODEL,
   #      TRANSCRIBER_TIMEOUT, TRANSCRIBER_MAX_CONCURRENT_CHUNKS, USE_WHISPER_LANG_DETECTOR,

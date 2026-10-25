@@ -63,6 +63,7 @@ PROTECTED_METADATA_KEYS: frozenset[str] = frozenset(
         "ocr",
         "ocr_fallback",
         "ocr_failed_pages",
+        "spreadsheet",
     }
 )
 

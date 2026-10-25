@@ -229,6 +229,13 @@ class LoaderConfig(ConfigMixin):
     ocr_fallback: Literal["none", "marker", "docling", "pdf_client"] = "none"
     ocr_fallback_min_chars_per_page: int = Field(default=20, ge=0)
     ocr_fallback_empty_page_ratio: float = Field(default=0.5, gt=0, le=1)
+    # Spreadsheets (.xlsx/.xlsm/.xls/.ods) are read cell by cell. A file keeps at
+    # most ``spreadsheet_max_cells`` cells (the rest is dropped and reported as a
+    # degraded parse); sheets wider than ``spreadsheet_columns_per_group`` columns
+    # are split into column groups; hidden sheets are skipped unless asked.
+    spreadsheet_max_cells: int = Field(default=50_000, gt=0)
+    spreadsheet_columns_per_group: int = Field(default=12, ge=2)
+    spreadsheet_include_hidden_sheets: bool = False
     transcriber: TranscriberConfig = Field(default_factory=TranscriberConfig)
     openai: OpenAILoaderConfig = Field(default_factory=OpenAILoaderConfig)
     # Max depth of nested .eml-in-.eml attachments the EmlLoader will descend
