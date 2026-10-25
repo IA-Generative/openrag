@@ -226,6 +226,10 @@ loader:
     wma: LocalWhisperLoader
     mp4: LocalWhisperLoader
     md: MarkdownLoader
+    xlsx: SpreadsheetLoader
+    xlsm: SpreadsheetLoader
+    xls: SpreadsheetLoader
+    ods: SpreadsheetLoader
 
   # Env: PYMUPDF_POOL_SIZE, PYMUPDF_PARSE_MEMORY_LIMIT_MB,
   #      PYMUPDF_MAX_TASKS_PER_CHILD (indexing only; pool size 1, at least 1,
