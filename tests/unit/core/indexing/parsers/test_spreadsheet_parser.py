@@ -238,3 +238,32 @@ def test_validator_accepts_a_real_workbook_and_refuses_a_plain_zip(tmp_path):
     fake.seek(0)
     with pytest.raises(ValidationError):
         validate_ooxml_package("xlsx", fake)
+
+
+@pytest.mark.asyncio
+async def test_ods_hidden_sheets_are_skipped_like_xlsx():
+    """A sheet hidden in LibreOffice must not be indexed by default: the .ods
+    route used to index it while the .xlsx route skipped it."""
+    doc = Document(
+        id="o", filename="budget.ods", content_type=DocumentType.SPREADSHEET, source_path=str(FIXTURES / "budget.ods")
+    )
+
+    processed = await SpreadsheetParser().parse(doc)
+    info = processed.parse_info["spreadsheet"]
+
+    assert [b.text.splitlines()[0] for b in processed.text_blocks] == ["## Crédits"]
+    assert info["hidden_sheets"] == 1 and info["hidden_sheets_skipped"] == 1
+    assert "secret" not in processed.text_blocks[0].text
+
+
+@pytest.mark.asyncio
+async def test_rows_kept_equals_rows_total_when_nothing_is_cut(tmp_path):
+    def build(wb):
+        ws = wb.active
+        ws.append(["A", "B"])
+        ws.append([1, 2])
+        ws.append([None, None])
+        ws.append([3, 4])
+
+    info = (await SpreadsheetParser().parse(_xlsx(tmp_path, build))).parse_info["spreadsheet"]
+    assert (info["rows_kept"], info["rows_total"], info["truncated"]) == (3, 3, False)
