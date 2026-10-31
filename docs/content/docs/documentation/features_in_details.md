@@ -6,6 +6,7 @@ title: ✨ Key Features
 [OpenRag](https://open-rag.ai/) supports a comprehensive range of file formats for seamless document ingestion:
 
 * **Text Files**: `txt`, `md`
+* **Tabular Data**: `csv` - Configurable delimiter-aware parsing with row-preserving, token-bounded table chunks
 * **Document Files**: `pdf`, `docx`, `doc`, `pptx` - Advanced PDF parsing with OCR support and Office document processing
 * **Spreadsheets**: `xlsx`, `xlsm`, `xls`, `ods` - Read cell by cell (no PDF conversion): one sheet per page, header row repeated in every chunk, merged cells filled, wide sheets split into column groups, bounded by `SPREADSHEET_MAX_CELLS`
 * **E-mail**: `eml` - Message body and headers, with attachments parsed through their own format's pipeline
