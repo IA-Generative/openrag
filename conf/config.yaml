@@ -187,6 +187,7 @@ loader:
 
   mimetypes:
     text/plain: .txt
+    text/csv: .csv
     text/markdown: .md
     application/pdf: .pdf
     message/rfc822: .eml
@@ -241,6 +242,7 @@ loader:
     wma: LocalWhisperLoader
     mp4: LocalWhisperLoader
     md: MarkdownLoader
+    csv: CsvLoader
     xlsx: SpreadsheetLoader
     xlsm: SpreadsheetLoader
     xls: SpreadsheetLoader
