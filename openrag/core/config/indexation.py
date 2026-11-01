@@ -101,6 +101,9 @@ class FileLoadersConfig(ConfigMixin):
     wma: str = "LocalWhisperLoader"
     mp4: str = "LocalWhisperLoader"
     md: str = "MarkdownLoader"
+    # CSV: streamed by the ``csv`` parser. Listed so a ``.csv`` is accepted on
+    # its extension, not only with ``text/csv`` in its metadata.
+    csv: str = "CsvLoader"
     # Spreadsheets: read by the ``spreadsheet`` parser. Listed here because the
     # accepted upload extensions are this model's keys.
     xlsx: str = "SpreadsheetLoader"
